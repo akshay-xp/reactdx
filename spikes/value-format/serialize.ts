@@ -1,5 +1,6 @@
 const MAX_STRING = 1000;
 const MAX_DEPTH = 2;
+const PAGE = 100;
 
 function serializeNumber(value: number) {
   if (Number.isNaN(value)) return { type: 'number', value: 'NaN' };
@@ -11,9 +12,30 @@ function serializeNumber(value: number) {
 
 const className = (value: object) => Object.getPrototypeOf(value)?.constructor?.name ?? null;
 
+// Takes one page without copying the whole collection.
+function pageOf<T>(iterable: Iterable<T>, offset: number) {
+  const items: T[] = [];
+  let index = 0;
+  for (const item of iterable) {
+    if (index >= offset + PAGE) return { items, nextOffset: offset + PAGE };
+    if (index >= offset) items.push(item);
+    index++;
+  }
+  return { items };
+}
+
+function preview(value: object) {
+  if (Array.isArray(value)) return { type: 'array', length: value.length };
+  if (value instanceof Map) return { type: 'map', size: value.size };
+  if (value instanceof Set) return { type: 'set', size: value.size };
+  return { type: 'object', className: className(value), size: Object.keys(Object.getOwnPropertyDescriptors(value)).length };
+}
+
 export function createInspector() {
   const ids = new WeakMap<object, number>();
   const objects = new Map<number, object>();
+  // Objects on the current path; meeting one again means a cycle.
+  const path = new Set<object>();
 
   const idOf = (value: object) => {
     let id = ids.get(value);
@@ -25,33 +47,41 @@ export function createInspector() {
     return id;
   };
 
-  // Reads own properties through descriptors so getters (app code) never run.
-  // Objects on the current path; meeting one again means a cycle.
-  const path = new Set<object>();
-
-  function serializeObject(value: object, depth: number) {
-    if (path.has(value)) return { type: 'ref', id: idOf(value), circular: true };
-    const descriptors = Object.entries(Object.getOwnPropertyDescriptors(value));
-    if (depth >= MAX_DEPTH) {
-      return { type: 'ref', id: idOf(value), preview: { type: 'object', className: className(value), size: descriptors.length } };
+  function contents(value: object, depth: number, offset: number) {
+    const child = (item: unknown) => serialize(item, depth + 1);
+    if (Array.isArray(value)) {
+      const { items, nextOffset } = pageOf(value, offset);
+      return { items: items.map(child), ...(nextOffset && { nextOffset }) };
     }
+    if (value instanceof Map) {
+      const { items, nextOffset } = pageOf(value.entries(), offset);
+      return { entries: items.map(([key, item]) => [child(key), child(item)]), ...(nextOffset && { nextOffset }) };
+    }
+    if (value instanceof Set) {
+      const { items, nextOffset } = pageOf(value.values(), offset);
+      return { values: items.map(child), ...(nextOffset && { nextOffset }) };
+    }
+    // Reads own properties through descriptors so getters (app code) never run.
     const props: Record<string, unknown> = {};
-    path.add(value);
-    for (const [key, descriptor] of descriptors) {
-      props[key] = 'value' in descriptor ? serialize(descriptor.value, depth + 1) : { type: 'getter' };
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+      props[key] = 'value' in descriptor ? child(descriptor.value) : { type: 'getter' };
     }
-    path.delete(value);
-    return { type: 'object', className: className(value), id: idOf(value), size: descriptors.length, props };
+    return { props };
   }
 
-  function serialize(value: unknown, depth = 0): unknown {
+  function serializeObject(value: object, depth: number, offset: number) {
+    if (path.has(value)) return { type: 'ref', id: idOf(value), circular: true };
+    if (depth >= MAX_DEPTH) return { type: 'ref', id: idOf(value), preview: preview(value) };
+    path.add(value);
+    try {
+      return { ...preview(value), id: idOf(value), ...contents(value, depth, offset) };
+    } finally {
+      path.delete(value);
+    }
+  }
+
+  function serialize(value: unknown, depth = 0, offset = 0): unknown {
     switch (typeof value) {
-      case 'function':
-        return { type: 'function', name: value.name };
-      case 'symbol':
-        return { type: 'symbol', description: value.description };
-      case 'object':
-        return value === null ? null : serializeObject(value, depth);
       case 'undefined':
         return { type: 'undefined' };
       case 'number':
@@ -62,6 +92,12 @@ export function createInspector() {
         return value.length > MAX_STRING
           ? { type: 'string', preview: value.slice(0, MAX_STRING), length: value.length }
           : value;
+      case 'function':
+        return { type: 'function', name: value.name };
+      case 'symbol':
+        return { type: 'symbol', description: value.description };
+      case 'object':
+        return value === null ? null : serializeObject(value, depth, offset);
       default:
         return value;
     }
@@ -69,8 +105,6 @@ export function createInspector() {
 
   return {
     serialize: (value: unknown) => serialize(value),
-    expand(id: number, offset = 0): unknown {
-      return serialize(objects.get(id));
-    },
+    expand: (id: number, offset = 0) => serialize(objects.get(id), 0, offset),
   };
 }

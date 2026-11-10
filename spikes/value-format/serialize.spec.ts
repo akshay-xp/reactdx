@@ -72,3 +72,31 @@ test('circular references become refs marked circular', () => {
   parent.children.push({ parent });
   roundTrips(serialize(parent));
 });
+
+test('large arrays, maps, and sets are sent one page at a time', () => {
+  const { serialize, expand } = createInspector();
+  const list = Array.from({ length: 10000 }, (_, i) => ({ i }));
+
+  const start = performance.now();
+  const array: any = serialize(list);
+  const elapsed = performance.now() - start;
+  expect(array).toMatchObject({ type: 'array', id: expect.any(Number), length: 10000, nextOffset: 100 });
+  expect(array.items).toHaveLength(100);
+  expect(JSON.stringify(array).length).toBeLessThan(20000);
+  expect(elapsed).toBeLessThan(5);
+  roundTrips(array);
+
+  const next: any = expand(array.id, 100);
+  expect(next.items[0]).toMatchObject({ props: { i: 100 } });
+  expect(next.items).toHaveLength(100);
+  expect(next.nextOffset).toBe(200);
+
+  const map: any = serialize(new Map(list.map((item) => [item.i, item])));
+  expect(map).toMatchObject({ type: 'map', size: 10000, nextOffset: 100 });
+  expect(map.entries).toHaveLength(100);
+  expect(map.entries[0]).toEqual([0, expect.objectContaining({ props: { i: 0 } })]);
+
+  const set: any = serialize(new Set(list));
+  expect(set).toMatchObject({ type: 'set', size: 10000, nextOffset: 100 });
+  expect(set.values).toHaveLength(100);
+});
