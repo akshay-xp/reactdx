@@ -10,6 +10,7 @@ const hooks = {
   'hook-cost/src/hook.js': 'hook-cost/extension/hook.js',
   'coexist/src/first.js': 'coexist/extension/hook.js',
   'coexist/src/late.js': 'coexist/extension-late/hook.js',
+  'dx-questions/src/hook.js': 'dx-questions/extension/hook.js',
 };
 
 // Extensions can't load files from outside their own folder, so each variant gets a copy.

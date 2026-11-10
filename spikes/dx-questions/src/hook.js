@@ -1,0 +1,89 @@
+const PERFORMED_WORK = 1;
+
+const nameOf = (type) => {
+  if (typeof type === 'function') return type.displayName ?? type.name;
+  if (type && typeof type === 'object') return type.displayName ?? nameOf(type.type ?? type.render);
+  return null;
+};
+
+// Function and class components, plus memo/forwardRef wrappers.
+const isComposite = ({ type }) => typeof type === 'function' || !!(type && typeof type === 'object' && (type.type ?? type.render));
+
+// fiber and alternate swap every commit; both map to one id so a component keeps it.
+const ids = new WeakMap();
+let nextId = 1;
+const idOf = (fiber) => {
+  let id = ids.get(fiber) ?? (fiber.alternate && ids.get(fiber.alternate));
+  if (id === undefined) id = nextId++;
+  ids.set(fiber, id);
+  if (fiber.alternate) ids.set(fiber.alternate, id);
+  return id;
+};
+
+function sameValue(a, b, depth = 3) {
+  if (Object.is(a, b)) return true;
+  if (depth === 0 || typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
+  if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => key in b && sameValue(a[key], b[key], depth - 1));
+}
+
+function propReasons(fiber) {
+  const next = fiber.memoizedProps ?? {};
+  const prev = fiber.alternate.memoizedProps ?? {};
+  const changed = [];
+  for (const key of new Set([...Object.keys(prev), ...Object.keys(next)])) {
+    if (key === 'children' || Object.is(prev[key], next[key])) continue;
+    changed.push({ key, sameValue: sameValue(prev[key], next[key]) });
+  }
+  return changed;
+}
+
+function reasonsFor(fiber) {
+  const reasons = {};
+  const props = propReasons(fiber);
+  if (props.length) reasons.props = props;
+  return reasons;
+}
+
+const commits = [];
+
+function walk(fiber, visit) {
+  for (; fiber; fiber = fiber.sibling) {
+    visit(fiber);
+    walk(fiber.child, visit);
+  }
+}
+
+let nextRendererId = 1;
+window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+  renderers: new Map(),
+  supportsFiber: true,
+  inject(renderer) {
+    const id = nextRendererId++;
+    this.renderers.set(id, renderer);
+    return id;
+  },
+  onCommitFiberRoot(id, root) {
+    const entries = [];
+    walk(root.current.child, (fiber) => {
+      if (!isComposite(fiber) || !fiber.alternate || !(fiber.flags & PERFORMED_WORK)) return;
+      entries.push({ id: idOf(fiber), name: nameOf(fiber.type), reasons: reasonsFor(fiber) });
+    });
+    commits.push(entries);
+  },
+  onCommitFiberUnmount() {},
+  onPostCommitFiberRoot() {},
+  checkDCE() {},
+};
+
+window.__reactdxDx = {
+  lastReasons(name) {
+    for (let i = commits.length - 1; i >= 0; i--) {
+      const entry = commits[i].find((e) => e.name === name);
+      if (entry) return entry.reasons;
+    }
+    return null;
+  },
+};

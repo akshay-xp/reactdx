@@ -11,3 +11,4 @@ harness/vite-fixture/dist-*/
 injection-timing/static/hook.js
 injection-timing/registered/hook.js
 injected-script/extension/hook.js
+dx-questions/extension/hook.js
