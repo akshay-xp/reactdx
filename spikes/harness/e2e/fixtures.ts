@@ -10,10 +10,13 @@ export const test = base.extend<{
 }>({
   extensionPath: ['harness/extension', { option: true }],
   context: async ({ extensionPath }, use) => {
-    const extension = path.resolve(spikesRoot, extensionPath);
+    const extensions = extensionPath
+      .split(',')
+      .map((extension) => path.resolve(spikesRoot, extension))
+      .join(',');
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
-      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
+      args: [`--disable-extensions-except=${extensions}`, `--load-extension=${extensions}`],
     });
     await use(context);
     await context.close();

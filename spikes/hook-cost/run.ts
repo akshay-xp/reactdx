@@ -1,13 +1,10 @@
 import { chromium, type Page } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { bundleHook } from '../global-setup.ts';
+import { bundle } from '../global-setup.ts';
+import { ensureRdt, rdtDir } from './rdt.ts';
 import { median, p95 } from './stats.ts';
 
 const spikesRoot = path.resolve(import.meta.dirname, '..');
-const rdtDir = path.join(spikesRoot, 'hook-cost/rdt');
-const RDT_ID = 'fmkadmapgofadopljbjfkapdkoienihi';
 const WARMUP = 10;
 const ITERATIONS = 50;
 const ports = { '18.3.1': 5118, '19.3.1': 5119 };
@@ -52,21 +49,6 @@ const cases: Case[] = [
       }),
   },
 ];
-
-async function ensureRdt() {
-  if (existsSync(path.join(rdtDir, 'manifest.json'))) return;
-  const url = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=156.0&acceptformat=crx2,crx3&x=id%3D${RDT_ID}%26uc`;
-  const crx = Buffer.from(await (await fetch(url)).arrayBuffer());
-  mkdirSync(rdtDir, { recursive: true });
-  const crxPath = path.join(rdtDir, 'rdt.crx');
-  writeFileSync(crxPath, crx);
-  try {
-    execFileSync('unzip', ['-q', '-o', crxPath, '-d', rdtDir], { stdio: 'ignore' });
-  } catch (error: any) {
-    // unzip exits 1 on the CRX header bytes it skips; the archive is still extracted.
-    if (error.status !== 1) throw error;
-  }
-}
 
 async function ensureServers() {
   for (const port of Object.values(ports)) {
@@ -120,7 +102,7 @@ async function measure(benchCase: Case, port: number) {
 
 await ensureServers();
 await ensureRdt();
-await bundleHook('hook-cost');
+await bundle('hook-cost/src/hook.js', 'hook-cost/extension/hook.js');
 
 const row = (cells: string[]) => cells.map((cell, i) => (i < 3 ? cell.padEnd([7, 22, 5][i]) : cell.padStart(10))).join(' ');
 console.log(row(['React', 'Case', 'Mode', 'median ms', 'p95 ms']));
