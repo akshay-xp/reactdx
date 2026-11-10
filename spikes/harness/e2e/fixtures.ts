@@ -1,10 +1,16 @@
 import { test as base, chromium, type BrowserContext } from '@playwright/test';
 import path from 'node:path';
 
-const extension = path.resolve(import.meta.dirname, '../extension');
+const spikesRoot = path.resolve(import.meta.dirname, '../..');
 
-export const test = base.extend<{ context: BrowserContext; consoleMessages: string[] }>({
-  context: async ({}, use) => {
+export const test = base.extend<{
+  extensionPath: string;
+  context: BrowserContext;
+  consoleMessages: string[];
+}>({
+  extensionPath: ['harness/extension', { option: true }],
+  context: async ({ extensionPath }, use) => {
+    const extension = path.resolve(spikesRoot, extensionPath);
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
       args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
