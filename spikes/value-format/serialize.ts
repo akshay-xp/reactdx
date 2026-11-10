@@ -30,6 +30,12 @@ const elementName = (type: any) => (typeof type === 'string' ? type : (type?.dis
 
 // Values that are better summarized than walked. They carry no id because there's nothing to expand.
 function leaf(value: any) {
+  if (typeof Node !== 'undefined' && value instanceof Node) {
+    return value instanceof Element
+      // getAttribute, because an SVG element's className is an SVGAnimatedString, not a string.
+      ? { type: 'element', tag: value.tagName.toLowerCase(), id: value.id, className: value.getAttribute('class') ?? '' }
+      : { type: 'node', nodeName: value.nodeName };
+  }
   if (REACT_ELEMENT.has(value.$$typeof)) return { type: 'react-element', name: elementName(value.type), key: value.key };
   if (value instanceof Date) return { type: 'date', iso: value.toISOString() };
   if (value instanceof RegExp) return { type: 'regexp', source: value.source, flags: value.flags };

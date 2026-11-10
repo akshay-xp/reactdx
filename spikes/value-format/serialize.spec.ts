@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { build } from 'esbuild';
 import { createInspector } from './serialize.ts';
 
 const roundTrips = (value: unknown) => expect(JSON.parse(JSON.stringify(value))).toEqual(value);
@@ -124,3 +125,33 @@ for (const react of ['react-18', 'react-19']) {
     expect(serialize(createElement('div'))).toEqual({ type: 'react-element', name: 'div', key: null });
   });
 }
+
+test('DOM nodes are described, not walked', async ({ page }) => {
+  const { outputFiles } = await build({
+    entryPoints: [path.resolve(import.meta.dirname, 'serialize.ts')],
+    bundle: true,
+    format: 'iife',
+    globalName: 'reactdxValue',
+    write: false,
+  });
+  await page.setContent('<button id="b" class="x y">Go</button><svg id="s" class="icon"></svg>');
+  await page.addScriptTag({ content: outputFiles[0].text });
+  const result = await page.evaluate(() => {
+    const { serialize } = (window as any).reactdxValue.createInspector();
+    const button = document.getElementById('b');
+    const start = performance.now();
+    const withRef = serialize({ ref: { current: button } });
+    return {
+      button: serialize(button),
+      document: serialize(document),
+      svg: serialize(document.getElementById('s')),
+      elapsed: performance.now() - start,
+      size: JSON.stringify(withRef).length,
+    };
+  });
+  expect(result.button).toEqual({ type: 'element', tag: 'button', id: 'b', className: 'x y' });
+  expect(result.document).toEqual({ type: 'node', nodeName: '#document' });
+  expect(result.svg).toEqual({ type: 'element', tag: 'svg', id: 's', className: 'icon' });
+  expect(result.elapsed).toBeLessThan(5);
+  expect(result.size).toBeLessThan(1000);
+});
