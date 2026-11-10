@@ -96,3 +96,26 @@ Shared setup for every experiment, in `spikes/harness/`.
   - The runner checks each hook's identity before measuring: React Refresh only, bare, `_isBippyHook`, or RDT (`getFiberRoots`, with `rendererInterfaces` populated for the DevTools-open case). RDT registers its hook from its service worker, so the first load on a fresh profile can miss it; the runner reloads up to 5 times.
 - **Versions tested:** React 18.3.1 / 19.3.1 (development builds), Vite 8.3.7, Playwright Chromium 158.0.8127.18, RDT 8.0.0 (Chrome Web Store), bippy 0.7.3, macOS 26.5, Apple M5 (10 cores).
 - **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm dev:19`, then run `pnpm bench:hook-cost`. The first run downloads RDT into `hook-cost/rdt/` (gitignored). Windows open during the run.
+
+## Sharing the hook with RDT (#4)
+
+### Firefox check
+- **Result:** both orders work. RDT's backend attaches with fiber roots, and ReactDX receives commits on all three fixtures.
+- **Evidence:** the raw status lines, logged on `load` + 1 s:
+  ```
+  ours first, port 5118: order=first rdtAttached=true rdtRoots=1 commits=1
+  ours first, port 5119: order=first rdtAttached=true rdtRoots=1 commits=1
+  ours first, port 5120: order=first rdtAttached=true rdtRoots=2 commits=11
+  RDT first, port 5118:  order=late  rdtAttached=true rdtRoots=1 commits=1
+  RDT first, port 5119:  order=late  rdtAttached=true rdtRoots=1 commits=1
+  RDT first, port 5120:  order=late  rdtAttached=true rdtRoots=2 commits=10
+  ```
+  `commits >= 1` on the Vite ports means we attached before React's first commit. Next.js has 2 roots (app + dev overlay) and more commits.
+- **Firefox timing differs from Chrome:** RDT's hook script runs after a `setTimeout(0)` scheduled from our `document_start` script, so a single-tick delay still left ours first. The test-only "RDT first" variant (`coexist/src/late.js`) therefore polls until RDT's hook is on `window` (every 10 ms, up to about 2 s) before installing.
+- **Versions tested:** Firefox 159.0.1 (headless), RDT 8.0.0 for Firefox (MV3, `@react-devtools`, from AMO), macOS 26.5.
+- **Steps to reproduce (from `spikes/`):**
+  1. Download `https://addons.mozilla.org/firefox/downloads/latest/react-devtools/latest.xpi` to `coexist/rdt-firefox/rdt.xpi` (gitignored).
+  2. Make a profile folder with `extensions/@react-devtools.xpi` (a copy of that file) and a `user.js` with `user_pref("extensions.autoDisableScopes", 0);` and `user_pref("extensions.enabledScopes", 15);`.
+  3. Bundle the hooks (`pnpm exec playwright test coexist` runs the global setup) and start the three dev servers.
+  4. Run `pnpm exec web-ext run --source-dir coexist/extension --firefox /Applications/Firefox.app/Contents/MacOS/firefox --firefox-profile <profile> --start-url http://localhost:<port> --verbose --no-reload --arg=--headless --pref devtools.console.stdout.content=true`, then the same with `coexist/extension-late`.
+  5. Read the `[reactdx:coexist] status` line.

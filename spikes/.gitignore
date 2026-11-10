@@ -4,3 +4,6 @@ playwright-report/
 bippy/extension/hook.js
 hook-cost/extension/hook.js
 hook-cost/rdt/
+coexist/extension/hook.js
+coexist/extension-late/hook.js
+coexist/rdt-firefox/

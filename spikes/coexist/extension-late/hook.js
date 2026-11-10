@@ -458,7 +458,12 @@
   }
 
   // coexist/src/late.js
-  setTimeout(install, 0);
+  var tries = 0;
+  var waitForRdt = () => {
+    if (Object.hasOwn(window, "__REACT_DEVTOOLS_GLOBAL_HOOK__") || ++tries > 200) install();
+    else setTimeout(waitForRdt, 10);
+  };
+  waitForRdt();
 })();
 /*! Bundled license information:
 
