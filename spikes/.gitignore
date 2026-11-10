@@ -10,3 +10,4 @@ coexist/rdt-firefox/
 harness/vite-fixture/dist-*/
 injection-timing/static/hook.js
 injection-timing/registered/hook.js
+injected-script/extension/hook.js
