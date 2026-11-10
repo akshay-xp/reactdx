@@ -1,3 +1,5 @@
+import { createInspector } from '../../value-format/serialize.ts';
+
 const PERFORMED_WORK = 1;
 
 const nameOf = (type) => {
@@ -13,7 +15,7 @@ const isComposite = ({ type }) => typeof type === 'function' || !!(type && typeo
 const ids = new WeakMap();
 let nextId = 1;
 const idOf = (fiber) => {
-  let id = ids.get(fiber) ?? (fiber.alternate && ids.get(fiber.alternate));
+  let id = ids.get(fiber) ?? (fiber.alternate ? ids.get(fiber.alternate) : undefined);
   if (id === undefined) id = nextId++;
   ids.set(fiber, id);
   if (fiber.alternate) ids.set(fiber.alternate, id);
@@ -92,6 +94,15 @@ function reasonsFor(fiber) {
 }
 
 const commits = [];
+const inspector = createInspector();
+
+// State of the useState/useReducer hooks, in hook order, as JSON-safe descriptors.
+function stateSnapshot(fiber) {
+  if (typeof fiber.type !== 'function' || fiber.type.prototype?.isReactComponent) return [];
+  const state = [];
+  for (let hook = fiber.memoizedState; hook; hook = hook.next) if (hook.queue) state.push(inspector.serialize(hook.memoizedState));
+  return state;
+}
 const remounts = [];
 let unmounted = [];
 
@@ -146,7 +157,7 @@ if (createTask) {
 
 // React 19's task carries no fiber, so name the component whose state changed in the next commit.
 function nameUpdates(entries) {
-  const changed = entries.find((entry) => entry.reasons.state);
+  const changed = entries.find((entry) => entry.reasons?.state);
   for (const update of updates) if (update.component === null && changed) update.component = changed.name;
 }
 
@@ -185,13 +196,14 @@ window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
     const entries = [];
     walk(root.current.child, (fiber) => {
       if (!isComposite(fiber)) return;
+      const entry = () => ({ id: idOf(fiber), name: nameOf(fiber.type), state: stateSnapshot(fiber) });
       if (!fiber.alternate && !ids.has(fiber)) {
-        idOf(fiber);
+        entries.push({ ...entry(), mount: true });
         recordRemount(fiber);
         return;
       }
       if (!fiber.alternate || !(fiber.flags & PERFORMED_WORK)) return;
-      entries.push({ id: idOf(fiber), name: nameOf(fiber.type), reasons: reasonsFor(fiber), effects: effectChanges(fiber) });
+      entries.push({ ...entry(), reasons: reasonsFor(fiber), effects: effectChanges(fiber) });
     });
     commits.push(entries);
     nameUpdates(entries);
@@ -216,6 +228,10 @@ window.__reactdxDx = {
   lastReasons: (name) => latest(name)?.reasons ?? null,
   lastEffects: (name) => latest(name)?.effects ?? null,
   remounts: () => remounts,
+  history(name) {
+    const id = latest(name)?.id;
+    return commits.flat().filter((entry) => entry.id === id);
+  },
   updates: () => updates,
   suspended: () =>
     findAll((fiber) => fiber.tag === SUSPENSE && fiber.memoizedState !== null).map((fiber) => ({

@@ -94,3 +94,21 @@ for (const port of [5118, 5119]) {
     expect(await dx(page, 'serverOwners', 'Counter')).toEqual([]);
   });
 }
+
+for (const port of [5118, 5119]) {
+  test(`keeps per-component history on port ${port}`, async ({ page }) => {
+    await page.goto(`http://localhost:${port}/`);
+    const counter = page.getByTestId('counter');
+    for (const n of [1, 2, 3]) {
+      await counter.click();
+      await expect(counter).toHaveText(`Count: ${n}`);
+    }
+    const entries = await dx(page, 'history', 'Counter');
+    expect(entries).toHaveLength(4);
+    expect(new Set(entries.map((entry: any) => entry.id)).size).toBe(1);
+    expect(entries[0].mount).toBe(true);
+    expect(entries.slice(1).map((entry: any) => entry.reasons.state)).toEqual([[0], [0], [0]]);
+    expect(entries.slice(1).map((entry: any) => entry.state[0])).toEqual([1, 2, 3]);
+    expect(JSON.parse(JSON.stringify(entries))).toEqual(entries);
+  });
+}
