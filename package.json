@@ -13,7 +13,8 @@
     "fixture:18": "pnpm -C fixtures/vite exec vite --mode 18 --port 5218 --strictPort",
     "fixture:19": "pnpm -C fixtures/vite exec vite --mode 19 --port 5219 --strictPort",
     "fixture:next": "NEXT_TELEMETRY_DISABLED=1 pnpm -C fixtures/next exec next dev --port 5220",
-    "fixture:multi": "node fixtures/multi/serve.ts"
+    "fixture:multi": "node fixtures/multi/serve.ts",
+    "test:e2e": "node e2e/run.ts"
   },
   "devDependencies": {
     "puppeteer": "25.17.0"
