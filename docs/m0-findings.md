@@ -150,3 +150,60 @@ Shared setup for every experiment, in `spikes/harness/`.
   3. Bundle the hooks (`pnpm exec playwright test coexist` runs the global setup) and start the three dev servers.
   4. Run `pnpm exec web-ext run --source-dir coexist/extension --firefox /Applications/Firefox.app/Contents/MacOS/firefox --firefox-profile <profile> --start-url http://localhost:<port> --verbose --no-reload --arg=--headless --pref devtools.console.stdout.content=true`, then the same with `coexist/extension-late`.
   5. Read the `[reactdx:coexist] status` line.
+
+## Injection timing (#5)
+
+### Firefox check
+- **Result:**
+  - **Normal load and hard reload:** before React, on both the preview (5128) and the dev server (5118), for both the static and the registered variant.
+  - **bfcache restore:** works on the preview; the dev server is never bfcached in Firefox.
+- **Evidence:** raw output from `web-ext run` on `/?sequence`. The page goes through a normal load, then `location.reload(true)` (Firefox's force reload), then `/other.html?back`, which calls `history.back()`, then a click on the restored page. Each `status` line is printed 500 ms after a `pageshow`.
+  - static, preview 5128:
+    ```
+    [reactdx:timing] step=normal-load
+    [reactdx:timing] status loadId=tied3m1dsm injected=1 commits=1 persisted=false
+    [reactdx:timing] step=hard-reload
+    [reactdx:timing] status loadId=hb0eqc6c3c injected=1 commits=1 persisted=false
+    [reactdx:timing] status loadId=aastscfq8h injected=0 commits=0 persisted=false
+    [reactdx:timing] step=bfcache-restore
+    [reactdx:timing] status loadId=hb0eqc6c3c injected=1 commits=2 persisted=true
+    ```
+  - static, dev server 5118:
+    ```
+    [reactdx:timing] step=normal-load
+    [reactdx:timing] status loadId=qdsfie6u83r injected=1 commits=1 persisted=false
+    [reactdx:timing] step=hard-reload
+    [reactdx:timing] status loadId=jbjxwucdi7 injected=1 commits=1 persisted=false
+    [reactdx:timing] step=back
+    [reactdx:timing] step=back-without-bfcache
+    [reactdx:timing] status loadId=a5x8wukx2dk injected=1 commits=1 persisted=false
+    ```
+  - registered, preview 5128:
+    ```
+    [reactdx:timing] step=normal-load
+    [reactdx:timing] status loadId=avfxoh0l0e injected=1 commits=1 persisted=false
+    [reactdx:timing] step=hard-reload
+    [reactdx:timing] status loadId=rldiosb5zog injected=1 commits=1 persisted=false
+    [reactdx:timing] status loadId=rlwfsy5g0n injected=0 commits=0 persisted=false
+    [reactdx:timing] step=bfcache-restore
+    [reactdx:timing] status loadId=rldiosb5zog injected=1 commits=2 persisted=true
+    ```
+  - registered, dev server 5118:
+    ```
+    [reactdx:timing] step=normal-load
+    [reactdx:timing] status loadId=nat0oxqgdip injected=1 commits=1 persisted=false
+    [reactdx:timing] step=hard-reload
+    [reactdx:timing] status loadId=ylnpwddsios injected=1 commits=1 persisted=false
+    [reactdx:timing] step=back
+    [reactdx:timing] step=back-without-bfcache
+    [reactdx:timing] status loadId=6nwm9yplmy6 injected=1 commits=1 persisted=false
+    ```
+- **Reading it:**
+  - The `injected=0 commits=0` line is `other.html`, which has no React.
+  - On the preview, the bfcache restore brings back the **same `loadId`** as the page before leaving, and the click adds a commit (`commits=2`).
+  - On the dev server, going back is a full reload (`persisted=false`, new `loadId`). Firefox won't bfcache a page with Vite's HMR WebSocket open; Chrome does (see the verdict above).
+- **Limits:**
+  - The registered variant's first load counted as before React here. But web-ext only opens the start URL once the temporary add-on has finished installing, so this isn't the "navigate immediately after install" race that `pnpm timing:race` measures in Chromium.
+  - The first load after a Firefox restart wasn't tested, because web-ext removes temporary add-ons on exit.
+- **Versions tested:** Firefox 159.0.1 (headless), macOS 26.5, React 18.3.1 (dev build in preview, dev server).
+- **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm preview:18`, then run `pnpm exec web-ext run --source-dir injection-timing/<static|registered> --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url "http://localhost:<5128|5118>/?sequence" --verbose --no-reload --arg=--headless --pref devtools.console.stdout.content=true`. The global setup (or `copyTimingHook()`) must have copied `hook.js` into both variant folders first.

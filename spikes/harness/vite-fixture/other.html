@@ -2,5 +2,8 @@
 <html>
   <body>
     <p>Somewhere else</p>
+    <script>
+      if (location.search.includes('back')) setTimeout(() => history.back(), 500);
+    </script>
   </body>
 </html>
