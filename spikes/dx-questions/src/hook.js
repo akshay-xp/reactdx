@@ -150,6 +150,18 @@ function nameUpdates(entries) {
   for (const update of updates) if (update.component === null && changed) update.component = changed.name;
 }
 
+// Suspended boundaries keep their thenables only in a WeakSet (stateNode). React attaches a
+// listener named "bound resolveRetryWakeable" to each at commit, which is where we see them.
+const waitingOn = new Set();
+const then = Promise.prototype.then;
+Promise.prototype.then = function (onFulfilled, onRejected) {
+  if (onFulfilled?.name === 'bound resolveRetryWakeable') waitingOn.add(this);
+  return then.call(this, onFulfilled, onRejected);
+};
+let lastThrower = null;
+
+const SUSPENSE = 13;
+
 let nextRendererId = 1;
 window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
   renderers: new Map(),
@@ -160,6 +172,9 @@ window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
     renderer.injectProfilingHooks?.({
       markStateUpdateScheduled(fiber) {
         updates.push({ component: nameOf(fiber.type), stack: new Error().stack });
+      },
+      markComponentSuspended(fiber) {
+        lastThrower = nameOf(fiber.type);
       },
     });
     this.renderers.set(id, renderer);
@@ -202,5 +217,12 @@ window.__reactdxDx = {
   lastEffects: (name) => latest(name)?.effects ?? null,
   remounts: () => remounts,
   updates: () => updates,
+  suspended: () =>
+    findAll((fiber) => fiber.tag === SUSPENSE && fiber.memoizedState !== null).map((fiber) => ({
+      boundaryOwner: nameOf(fiber._debugOwner?.type),
+      waitingOn: waitingOn.size,
+      isDxPromise: waitingOn.has(window.__dxPromise),
+      thrower: lastThrower,
+    })),
   consumersOf: (name) => findAll((fiber) => isComposite(fiber) && readsContext(fiber, name)).map((fiber) => nameOf(fiber.type)),
 };

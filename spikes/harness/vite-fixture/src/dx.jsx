@@ -1,4 +1,4 @@
-import { Component, createContext, useContext, useEffect, useState } from 'react';
+import { Component, createContext, Suspense, useContext, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 const WhyContext = createContext(0);
@@ -103,6 +103,23 @@ function Consumers() {
   );
 }
 
+function Suspender({ suspend }) {
+  if (suspend) throw (window.__dxPromise ??= new Promise(() => {}));
+  return <p>loaded</p>;
+}
+
+function SuspenseHost() {
+  const [suspend, setSuspend] = useState(false);
+  return (
+    <>
+      <Suspense fallback={<p data-testid="suspense-fallback" />}>
+        <Suspender suspend={suspend} />
+      </Suspense>
+      <button data-testid="suspend" onClick={() => setSuspend(true)} />
+    </>
+  );
+}
+
 function Dx() {
   return (
     <>
@@ -111,6 +128,7 @@ function Dx() {
       <RemountHost />
       <OriginParent />
       <Consumers />
+      <SuspenseHost />
     </>
   );
 }

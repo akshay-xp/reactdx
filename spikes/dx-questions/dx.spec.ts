@@ -62,5 +62,15 @@ for (const port of [5118, 5119]) {
     test('lists context consumers', async ({ page }) => {
       expect((await dx(page, 'consumersOf', 'ConsumerContext')).sort()).toEqual(['ReaderA', 'ReaderB']);
     });
+
+    test('finds a suspended boundary and what it waits on', async ({ page }) => {
+      expect(await dx(page, 'suspended')).toEqual([]);
+      await page.getByTestId('suspend').click();
+      await page.getByTestId('suspense-fallback').waitFor({ state: 'attached' });
+      const [boundary] = await dx(page, 'suspended');
+      console.log(`port ${port}: suspended boundary ${JSON.stringify(boundary)}`);
+      expect(boundary).toMatchObject({ boundaryOwner: 'SuspenseHost', isDxPromise: true });
+      if (port === 5118) expect(boundary.thrower).toBe('Suspender');
+    });
   });
 }
