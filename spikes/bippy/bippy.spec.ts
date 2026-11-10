@@ -20,3 +20,13 @@ for (const port of [5118, 5119, 5120]) {
     await expect.poll(() => consoleMessages).toContain('[reactdx:bippy] rendered Counter');
   });
 }
+
+for (const port of [5118, 5119, 5120]) {
+  test(`bippy renderer access edits hook state on port ${port}`, async ({ page }) => {
+    await page.goto(`http://localhost:${port}`);
+    const counter = page.getByTestId('counter');
+    await expect(counter).toHaveText('Count: 0');
+    await page.evaluate(() => (window as any).__reactdxBippyEdit(5));
+    await expect(counter).toHaveText('Count: 5');
+  });
+}
