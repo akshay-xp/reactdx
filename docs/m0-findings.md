@@ -370,3 +370,34 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Not tested:** Firefox formats `Error.stack` as `name@url:line:col`, so `callSite` needs a second parser there. Page-side experiments run in Chrome only. Production builds are out of scope (no `_debugStack`/`_debugSource`).
 - **Versions tested:** Playwright Chromium 158.0.8127.18 (headless), React 18.3.1 / 19.3.1 on Vite 8.3.7 with `@vitejs/plugin-react` 6.3.0, Next 16.4.6 (Turbopack dev) on React 19.3.1, `source-map-js` 1.2.2, macOS 26.5.
 - **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test debug-stack`. It starts the dev servers, collects fibers with `page.evaluate` from the root container's `__reactContainer$` key (no extension), resolves frames in Node, and logs each share plus the 10k counts. The shapes pages are `http://localhost:5119/debug-stack.html` (add `?many=<n>` for the limit) and `http://localhost:5120/debug-stack`.
+
+## DX questions from fiber data (#9)
+- **Question:** which candidate DX questions can a page-side hook answer reliably from fiber data, on React 18.3 and 19.x?
+- **Verdict:** go. All 8 candidates are feasible or partial on React 19, and 7 of 8 on React 18; the server/client boundary doesn't apply to 18, which has no Server Components. M6 and M7 can be scoped as planned, with the React 19 gaps below.
+- **Evidence:** `spikes/dx-questions/src/hook.js` (raw fiber code, no bippy) records each commit. `dx.spec.ts` asserts every answer on purpose-built scenarios in `harness/vite-fixture/src/dx.jsx` (5118, 5119) and `harness/next-fixture/app/dx/` (5120).
+
+  | Question | React 18.3 | React 19.x | Fiber fields relied on |
+  |---|---|---|---|
+  | Why it rendered (props, incl. same-value new reference; state; context; parent) | feasible | feasible | `alternate`, `flags & 1` (PerformedWork), `memoizedProps`; hook list `memoizedState` → `.next`, `.queue`, `.memoizedState`; `dependencies.firstContext` → `.next`, `.context`, `.memoizedValue` |
+  | Effect dependency changes | feasible | feasible | `updateQueue.lastEffect` (circular, `.next`), `.tag & 1` (HasEffect), `.deps`, on fiber and `alternate` |
+  | Remounts and cause (key vs ancestor type) | feasible | feasible | `onCommitFiberUnmount(fiber)`, `alternate === null` on an unseen fiber, `type`, `key`, `return` |
+  | setState origin (owning component + call stack) | feasible | partial | 18: `injectProfilingHooks({ markStateUpdateScheduled(fiber) })` from `inject`'s internals. 19: wrapped `console.createTask`, plus the next commit's state diff for the component |
+  | Context consumers | feasible | feasible | `dependencies.firstContext` → `.context` (also covers class `contextType`) |
+  | What Suspense is waiting on | feasible | partial | `tag === 13` with `memoizedState !== null`, `_debugOwner`; thenables from a wrapped `Promise.prototype.then` (listener named `bound resolveRetryWakeable`); 18 also: profiling hook `markComponentSuspended(fiber)` |
+  | Server/client boundary | not applicable (no RSC) | feasible (Next) | `_debugInfo` entries with `name` and `env` on the fiber and its `return` chain |
+  | Per-component history | feasible | feasible | stable id across `fiber`/`alternate`, plus all of the above per commit; state snapshots through the #7 serializer |
+
+- **Why the partials:**
+  - **setState origin on 19:** React 19 dropped `injectProfilingHooks` from dev builds. The only hook into a setState call is `console.createTask("setState()")`, which `startUpdateTimerByLane` runs only for the first blocking-lane update of a batch (`react-dom-client.development.js:6020`). Two setState calls in one handler: 2 recorded on 18, 1 on 19. The task carries no fiber, so the component is taken from the next commit's state diff. Not tested: transitions, and Firefox, which has no `console.createTask` (React would pick up a defined one at module load, also untested).
+  - **Suspense on 19:** the boundary and the exact promise are found, but not the component that suspended. React nulls the boundary's `updateQueue` (its thenables) during mutation, before `onCommitFiberRoot`, and keeps them only in a `WeakSet` retry cache (`stateNode`). So the thenables come from the retry listener React attaches. Which component threw is only reported by 18's `markComponentSuspended`.
+- **Fragile dependencies** (internal APIs, re-check on every React minor):
+  - React 18's profiling hooks and the `enableSchedulingProfiler` dev flag.
+  - React 19's `console.createTask` call sites and task names (`setState()`, `dispatch()`, `forceUpdate()`).
+  - The bound-function name `resolveRetryWakeable`. It's unminified only in dev builds, and only native promises are seen; custom thenables aren't caught.
+  - The `updateQueue` effect-list shape and the `HasEffect` tag bit.
+  - **Cost:** wrapping `Promise.prototype.then` and `console.createTask` touches every page. Per the permissions decision, the `document_start` script must stay inert, so the wraps must not go in at page start for every site. Note that the `createTask` wrap only works if it's in place before React's module loads, so on 19 setState origin conflicts with that rule. M6 has to decide (for example: install only once React has been seen on that origin before, or accept the gap).
+- **Bugs caught on the way:** remount matching first compared `null === null` parent ids, because `idOf` returned `null` for fresh mounts. The history test caught it.
+- **Not tested:** class component state reasons (`memoizedState` as a whole), `useReducer`, `useSyncExternalStore`, transitions, StrictMode double renders, and any of this in Firefox (page-side experiments run in Chrome only).
+- **Where it goes (no issues created):** M6 gets why it rendered, effect dependency changes, remounts, setState origin, per-component history, and context consumers (as part of the context render reason). M7 gets what Suspense is waiting on and the server/client boundary.
+- **Versions tested:** Playwright Chromium 158.0.8127.18 (headless), React 18.3.1 / 19.3.1 on Vite 8.3.7, Next 16.4.6 (Turbopack dev) on React 19.3.1, macOS 26.5.
+- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test dx-questions`. Global setup bundles `dx-questions/src/hook.js` into the extension. The logs show the setState counts per version, the suspended boundary on each version, and the Next owner chain.
