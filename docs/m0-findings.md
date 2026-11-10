@@ -186,6 +186,7 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **What this means for M2 (permissions):**
   - Localhost uses a **static** `content_scripts` entry: reliable everywhere.
   - Per-site opt-in through `registerContentScripts` is fine right after the user enables a site, since the page is reloaded anyway. But **after a browser restart, the first page on that site misses the hook more than half the time in Chromium.** M2 needs to detect "React present but our hook missing" and offer "reload to connect", or else put opted-in sites in static `content_scripts` with Chrome's site-access controls.
+  - **Decided (2026-11-10):** a static `content_scripts` entry on all sites, the same install warning as RDT. A reload prompt is DX friction we won't ship, and all-site access leaves room for production-build support. See `docs/overview.md`.
 - **Test gotchas:**
   - Playwright launches Chromium with `--disable-back-forward-cache`; the `bfcache` fixture option removes it.
   - `page.goBack()` hangs on a bfcache restore unless it's given `waitUntil: 'commit'`, because no `load` event fires.
