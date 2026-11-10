@@ -32,3 +32,4 @@ All are development builds.
 - `fixtures/fixtures.test.ts`: smoke test. `fixtures/start.ts`: the `startFixture(script, port)` helper, shared with e2e.
 - `docs/e2e.md`: the e2e suite that runs the extension on these fixtures.
 - `docs/extension.md`: the extension that e2e loads into these pages.
+- `docs/unit-tests.md`: Vitest unit tests on React 18 and 19.

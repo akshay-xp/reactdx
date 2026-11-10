@@ -35,3 +35,4 @@ Both browsers run **headed** (DevTools, and so the devtools page, doesn't exist 
 ## Related
 - `docs/extension.md`: the build under test.
 - `docs/fixtures.md`: ports and test ids.
+- `docs/unit-tests.md`: Vitest unit tests on React 18 and 19.
