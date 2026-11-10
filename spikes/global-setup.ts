@@ -1,11 +1,14 @@
 import { build } from 'esbuild';
 
-export default async function globalSetup() {
-  await build({
-    entryPoints: ['bippy/src/hook.js'],
+export const bundleHook = (spike: string) =>
+  build({
+    entryPoints: [`${spike}/src/hook.js`],
     bundle: true,
     format: 'iife',
-    outfile: 'bippy/extension/hook.js',
+    outfile: `${spike}/extension/hook.js`,
     logLevel: 'warning',
   });
+
+export default async function globalSetup() {
+  await Promise.all(['bippy', 'hook-cost'].map(bundleHook));
 }

@@ -15,13 +15,16 @@ createRoot(document.getElementById('root')).render(
   Array.from({ length: CELLS }, (_, index) => <Cell key={index} index={index} />),
 );
 
+let tick = 0;
+
 window.__bench = (mode, iterations) => {
   const durations = [];
-  for (let i = 1; i <= iterations; i++) {
+  for (let i = 0; i < iterations; i++) {
+    const value = ++tick;
     const start = performance.now();
     flushSync(() => {
-      if (mode === 'all') setters.forEach((set) => set(i));
-      else setters[0](i);
+      if (mode === 'all') setters.forEach((set) => set(value));
+      else setters[0](value);
     });
     durations.push(performance.now() - start);
   }

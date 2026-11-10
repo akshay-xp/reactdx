@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { test as extensionTest } from '../harness/e2e/fixtures';
 
 for (const port of [5118, 5119]) {
   test(`bench page renders 10k cells on port ${port}`, async ({ page }) => {
@@ -31,3 +32,18 @@ for (const port of [5118, 5119]) {
     expect(new Set(values.slice(1))).toEqual(new Set(['0']));
   });
 }
+
+extensionTest.describe('with the hook-cost extension', () => {
+  extensionTest.use({ extensionPath: 'hook-cost/extension' });
+
+  for (const port of [5118, 5119]) {
+    extensionTest(`hook counts rendered components on port ${port}`, async ({ page }) => {
+      await page.goto(`http://localhost:${port}/bench.html`);
+      await expect(page.getByTestId('cell')).toHaveCount(10000);
+      await page.evaluate(() => (window as any).__bench('one', 1));
+      expect(await page.evaluate(() => (window as any).__reactdxRendered)).toBe(1);
+      await page.evaluate(() => (window as any).__bench('all', 1));
+      expect(await page.evaluate(() => (window as any).__reactdxRendered)).toBe(10000);
+    });
+  }
+});

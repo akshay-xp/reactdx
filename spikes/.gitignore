@@ -2,3 +2,4 @@
 test-results/
 playwright-report/
 bippy/extension/hook.js
+hook-cost/extension/hook.js
