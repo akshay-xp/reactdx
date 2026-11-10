@@ -6,13 +6,16 @@ export type BrowserName = 'chrome' | 'firefox';
 const PANEL_CREATED = '[reactdx] panel created';
 const output = path.resolve(import.meta.dirname, '../apps/extension/.output');
 
-export async function launchWithExtension(name: BrowserName): Promise<{
+// DevTools pages only exist in a headed browser, so both launch headed with DevTools open.
+export function launchWithExtension(name: BrowserName): Promise<{
   browser: Browser;
   panelCreated(): Promise<boolean>;
   panelUrl: string | null;
 }> {
-  if (name === 'firefox') throw new Error('not implemented');
-  // DevTools pages only exist in a headed browser.
+  return name === 'chrome' ? launchChrome() : launchFirefox();
+}
+
+async function launchChrome() {
   const browser = await puppeteer.launch({
     headless: false,
     devtools: true,
@@ -31,6 +34,25 @@ export async function launchWithExtension(name: BrowserName): Promise<{
       return poll(() => logs.includes(PANEL_CREATED), 2_000);
     },
     panelUrl: new URL('/panel.html', devtools.url()).href,
+  };
+}
+
+async function launchFirefox() {
+  const browser = await puppeteer.launch({
+    browser: 'firefox',
+    headless: false,
+    args: ['-devtools'],
+    // The devtools page's console is only reachable as Firefox's stdout.
+    extraPrefsFirefox: { 'devtools.console.stdout.chrome': true, 'devtools.console.stdout.content': true },
+  });
+  let stdout = '';
+  browser.process()!.stdout!.on('data', (chunk) => (stdout += chunk));
+  await browser.installExtension(path.join(output, 'firefox-mv3'));
+  return {
+    browser,
+    panelCreated: () => poll(() => stdout.includes(PANEL_CREATED), 10_000),
+    // BiDi refuses to navigate to moz-extension:// URLs.
+    panelUrl: null,
   };
 }
 
