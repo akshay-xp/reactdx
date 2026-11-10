@@ -25,3 +25,27 @@ test('primitives JSON cannot carry become descriptors', () => {
     roundTrips(result);
   }
 });
+
+class User {
+  name = 'ada';
+}
+
+test('functions, symbols, and objects are described', () => {
+  const { serialize } = createInspector();
+  expect(serialize(function onClick() {})).toEqual({ type: 'function', name: 'onClick' });
+  expect(serialize(Symbol('x'))).toEqual({ type: 'symbol', description: 'x' });
+  expect(serialize({ a: 1 })).toEqual({ type: 'object', className: 'Object', id: expect.any(Number), size: 1, props: { a: 1 } });
+  expect(serialize(new User())).toMatchObject({ type: 'object', className: 'User', props: { name: 'ada' } });
+  expect(serialize(Object.create(null))).toMatchObject({ type: 'object', className: null, size: 0 });
+  roundTrips(serialize({ a: 1, f() {} }));
+});
+
+test('getters are reported, never invoked', () => {
+  const { serialize } = createInspector();
+  const value = {
+    get boom() {
+      throw new Error('getter ran');
+    },
+  };
+  expect(serialize(value)).toMatchObject({ props: { boom: { type: 'getter' } } });
+});
