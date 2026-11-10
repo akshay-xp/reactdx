@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
-    "dev:18": "pnpm -C harness/vite-fixture exec vite --mode 18 --port 5118 --strictPort"
+    "dev:18": "pnpm -C harness/vite-fixture exec vite --mode 18 --port 5118 --strictPort",
+    "dev:19": "pnpm -C harness/vite-fixture exec vite --mode 19 --port 5119 --strictPort"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",

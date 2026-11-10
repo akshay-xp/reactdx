@@ -1,2 +1,7 @@
 packages:
   - harness/*
+
+peerDependencyRules:
+  # Vite aliases rewrite react-dom's own `react` import to the matching version per mode.
+  allowedVersions:
+    react-dom>react: '18 || 19'
