@@ -29,4 +29,5 @@ export const expected: Record<'vite', Expected[]> = {
 // Misses that are real limits, each with the reason. Recorded in docs/m0-findings.md.
 export const KNOWN_MISSES: Record<string, Record<string, string>> = {
   vite19: {},
+  vite18: { NoJsx: "_debugSource comes from the JSX transform's __source, so createElement calls have none" },
 };

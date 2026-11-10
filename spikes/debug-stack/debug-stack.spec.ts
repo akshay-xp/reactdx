@@ -1,12 +1,9 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { collectComponents } from './collect.ts';
-import { callSite, resolveFrame } from './resolve.ts';
+import { callSite, fromSource, resolveFrame, type Location } from './resolve.ts';
 import { expected, KNOWN_MISSES } from './expected.ts';
 
 const VITE_ROOT = 'harness/vite-fixture';
-
-// React 18's _debugSource comes from the JSX transform, so createElement calls have none.
-const NO_SOURCE_18 = ['NoJsx'];
 
 const SHAPES = ['Root', 'Plain', 'Arrow', 'Memoized', 'Forwarded', 'Klass', 'NoJsx', 'Item', 'Wrapped', 'LazyThing', 'Other', 'Nested'];
 
@@ -19,7 +16,7 @@ for (const [port, field, other] of [[5119, 'stack', 'source'], [5118, 'source', 
       const found = components.filter((component) => component.name === name);
       expect(found.length, name).toBeGreaterThan(0);
       for (const component of found) {
-        if (port === 5118 && NO_SOURCE_18.includes(name)) expect(component.source, name).toBeNull();
+        if (port === 5118 && name in KNOWN_MISSES.vite18) expect(component.source, name).toBeNull();
         else expect(component[field], name).not.toBeNull();
         expect(component[other], name).toBeNull();
       }
@@ -41,17 +38,36 @@ test('callSite is null when no frame follows the factory', () => {
   expect(callSite('Error: react-stack-top-frame\n    at exports.jsxDEV (http://x/a.js:1:1)')).toBeNull();
 });
 
-test('rendered-at share on Vite with React 19', async ({ page }) => {
+async function renderedAtShare(
+  page: Page,
+  port: number,
+  misses: Record<string, string>,
+  locate: (component: any) => Promise<Location | null>,
+) {
   let hits = 0;
   for (const entry of expected.vite) {
-    await page.goto(`http://localhost:5119${entry.page}`);
+    await page.goto(`http://localhost:${port}${entry.page}`);
     await page.getByTestId(entry.page === '/' ? 'counter' : 'ready').waitFor({ state: 'attached' });
     const component = (await page.evaluate(collectComponents)).find((c) => c.name === entry.name)!;
-    const frame = callSite(component.stack);
-    const location = frame && (await resolveFrame(frame, VITE_ROOT));
+    const location = await locate(component);
     const actual = location && `${location.file}:${location.line}`;
     if (actual === entry.rendered) hits++;
-    if (!(entry.name in KNOWN_MISSES.vite19)) expect.soft(actual, entry.name).toBe(entry.rendered);
+    if (!(entry.name in misses)) expect.soft(actual, entry.name).toBe(entry.rendered);
   }
-  console.log(`vite 19 rendered-at: ${hits}/${expected.vite.length}`);
+  return `${hits}/${expected.vite.length}`;
+}
+
+test('rendered-at share on Vite with React 19', async ({ page }) => {
+  const share = await renderedAtShare(page, 5119, KNOWN_MISSES.vite19, async (component) => {
+    const frame = callSite(component.stack);
+    return frame && resolveFrame(frame, VITE_ROOT);
+  });
+  console.log(`vite 19 rendered-at: ${share}`);
+});
+
+test('rendered-at share on Vite with React 18', async ({ page }) => {
+  const share = await renderedAtShare(page, 5118, KNOWN_MISSES.vite18, async (component) =>
+    component.source && fromSource(component.source, VITE_ROOT),
+  );
+  console.log(`vite 18 rendered-at: ${share}`);
 });

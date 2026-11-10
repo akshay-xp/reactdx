@@ -31,3 +31,7 @@ export async function resolveFrame(frame: Frame, fixtureRoot: string): Promise<L
   const file = source.protocol === 'file:' ? decodeURIComponent(source.pathname) : source.pathname;
   return { file: relativeTo(fixtureRoot, file), line: position.line, column: position.column + 1 };
 }
+
+export function fromSource(source: { fileName: string; lineNumber: number; columnNumber: number }, fixtureRoot: string): Location {
+  return { file: relativeTo(fixtureRoot, source.fileName), line: source.lineNumber, column: source.columnNumber };
+}
