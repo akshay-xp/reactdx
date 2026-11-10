@@ -5,7 +5,8 @@
   "scripts": {
     "test": "playwright test",
     "dev:18": "pnpm -C harness/vite-fixture exec vite --mode 18 --port 5118 --strictPort",
-    "dev:19": "pnpm -C harness/vite-fixture exec vite --mode 19 --port 5119 --strictPort"
+    "dev:19": "pnpm -C harness/vite-fixture exec vite --mode 19 --port 5119 --strictPort",
+    "dev:next": "NEXT_TELEMETRY_DISABLED=1 pnpm -C harness/next-fixture exec next dev --port 5120"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",
