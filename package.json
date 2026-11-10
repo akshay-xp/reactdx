@@ -3,9 +3,17 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.33.0",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "pnpm --filter @reactdx/extension build",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "test:fixtures": "node --test fixtures/fixtures.test.ts",
+    "fixture:18": "pnpm -C fixtures/vite exec vite --mode 18 --port 5218 --strictPort",
+    "fixture:19": "pnpm -C fixtures/vite exec vite --mode 19 --port 5219 --strictPort"
+  },
+  "devDependencies": {
+    "puppeteer": "25.17.0"
   }
 }
