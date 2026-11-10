@@ -40,7 +40,10 @@ Shared setup for every experiment, in `spikes/harness/`.
 
 ## bippy (#2)
 - **Question:** should ReactDX build on bippy, fork parts of it, or replace it?
-- **Verdict:** use, pinned to an exact version (`bippy@0.7.3`). Revisit after #3 (per-commit cost) and #4 (RDT coexistence). If either fails, fork the hook-install and traversal parts; MIT allows that under our GPL v3.
+- **Verdict (final, after #3 and #4):** fork parts. Don't depend on the `bippy` package. Vendor the fiber helpers we use (`traverseRenderedFibers`, `isCompositeFiber`, `getDisplayName`, renderer access) from bippy's source into ReactDX, with MIT attribution. Write our own hook install (see #4).
+  - **Why:** #3 passed, since the tree walk is cheap. #4 failed for bippy's hook install: with both installed, it stops RDT from attaching. And bippy's main entry installs that hook as a side effect of being imported (`index.ts` does `import "./install-hook-only"`). The helpers live in `dist/core.js`, which has no unconditional install but only exports minified names (`x`, `m`, `i` in 0.7.3). So depending on the package means either the RDT conflict or imports that break on every release.
+  - **Worth trying upstream:** a side-effect-free entry point in bippy (for example `bippy/core` with named exports). If that lands, depending on bippy becomes an option again.
+- **Original verdict (#2):** use, pinned to `bippy@0.7.3`, and revisit after #3 and #4.
 - **Evidence:**
   - **Maintenance:** last push 2026-11-04, with commits every month in 2026 (7 to 33 a month). aidenybai wrote 610 of about 627 commits, so it has one maintainer. It's pre-1.0 (0.7.x), so breaking changes are possible. 1.4k stars, 38 open issues.
   - **Hook install:** `instrument({ onActive, onCommitFiberRoot })` connects before React on React 18.3, React 19.3, and Next.js, in Chromium and Firefox. The "Download the React DevTools" message never appears.
@@ -98,6 +101,34 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm dev:19`, then run `pnpm bench:hook-cost`. The first run downloads RDT into `hook-cost/rdt/` (gitignored). Windows open during the run.
 
 ## Sharing the hook with RDT (#4)
+- **Question:** can ReactDX's hook and RDT's hook both receive commits, whichever installs first, in Chrome and Firefox?
+- **Verdict:** go, with our own installer. bippy's install breaks RDT.
+- **Root cause of the conflict:** RDT 8.0.0's `installHook.js` checks `window.hasOwnProperty('__REACT_DEVTOOLS_GLOBAL_HOOK__')` twice: once as an outer guard and once inside its installer. If either is `true`, it doesn't install, and it then calls `.on('renderer', ...)` on whatever hook is there. bippy defines its hook as `window`'s own property and overrides `hasOwnProperty` to answer `false` once, which only gets past the first check. RDT's backend never attaches (`rendererInterfaces` is `undefined`), while bippy keeps working.
+- **Approach (`spikes/coexist/src/install.js`):**
+  - **If a hook is already `window`'s own property** (RDT got there first): wrap its `onCommitFiberRoot` in place (`attachTo`).
+  - **Otherwise:** put our hook on `Window.prototype` as a configurable getter. React reads the global through the prototype chain and finds ours. RDT's `hasOwnProperty` checks don't see it, so RDT installs normally on `window` and shadows ours. A wrapper around `Object.defineProperty` notices when that happens and calls `attachTo` on RDT's hook, before React connects.
+  - Either way, React connects to exactly one hook, and our listener runs after the original `onCommitFiberRoot`.
+- **Evidence:**
+
+  | Order | Chromium 158 (Playwright) | Firefox 159.0.1 (web-ext) |
+  |---|---|---|
+  | RDT alone (control) | RDT attaches | not run (covered by the rows below) |
+  | bippy + RDT | **RDT broken**, bippy works | not run |
+  | Ours alone | works, installed before React | not run (only the simpler #1 harness hook was tested alone) |
+  | Ours first + RDT | both work | both work |
+  | RDT first + ours | both work, `renderersAtInstall === 0` | both work |
+
+  - **Chromium:** 0 failures in 220 runs of the coexist tests (`--repeat-each 20 --workers 6`) on React 18.3, 19.3, and Next.js.
+  - **"RDT works" means** `hook.rendererInterfaces.size > 0` and `getFiberRoots(id).size > 0`. **"Ours works" means** our `rendered Counter` count goes up after a click.
+- **Side findings:**
+  - **RDT's own startup race:** RDT registers its hook script from its service worker, so a page load can miss it. Under parallel load, this failed 3 of 30 times even with RDT alone. A reliable signal that RDT's script ran is its `react-devtools-hook-installer` handshake message, which it posts even when it later bails. The tests reload until that message appears.
+  - **Chrome's order:** our static `document_start` content script always runs before RDT's runtime-registered one, whatever the `--load-extension` order. So "ours first" is the real-world order in Chrome, and "RDT first" needs a test-only delay (`coexist/src/late.js`).
+- **Risks to handle in M2:**
+  - The `Object.defineProperty` wrapper is visible to the page and stays in place forever. It should restore itself once React has connected, or after the first hook attaches.
+  - A hook defined by plain assignment (not `defineProperty`) on `window` won't be noticed. RDT 8 uses `defineProperty`, so this only matters for other tools.
+  - If RDT installs after React has connected, for example when it's enabled with the page already open, nothing reaches RDT until a reload. That's RDT's normal behavior anyway.
+- **Versions tested:** RDT 8.0.0 (Chrome Web Store and AMO), bippy 0.7.3, React 18.3.1 / 19.3.1, Next.js 16.4.6, Playwright Chromium 158.0.8127.18, Firefox 159.0.1, macOS 26.5.
+- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test coexist`. The global setup downloads RDT and bundles `coexist/src/first.js` and `coexist/src/late.js`. Firefox: see below.
 
 ### Firefox check
 - **Result:** both orders work. RDT's backend attaches with fiber roots, and ReactDX receives commits on all three fixtures.
