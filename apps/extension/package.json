@@ -1,0 +1,16 @@
+{
+  "name": "@reactdx/extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wxt build && wxt build -b firefox --mv3",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@reactdx/page": "workspace:*"
+  },
+  "devDependencies": {
+    "wxt": "0.21.5"
+  }
+}
