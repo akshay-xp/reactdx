@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { createRequire } from 'node:module';
+import path from 'node:path';
 import { createInspector } from './serialize.ts';
 
 const roundTrips = (value: unknown) => expect(JSON.parse(JSON.stringify(value))).toEqual(value);
@@ -100,3 +102,25 @@ test('large arrays, maps, and sets are sent one page at a time', () => {
   expect(set).toMatchObject({ type: 'set', size: 10000, nextOffset: 100 });
   expect(set.values).toHaveLength(100);
 });
+
+test('built-ins get short descriptors', () => {
+  const { serialize } = createInspector();
+  expect(serialize(new Date(0))).toEqual({ type: 'date', iso: '1970-01-01T00:00:00.000Z' });
+  expect(serialize(/a/g)).toEqual({ type: 'regexp', source: 'a', flags: 'g' });
+  expect(serialize(new TypeError('x'))).toEqual({ type: 'error', name: 'TypeError', message: 'x' });
+  expect(serialize(Promise.resolve())).toEqual({ type: 'promise' });
+});
+
+const fixtureRequire = createRequire(path.resolve(import.meta.dirname, '../harness/vite-fixture/package.json'));
+
+for (const react of ['react-18', 'react-19']) {
+  test(`${react} elements get a react-element descriptor`, () => {
+    const { createElement } = fixtureRequire(react);
+    const { serialize } = createInspector();
+    function Counter() {
+      return null;
+    }
+    expect(serialize(createElement(Counter, { key: 'k' }))).toEqual({ type: 'react-element', name: 'Counter', key: 'k' });
+    expect(serialize(createElement('div'))).toEqual({ type: 'react-element', name: 'div', key: null });
+  });
+}

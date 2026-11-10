@@ -24,6 +24,20 @@ function pageOf<T>(iterable: Iterable<T>, offset: number) {
   return { items };
 }
 
+const REACT_ELEMENT = new Set([Symbol.for('react.element'), Symbol.for('react.transitional.element')]);
+
+const elementName = (type: any) => (typeof type === 'string' ? type : (type?.displayName ?? type?.name ?? 'Anonymous'));
+
+// Values that are better summarized than walked. They carry no id because there's nothing to expand.
+function leaf(value: any) {
+  if (REACT_ELEMENT.has(value.$$typeof)) return { type: 'react-element', name: elementName(value.type), key: value.key };
+  if (value instanceof Date) return { type: 'date', iso: value.toISOString() };
+  if (value instanceof RegExp) return { type: 'regexp', source: value.source, flags: value.flags };
+  if (value instanceof Error) return { type: 'error', name: value.name, message: value.message };
+  if (value instanceof Promise) return { type: 'promise' };
+  return null;
+}
+
 function preview(value: object) {
   if (Array.isArray(value)) return { type: 'array', length: value.length };
   if (value instanceof Map) return { type: 'map', size: value.size };
@@ -70,6 +84,8 @@ export function createInspector() {
   }
 
   function serializeObject(value: object, depth: number, offset: number) {
+    const summary = leaf(value);
+    if (summary) return summary;
     if (path.has(value)) return { type: 'ref', id: idOf(value), circular: true };
     if (depth >= MAX_DEPTH) return { type: 'ref', id: idOf(value), preview: preview(value) };
     path.add(value);
