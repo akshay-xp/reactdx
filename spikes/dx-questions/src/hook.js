@@ -120,6 +120,18 @@ function walk(fiber, visit) {
 }
 
 const updates = [];
+const roots = new Set();
+
+function findAll(match) {
+  const found = [];
+  for (const root of roots) walk(root.current.child, (fiber) => match(fiber) && found.push(fiber));
+  return found;
+}
+
+const readsContext = (fiber, name) => {
+  for (let dep = fiber.dependencies?.firstContext; dep; dep = dep.next) if (dep.context.displayName === name) return true;
+  return false;
+};
 
 // React 19 dev builds call console.createTask("setState()") inside the first blocking update of a batch.
 // React reads console.createTask when its module loads, so wrapping it here (document_start) is in time.
@@ -154,6 +166,7 @@ window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
     return id;
   },
   onCommitFiberRoot(id, root) {
+    roots.add(root);
     const entries = [];
     walk(root.current.child, (fiber) => {
       if (!isComposite(fiber)) return;
@@ -189,4 +202,5 @@ window.__reactdxDx = {
   lastEffects: (name) => latest(name)?.effects ?? null,
   remounts: () => remounts,
   updates: () => updates,
+  consumersOf: (name) => findAll((fiber) => isComposite(fiber) && readsContext(fiber, name)).map((fiber) => nameOf(fiber.type)),
 };

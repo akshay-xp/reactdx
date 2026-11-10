@@ -58,5 +58,9 @@ for (const port of [5118, 5119]) {
       expect(added[0].stack).toContain('handleBump');
       expect(added[0].stack).toContain('/src/dx.jsx');
     });
+
+    test('lists context consumers', async ({ page }) => {
+      expect((await dx(page, 'consumersOf', 'ConsumerContext')).sort()).toEqual(['ReaderA', 'ReaderB']);
+    });
   });
 }

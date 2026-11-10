@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { Component, createContext, useContext, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 const WhyContext = createContext(0);
@@ -75,6 +75,34 @@ function OriginParent() {
   return <OriginChild onBump={() => setCount((c) => c + 1)} count={count} />;
 }
 
+const ConsumerContext = createContext('x');
+ConsumerContext.displayName = 'ConsumerContext';
+
+function ReaderA() {
+  return <p>{useContext(ConsumerContext)}</p>;
+}
+
+class ReaderB extends Component {
+  static contextType = ConsumerContext;
+  render() {
+    return <p>{this.context}</p>;
+  }
+}
+
+function NotReader() {
+  return <p>not a reader</p>;
+}
+
+function Consumers() {
+  return (
+    <ConsumerContext.Provider value="y">
+      <ReaderA />
+      <ReaderB />
+      <NotReader />
+    </ConsumerContext.Provider>
+  );
+}
+
 function Dx() {
   return (
     <>
@@ -82,6 +110,7 @@ function Dx() {
       <EffectDeps />
       <RemountHost />
       <OriginParent />
+      <Consumers />
     </>
   );
 }
