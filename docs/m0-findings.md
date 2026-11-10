@@ -336,3 +336,37 @@ Shared setup for every experiment, in `spikes/harness/`.
   - **Memory:** the id-to-object `Map` holds strong references to everything ever described. It needs a `release()` when the panel moves to another component or commit.
   - **Dropped details:** symbol-keyed properties and extra (non-index) properties on arrays are dropped. Sparse array holes show as `undefined`.
 - **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test serialize`. The DOM test bundles `serialize.ts` in memory with esbuild and runs it in Chromium.
+
+## _debugStack source locations (#8)
+- **Question:** can each component's file and line be found reliably enough for "open in editor", on React 18 and 19, through source maps on Vite and Next.js?
+- **Verdict:** go on development builds, with three conditions:
+  - **Read both mechanisms.** React 18 has `fiber._debugSource`; React 19 has `fiber._debugStack` plus source maps.
+  - **Resolve server call sites through Next's dev server,** because the chunk they point at is on disk.
+  - **Treat "no location" as a normal state,** because React 19 drops call sites past 10k elements.
+- **Mechanisms:**
+  - **React 18:** `_debugSource` is `{ fileName, lineNumber, columnNumber }`, with an absolute path from the JSX dev transform's `__source`. It needs no source maps. Elements made with a plain `createElement` call have none.
+  - **React 19:** `_debugStack` is an `Error` captured by `jsxDEV`. Line 1 of `.stack` is the factory (`exports.jsxDEV`, `exports.jsx`/`jsxs`, or Next's `fakeJSXCallSite`). Line 2 is the call site in generated code, which then goes through the module's source map.
+  - **Both point at where the element was created** (in the parent), not at the component's definition. A component's own file comes from the elements it renders: any fiber whose `_debugOwner` is the component, host fibers included.
+  - **Where the maps live:**
+    - Vite inlines a `data:` map in every module. Its `sources` are relative (`App.jsx`), so they resolve to root-relative paths (`/src/App.jsx`), not absolute ones.
+    - Next client chunks have external `.map` files with absolute `file:///` sources. They're sectioned maps, which `source-map-js` handles.
+    - **Server Component call sites** (an element a Server Component creates, e.g. a client component it renders) are frames like `about://React/Server/file:///…/.next/dev/server/chunks/ssr/<chunk>.js?<n>:line:col`. That chunk and its `.map` are on disk, so a browser extension can't read them directly.
+- **Evidence:** hand-written expected locations, checked per component (`spikes/debug-stack/expected.ts`).
+
+  | Fixture | Rendered at (file:line) | Defined in (file) |
+  |---|---|---|
+  | Vite, React 19 | 14/14 | 14/14 |
+  | Vite, React 18 | 13/14 | 13/14 |
+  | Next 16, React 19 | 6/6 (including the Server Component call site) | 6/6 |
+
+  - **Shapes covered (Vite):** function, arrow, `memo`, `forwardRef`, class, `createElement` without JSX, `.map` list items, a HOC-wrapped component, `lazy` inside `Suspense`, a component from another file, a component nested in that file, and the root rendered from `main.jsx`.
+  - **Shapes covered (Next):** a client component created by a Server Component, plus function, `memo`, `forwardRef`, class, and list items in a client file.
+  - **Known misses:** only React 18's `NoJsx` (`createElement(NoJsx)`, whose only element is also `createElement`). The cause: `_debugSource` comes from the JSX transform's `__source`, so non-JSX calls carry none. React 19 resolves the same component.
+  - **The 10k limit (React 19):** `jsxDEV` captures a real stack for only 10,000 elements. After that it reuses one shared stack whose first frame is `UnknownOwner`. The counter resets only when a render starts more than 1 s after the last reset (`recentlyCreatedOwnerStacks`, `react-dom-client.development.js:18843`). Rendering 10,503 `Item`s at once: 9,972 kept their call site and 531 got the `UnknownOwner` stack. About 28 other elements on the page used up the rest of the 10,000. The `UnknownOwner` frame is how to detect it.
+- **Opening the file:**
+  - A `vscode://file/<absolute path>:line:col` link needs an absolute path. React 18 and Next maps give one; Vite maps give only a root-relative path, and the page doesn't know the project root.
+  - The dev servers can open files themselves. Vite's `/__open-in-editor?file=` middleware (`vite/dist/node/chunks/node.js`, also used by Vite's error overlay) takes root-relative paths. Next has `__nextjs_launch-editor`, `__nextjs_original-stack-frames`, and `__nextjs_source-map`, which could resolve server chunk frames without disk access.
+  - These were found by grepping the installed packages and weren't called. Calling them and their exact parameters is for M4 (Inspector), which builds "open in editor".
+- **Not tested:** Firefox formats `Error.stack` as `name@url:line:col`, so `callSite` needs a second parser there. Page-side experiments run in Chrome only. Production builds are out of scope (no `_debugStack`/`_debugSource`).
+- **Versions tested:** Playwright Chromium 158.0.8127.18 (headless), React 18.3.1 / 19.3.1 on Vite 8.3.7 with `@vitejs/plugin-react` 6.3.0, Next 16.4.6 (Turbopack dev) on React 19.3.1, `source-map-js` 1.2.2, macOS 26.5.
+- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test debug-stack`. It starts the dev servers, collects fibers with `page.evaluate` from the root container's `__reactContainer$` key (no extension), resolves frames in Node, and logs each share plus the 10k counts. The shapes pages are `http://localhost:5119/debug-stack.html` (add `?many=<n>` for the limit) and `http://localhost:5120/debug-stack`.
