@@ -248,3 +248,21 @@ Shared setup for every experiment, in `spikes/harness/`.
   - The first load after a Firefox restart wasn't tested, because web-ext removes temporary add-ons on exit.
 - **Versions tested:** Firefox 159.0.1 (headless), macOS 26.5, React 18.3.1 (dev build in preview, dev server).
 - **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm preview:18`, then run `pnpm exec web-ext run --source-dir injection-timing/<static|registered> --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url "http://localhost:<5128|5118>/?sequence" --verbose --no-reload --arg=--headless --pref devtools.console.stdout.content=true`. The global setup (or `copyTimingHook()`) must have copied `hook.js` into both variant folders first.
+
+## inspectedWindow.reload injectedScript (#6)
+
+### Firefox check
+- **Result:** works the same as Chromium. With no host permissions, the injected reload installs the hook before React. Every full navigation arrives without the hook and costs one extra load to reconnect.
+- **Evidence:** start URL `http://localhost:5118/?go=5119`. The fixture redirects to 5119 two seconds after load, which gives a full navigation. Real extension, page console via `devtools.console.stdout.content`:
+  ```
+  console.info: "%cDownload the React DevTools ... (5118, first load: no hook)
+  console.log: "[reactdx:timing] status loadId=cc8hu1fpijf injected=1 commits=1 persisted=false   (5118 after injected reload)
+  console.info: "%cDownload the React DevTools ... (5119 after full navigation: no hook)
+  console.log: "[reactdx:timing] status loadId=oi8osoiynyq injected=1 commits=1 persisted=false   (5119 after injected reload)
+  ```
+  An instrumented copy of the DevTools page (logging into the page through `inspectedWindow.eval`) confirmed the sequence: `connect hasHook=false`, then `reloading with injectedScript`, then `onNavigated`, then `skip own reload`.
+- **Setup gotchas:**
+  - web-ext's `--devtools` opens DevTools for the **add-on**, not the page, so the `devtools_page` never loads. Firefox's own `-devtools` flag (`--arg=-devtools`) opens the page's toolbox.
+  - DevTools doesn't open in headless Firefox (`TypeError: can't access property "setDebugTargetData", this.component is undefined`), so this check runs headed.
+- **Versions tested:** Firefox 159.0.1 (headed), React 18.3.1 / 19.3.1 dev servers, macOS 26.5.
+- **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm dev:19`; copy the hook in (the global setup or `copyTimingHook()`); then run `pnpm exec web-ext run --source-dir injected-script/extension --firefox /Applications/Firefox.app/Contents/MacOS/firefox --arg=-devtools --start-url "http://localhost:5118/?go=5119" --verbose --no-reload --pref devtools.console.stdout.content=true`.
