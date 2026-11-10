@@ -288,3 +288,51 @@ Shared setup for every experiment, in `spikes/harness/`.
   - DevTools doesn't open in headless Firefox (`TypeError: can't access property "setDebugTargetData", this.component is undefined`), so this check runs headed.
 - **Versions tested:** Firefox 159.0.1 (headed), React 18.3.1 / 19.3.1 dev servers, macOS 26.5.
 - **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm dev:19`; copy the hook in (the global setup or `copyTimingHook()`); then run `pnpm exec web-ext run --source-dir injected-script/extension --firefox /Applications/Firefox.app/Contents/MacOS/firefox --arg=-devtools --start-url "http://localhost:5118/?go=5119" --verbose --no-reload --pref devtools.console.stdout.content=true`.
+
+## Value format for the panel (#7)
+- **Question:** what format should props, state, and hook values travel to the panel in, so that large, cyclic, or exotic values stay fast and lossless and are loaded only when the user expands them?
+- **Verdict:** go. Carry `spikes/value-format/serialize.ts` into M4 as the starting point, with the gaps below fixed.
+- **Constraints:**
+  - **JSON-safe output.** Extension messaging is JSON, which turns `NaN`, `Infinity`, and `-0` into `null` and drops `undefined` and `bigint`. Every descriptor survives `JSON.parse(JSON.stringify(x))` unchanged (tested).
+  - **No app code runs while inspecting.** Properties are read through `Object.getOwnPropertyDescriptors`, and accessors are reported as `getter`, never called (tested with a throwing getter).
+- **Protocol:**
+  - `createInspector()` returns `{ serialize(value), expand(id, offset = 0) }`.
+  - It keeps every object it has described in a `WeakMap` (object to id) and a `Map` (id to object). The same object always gets the same id.
+  - Anything deeper than the depth limit comes back as `ref`, and `expand(id)` serializes it as a new root. A collection with more than one page has `nextOffset`, and `expand(id, nextOffset)` returns the next page.
+- **Descriptors:**
+
+  | Value | Descriptor |
+  |---|---|
+  | JSON-safe primitive (finite number except `-0`, string ≤ 1,000 chars, boolean, `null`) | the value itself |
+  | `undefined` | `{ type: 'undefined' }` |
+  | `NaN`, `±Infinity`, `-0` | `{ type: 'number', value: 'NaN' }` and so on |
+  | `bigint` | `{ type: 'bigint', value: '10' }` |
+  | long string | `{ type: 'string', preview: <first 1,000>, length }` |
+  | function | `{ type: 'function', name }` |
+  | symbol | `{ type: 'symbol', description }` |
+  | object / class instance | `{ type: 'object', className, id, size, props }` (`className: null` for a null prototype) |
+  | accessor property | `{ type: 'getter' }` |
+  | array | `{ type: 'array', id, length, items, nextOffset? }` |
+  | `Map` | `{ type: 'map', id, size, entries: [[key, value]], nextOffset? }` |
+  | `Set` | `{ type: 'set', id, size, values, nextOffset? }` |
+  | past the depth limit | `{ type: 'ref', id, preview: { type, className/size/length } }` |
+  | cycle | `{ type: 'ref', id: <ancestor id>, circular: true }` |
+  | React element (18 `react.element`, 19 `react.transitional.element`) | `{ type: 'react-element', name, key }` |
+  | `Date` / `RegExp` / `Error` / `Promise` | `{ type: 'date', iso }` / `{ type: 'regexp', source, flags }` / `{ type: 'error', name, message }` / `{ type: 'promise' }` |
+  | DOM `Element` / other `Node` | `{ type: 'element', tag, id, className }` / `{ type: 'node', nodeName }` |
+
+- **Limits:**
+  - **`MAX_DEPTH = 2`:** a component's props plus one level inside each prop arrive at once, which is what an inspector shows before the user clicks. Anything deeper is one `expand` away.
+  - **`PAGE = 100`:** collection entries per message. Pages are taken by iterating, so a 10k Map isn't copied to send 100 entries.
+  - **`MAX_STRING = 1000`:** characters of a string preview. The full length is always reported.
+- **Measurements (Node 24.14.1, Apple M5, median of 50):**
+  - first page of a 10k-object array: 9,139 B of JSON, 0.056 ms;
+  - first page of a 10k-entry Map: 9,627 B, 0.053 ms;
+  - an object nested 50 levels deep: 223 B, 0.002 ms;
+  - `{ ref: { current: <button> } }` in Chromium: under 1 KB, under 5 ms (asserted).
+- **Gaps to fix in M4:**
+  - **Typed arrays and other huge non-plain objects:** a `Uint8Array(1_000_000)` is read as an object with a million own properties, which is slow. It needs its own paged descriptor, and `ArrayBuffer`, `DataView`, `WeakMap`, and `WeakSet` need summaries.
+  - **Proxies can't be detected.** Reading `$$typeof` and own-property descriptors runs `get`, `ownKeys`, and `getOwnPropertyDescriptor` traps.
+  - **Memory:** the id-to-object `Map` holds strong references to everything ever described. It needs a `release()` when the panel moves to another component or commit.
+  - **Dropped details:** symbol-keyed properties and extra (non-index) properties on arrays are dropped. Sparse array holes show as `undefined`.
+- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test serialize`. The DOM test bundles `serialize.ts` in memory with esbuild and runs it in Chromium.
