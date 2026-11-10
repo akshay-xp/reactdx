@@ -10,7 +10,8 @@
     "ext:firefox": "web-ext run --source-dir harness/extension --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url http://localhost:5118",
     "bench:hook-cost": "node hook-cost/run.ts",
     "preview:18": "pnpm -C harness/vite-fixture exec sh -c \"NODE_ENV=development vite build --mode 18 --outDir dist-18 --logLevel warn && vite preview --mode 18 --outDir dist-18 --port 5128 --strictPort\"",
-    "preview:19": "pnpm -C harness/vite-fixture exec sh -c \"NODE_ENV=development vite build --mode 19 --outDir dist-19 --logLevel warn && vite preview --mode 19 --outDir dist-19 --port 5129 --strictPort\""
+    "preview:19": "pnpm -C harness/vite-fixture exec sh -c \"NODE_ENV=development vite build --mode 19 --outDir dist-19 --logLevel warn && vite preview --mode 19 --outDir dist-19 --port 5129 --strictPort\"",
+    "timing:race": "node injection-timing/race.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",

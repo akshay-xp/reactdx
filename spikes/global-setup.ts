@@ -13,7 +13,7 @@ const hooks = {
 };
 
 // Extensions can't load files from outside their own folder, so each variant gets a copy.
-const copyTimingHook = () => {
+export const copyTimingHook = () => {
   for (const variant of ['static', 'registered']) {
     if (existsSync(`injection-timing/${variant}`)) {
       copyFileSync('injection-timing/hook.js', `injection-timing/${variant}/hook.js`);
