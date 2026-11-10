@@ -26,8 +26,11 @@ export const expected: Record<'vite', Expected[]> = {
   ],
 };
 
+const NO_JSX_SOURCE = "_debugSource comes from the JSX transform's __source, so createElement calls have none";
+
 // Misses that are real limits, each with the reason. Recorded in docs/m0-findings.md.
 export const KNOWN_MISSES: Record<string, Record<string, string>> = {
   vite19: {},
-  vite18: { NoJsx: "_debugSource comes from the JSX transform's __source, so createElement calls have none" },
+  vite18: { NoJsx: NO_JSX_SOURCE },
+  vite18Defined: { NoJsx: NO_JSX_SOURCE },
 };

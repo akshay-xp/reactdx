@@ -12,7 +12,8 @@ export function collectComponents() {
   const results: { name: string | null; stack: string | null; source: unknown; ownerName: string | null }[] = [];
   const walk = (fiber: any) => {
     for (; fiber; fiber = fiber.sibling) {
-      if (isComponent(fiber.type)) {
+      // Host elements count too: they're most of what a component renders.
+      if (typeof fiber.type === 'string' || isComponent(fiber.type)) {
         results.push({
           name: nameOf(fiber.type),
           stack: fiber._debugStack?.stack ?? null,

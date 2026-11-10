@@ -35,3 +35,13 @@ export async function resolveFrame(frame: Frame, fixtureRoot: string): Promise<L
 export function fromSource(source: { fileName: string; lineNumber: number; columnNumber: number }, fixtureRoot: string): Location {
   return { file: relativeTo(fixtureRoot, source.fileName), line: source.lineNumber, column: source.columnNumber };
 }
+
+// A component's own file is where the elements it renders were created.
+export async function definedIn(name: string, components: any[], fixtureRoot: string): Promise<Location | null> {
+  for (const owned of components.filter((component) => component.ownerName === name)) {
+    const frame = owned.stack && callSite(owned.stack);
+    const location = frame ? await resolveFrame(frame, fixtureRoot) : owned.source && fromSource(owned.source, fixtureRoot);
+    if (location) return location;
+  }
+  return null;
+}

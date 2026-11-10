@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { collectComponents } from './collect.ts';
-import { callSite, fromSource, resolveFrame, type Location } from './resolve.ts';
-import { expected, KNOWN_MISSES } from './expected.ts';
+import { callSite, definedIn, fromSource, resolveFrame, type Location } from './resolve.ts';
+import { expected, KNOWN_MISSES, type Expected } from './expected.ts';
 
 const VITE_ROOT = 'harness/vite-fixture';
 
@@ -38,6 +38,12 @@ test('callSite is null when no frame follows the factory', () => {
   expect(callSite('Error: react-stack-top-frame\n    at exports.jsxDEV (http://x/a.js:1:1)')).toBeNull();
 });
 
+async function componentsOn(page: Page, port: number, entry: Expected) {
+  await page.goto(`http://localhost:${port}${entry.page}`);
+  await page.getByTestId(entry.page === '/' ? 'counter' : 'ready').waitFor({ state: 'attached' });
+  return page.evaluate(collectComponents);
+}
+
 async function renderedAtShare(
   page: Page,
   port: number,
@@ -46,9 +52,7 @@ async function renderedAtShare(
 ) {
   let hits = 0;
   for (const entry of expected.vite) {
-    await page.goto(`http://localhost:${port}${entry.page}`);
-    await page.getByTestId(entry.page === '/' ? 'counter' : 'ready').waitFor({ state: 'attached' });
-    const component = (await page.evaluate(collectComponents)).find((c) => c.name === entry.name)!;
+    const component = (await componentsOn(page, port, entry)).find((c) => c.name === entry.name)!;
     const location = await locate(component);
     const actual = location && `${location.file}:${location.line}`;
     if (actual === entry.rendered) hits++;
@@ -71,3 +75,18 @@ test('rendered-at share on Vite with React 18', async ({ page }) => {
   );
   console.log(`vite 18 rendered-at: ${share}`);
 });
+
+for (const [port, version] of [[5119, 'vite19'], [5118, 'vite18']] as const) {
+  test(`defined-in share on Vite on port ${port}`, async ({ page }) => {
+    let hits = 0;
+    const misses = KNOWN_MISSES[`${version}Defined`] ?? {};
+    for (const entry of expected.vite) {
+      const components = await componentsOn(page, port, entry);
+      if (entry === expected.vite[0]) expect(await definedIn('Missing', components, VITE_ROOT)).toBeNull();
+      const actual = (await definedIn(entry.name, components, VITE_ROOT))?.file ?? null;
+      if (actual === entry.defined) hits++;
+      if (!(entry.name in misses)) expect.soft(actual, entry.name).toBe(entry.defined);
+    }
+    console.log(`${version} defined-in: ${hits}/${expected.vite.length}`);
+  });
+}
