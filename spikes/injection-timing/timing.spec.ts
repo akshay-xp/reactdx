@@ -35,4 +35,15 @@ extensionTest.describe('static content script', () => {
       await expectBeforeReact(page);
     });
   }
+
+  for (const port of [5118, 5128]) {
+    extensionTest(`installs before React after a hard reload on port ${port}`, async ({ context, page }) => {
+      await page.goto(`http://localhost:${port}`);
+      const before = await expectBeforeReact(page);
+      const cdp = await context.newCDPSession(page);
+      await Promise.all([page.waitForEvent('load'), cdp.send('Page.reload', { ignoreCache: true })]);
+      const after = await expectBeforeReact(page);
+      expect(after.loadId).not.toBe(before.loadId);
+    });
+  }
 });
