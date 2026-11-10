@@ -47,5 +47,16 @@ for (const port of [5118, 5119]) {
       await page.getByTestId('remount-wrapper').click();
       expect((await dx(page, 'remounts')).at(-1)).toEqual({ name: 'RemountChild', cause: 'ancestor-type' });
     });
+
+    test('records where a setState came from', async ({ page }) => {
+      const before = (await dx(page, 'updates')).length;
+      await page.getByTestId('origin-bump').click();
+      await expect.poll(async () => (await dx(page, 'updates')).length).toBeGreaterThan(before);
+      const added = (await dx(page, 'updates')).slice(before);
+      console.log(`port ${port}: ${added.length} update(s) recorded for 2 setState calls`);
+      expect(added[0].component).toBe('OriginParent');
+      expect(added[0].stack).toContain('handleBump');
+      expect(added[0].stack).toContain('/src/dx.jsx');
+    });
   });
 }

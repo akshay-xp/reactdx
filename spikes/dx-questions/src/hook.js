@@ -119,12 +119,37 @@ function walk(fiber, visit) {
   }
 }
 
+const updates = [];
+
+// React 19 dev builds call console.createTask("setState()") inside the first blocking update of a batch.
+// React reads console.createTask when its module loads, so wrapping it here (document_start) is in time.
+const UPDATE_TASKS = new Set(['setState()', 'dispatch()', 'forceUpdate()']);
+const createTask = console.createTask;
+if (createTask) {
+  console.createTask = function (name) {
+    if (UPDATE_TASKS.has(name)) updates.push({ component: null, stack: new Error().stack });
+    return createTask.call(this, name);
+  };
+}
+
+// React 19's task carries no fiber, so name the component whose state changed in the next commit.
+function nameUpdates(entries) {
+  const changed = entries.find((entry) => entry.reasons.state);
+  for (const update of updates) if (update.component === null && changed) update.component = changed.name;
+}
+
 let nextRendererId = 1;
 window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
   renderers: new Map(),
   supportsFiber: true,
   inject(renderer) {
     const id = nextRendererId++;
+    // React 18 dev builds offer profiling hooks; markStateUpdateScheduled runs inside every setState.
+    renderer.injectProfilingHooks?.({
+      markStateUpdateScheduled(fiber) {
+        updates.push({ component: nameOf(fiber.type), stack: new Error().stack });
+      },
+    });
     this.renderers.set(id, renderer);
     return id;
   },
@@ -141,6 +166,7 @@ window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
       entries.push({ id: idOf(fiber), name: nameOf(fiber.type), reasons: reasonsFor(fiber), effects: effectChanges(fiber) });
     });
     commits.push(entries);
+    nameUpdates(entries);
     unmounted = [];
   },
   onCommitFiberUnmount(id, fiber) {
@@ -162,4 +188,5 @@ window.__reactdxDx = {
   lastReasons: (name) => latest(name)?.reasons ?? null,
   lastEffects: (name) => latest(name)?.effects ?? null,
   remounts: () => remounts,
+  updates: () => updates,
 };

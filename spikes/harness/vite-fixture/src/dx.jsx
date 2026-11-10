@@ -62,12 +62,26 @@ function RemountHost() {
   );
 }
 
+function OriginChild({ onBump }) {
+  function handleBump() {
+    onBump();
+    onBump();
+  }
+  return <button data-testid="origin-bump" onClick={handleBump} />;
+}
+
+function OriginParent() {
+  const [count, setCount] = useState(0);
+  return <OriginChild onBump={() => setCount((c) => c + 1)} count={count} />;
+}
+
 function Dx() {
   return (
     <>
       <WhyParent />
       <EffectDeps />
       <RemountHost />
+      <OriginParent />
     </>
   );
 }
