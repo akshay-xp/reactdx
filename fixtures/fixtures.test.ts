@@ -1,36 +1,9 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { globSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import puppeteer, { type Browser, type Page } from 'puppeteer';
-
-// Starts `pnpm <script>` and resolves once the port answers.
-function startFixture(script: string, port: number) {
-  const child = spawn('pnpm', [script], { detached: true, stdio: 'ignore' });
-  let exited = false;
-  const stop = () => {
-    if (!exited) process.kill(-child.pid!, 'SIGTERM');
-  };
-  return new Promise<() => void>((resolve, reject) => {
-    const deadline = Date.now() + 60_000;
-    child.once('exit', (code) => {
-      exited = true;
-      reject(new Error(`server for ${script} exited with code ${code}`));
-    });
-    const poll = async () => {
-      if (exited) return;
-      try {
-        await fetch(`http://localhost:${port}`);
-        resolve(stop);
-      } catch {
-        if (Date.now() > deadline) return stop(), reject(new Error(`server for ${script} never answered on ${port}`));
-        setTimeout(poll, 250);
-      }
-    };
-    poll();
-  });
-}
+import { startFixture } from './start.ts';
 
 let browser: Browser;
 before(async () => (browser = await puppeteer.launch()));
