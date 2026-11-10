@@ -22,4 +22,18 @@ test.describe('with DevTools open', () => {
       expect((await timing(page)).commits).toBeGreaterThan(0);
     });
   }
+
+  test('a full navigation loses the hook and costs one extra load to reconnect', async ({ page }) => {
+    await page.goto('http://localhost:5118');
+    await expect.poll(async () => (await timing(page).catch(() => undefined))?.injected, { timeout: 10000 }).toBe(1);
+
+    const loads: string[] = [];
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame() && frame.url().startsWith('http://localhost:5119')) loads.push(frame.url());
+    });
+    await page.goto('http://localhost:5119');
+    await expect.poll(async () => (await timing(page).catch(() => undefined))?.injected, { timeout: 10000 }).toBe(1);
+    await page.waitForTimeout(1000);
+    expect(loads).toHaveLength(2);
+  });
 });
