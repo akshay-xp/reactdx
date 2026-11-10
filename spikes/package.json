@@ -1,0 +1,12 @@
+{
+  "name": "reactdx-spikes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "web-ext": "10.8.0"
+  }
+}
