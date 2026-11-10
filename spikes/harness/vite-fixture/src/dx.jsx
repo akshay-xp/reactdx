@@ -43,11 +43,31 @@ function EffectDeps() {
   return <button data-testid="effect-a" onClick={() => setA((x) => x + 1)} />;
 }
 
+function RemountChild() {
+  return <span>child</span>;
+}
+
+function RemountHost() {
+  const [k, setK] = useState(0);
+  const [section, setSection] = useState(false);
+  const Wrapper = section ? 'section' : 'div';
+  return (
+    <>
+      <Wrapper>
+        <RemountChild key={k} />
+      </Wrapper>
+      <button data-testid="remount-key" onClick={() => setK((x) => x + 1)} />
+      <button data-testid="remount-wrapper" onClick={() => setSection((x) => !x)} />
+    </>
+  );
+}
+
 function Dx() {
   return (
     <>
       <WhyParent />
       <EffectDeps />
+      <RemountHost />
     </>
   );
 }

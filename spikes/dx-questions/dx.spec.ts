@@ -38,5 +38,14 @@ for (const port of [5118, 5119]) {
         { index: 1, fired: false, changed: [] },
       ]);
     });
+
+    test('detects remounts and their cause', async ({ page }) => {
+      await page.getByTestId('why-label').click();
+      expect(await dx(page, 'remounts')).toEqual([]);
+      await page.getByTestId('remount-key').click();
+      expect(await dx(page, 'remounts')).toEqual([{ name: 'RemountChild', cause: 'key', from: '0', to: '1' }]);
+      await page.getByTestId('remount-wrapper').click();
+      expect((await dx(page, 'remounts')).at(-1)).toEqual({ name: 'RemountChild', cause: 'ancestor-type' });
+    });
   });
 }

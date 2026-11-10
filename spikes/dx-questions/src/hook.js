@@ -92,6 +92,25 @@ function reasonsFor(fiber) {
 }
 
 const commits = [];
+const remounts = [];
+let unmounted = [];
+
+const parentId = (fiber) => {
+  for (let parent = fiber.return; parent; parent = parent.return) if (isComposite(parent)) return idOf(parent);
+  return null;
+};
+
+// A fiber with no alternate that we've never seen is a fresh mount (a bailed-out fiber keeps alternate null).
+function recordRemount(fiber) {
+  const parent = parentId(fiber);
+  const match = unmounted.find((u) => u.type === fiber.type && u.parentId === parent);
+  if (!match) return;
+  remounts.push(
+    match.key !== fiber.key
+      ? { name: nameOf(fiber.type), cause: 'key', from: match.key, to: fiber.key }
+      : { name: nameOf(fiber.type), cause: 'ancestor-type' },
+  );
+}
 
 function walk(fiber, visit) {
   for (; fiber; fiber = fiber.sibling) {
@@ -112,12 +131,21 @@ window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
   onCommitFiberRoot(id, root) {
     const entries = [];
     walk(root.current.child, (fiber) => {
-      if (!isComposite(fiber) || !fiber.alternate || !(fiber.flags & PERFORMED_WORK)) return;
+      if (!isComposite(fiber)) return;
+      if (!fiber.alternate && !ids.has(fiber)) {
+        idOf(fiber);
+        recordRemount(fiber);
+        return;
+      }
+      if (!fiber.alternate || !(fiber.flags & PERFORMED_WORK)) return;
       entries.push({ id: idOf(fiber), name: nameOf(fiber.type), reasons: reasonsFor(fiber), effects: effectChanges(fiber) });
     });
     commits.push(entries);
+    unmounted = [];
   },
-  onCommitFiberUnmount() {},
+  onCommitFiberUnmount(id, fiber) {
+    if (isComposite(fiber)) unmounted.push({ type: fiber.type, key: fiber.key, parentId: parentId(fiber) });
+  },
   onPostCommitFiberRoot() {},
   checkDCE() {},
 };
@@ -133,4 +161,5 @@ const latest = (name) => {
 window.__reactdxDx = {
   lastReasons: (name) => latest(name)?.reasons ?? null,
   lastEffects: (name) => latest(name)?.effects ?? null,
+  remounts: () => remounts,
 };
