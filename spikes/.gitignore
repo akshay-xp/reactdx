@@ -7,3 +7,4 @@ hook-cost/rdt/
 coexist/extension/hook.js
 coexist/extension-late/hook.js
 coexist/rdt-firefox/
+harness/vite-fixture/dist-*/
