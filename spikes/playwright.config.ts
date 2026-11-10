@@ -3,6 +3,7 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: '**/*.spec.ts',
+  globalSetup: './global-setup.ts',
   projects: [{ name: 'chromium' }],
   webServer: [
     { command: 'pnpm dev:18', url: 'http://localhost:5118', reuseExistingServer: true },
