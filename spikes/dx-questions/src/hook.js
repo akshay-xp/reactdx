@@ -40,10 +40,35 @@ function propReasons(fiber) {
   return changed;
 }
 
+// Walks two linked lists side by side (hooks, context dependencies).
+function* pairs(next, prev) {
+  for (let index = 0; next; index++, next = next.next, prev = prev?.next) yield [next, prev, index];
+}
+
+// Only useState/useReducer hooks have a queue; their memoizedState is the state.
+function stateReasons(fiber) {
+  if (typeof fiber.type !== 'function' || fiber.type.prototype?.isReactComponent) return [];
+  const changed = [];
+  for (const [hook, prev, index] of pairs(fiber.memoizedState, fiber.alternate.memoizedState)) {
+    if (hook.queue && !Object.is(hook.memoizedState, prev?.memoizedState)) changed.push(index);
+  }
+  return changed;
+}
+
+function contextReasons(fiber) {
+  const changed = [];
+  for (const [dep, prev] of pairs(fiber.dependencies?.firstContext, fiber.alternate.dependencies?.firstContext)) {
+    if (!Object.is(dep.memoizedValue, prev?.memoizedValue)) changed.push(dep.context.displayName ?? 'Context');
+  }
+  return changed;
+}
+
 function reasonsFor(fiber) {
   const reasons = {};
-  const props = propReasons(fiber);
-  if (props.length) reasons.props = props;
+  for (const [kind, list] of [['props', propReasons(fiber)], ['state', stateReasons(fiber)], ['context', contextReasons(fiber)]]) {
+    if (list.length) reasons[kind] = list;
+  }
+  if (!Object.keys(reasons).length) reasons.parent = true;
   return reasons;
 }
 
