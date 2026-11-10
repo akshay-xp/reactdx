@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "dev:18": "pnpm -C harness/vite-fixture exec vite --mode 18 --port 5118 --strictPort"
   },
   "devDependencies": {
     "@playwright/test": "1.65.0",
