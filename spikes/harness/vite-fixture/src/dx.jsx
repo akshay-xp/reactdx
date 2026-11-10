@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 const WhyContext = createContext(0);
@@ -35,8 +35,21 @@ function WhyParent() {
   );
 }
 
+function EffectDeps() {
+  const [a, setA] = useState(0);
+  const [b] = useState(0);
+  useEffect(() => {}, [a, b]);
+  useEffect(() => {}, [b]);
+  return <button data-testid="effect-a" onClick={() => setA((x) => x + 1)} />;
+}
+
 function Dx() {
-  return <WhyParent />;
+  return (
+    <>
+      <WhyParent />
+      <EffectDeps />
+    </>
+  );
 }
 
 createRoot(document.getElementById('root')).render(<Dx />);

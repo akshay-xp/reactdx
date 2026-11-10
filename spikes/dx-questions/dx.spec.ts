@@ -30,5 +30,13 @@ for (const port of [5118, 5119]) {
       await page.getByTestId('why-parent').click();
       expect(await dx(page, 'lastReasons', 'WhyPlain')).toEqual({ parent: true });
     });
+
+    test('reports which effect dependencies changed', async ({ page }) => {
+      await page.getByTestId('effect-a').click();
+      expect(await dx(page, 'lastEffects', 'EffectDeps')).toEqual([
+        { index: 0, fired: true, changed: [0] },
+        { index: 1, fired: false, changed: [] },
+      ]);
+    });
   });
 }

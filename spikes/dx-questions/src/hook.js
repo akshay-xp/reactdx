@@ -63,6 +63,25 @@ function contextReasons(fiber) {
   return changed;
 }
 
+const HAS_EFFECT = 1;
+
+// updateQueue.lastEffect is a circular list; lastEffect.next is the first effect.
+function effectList(fiber) {
+  const last = fiber?.updateQueue?.lastEffect;
+  const effects = [];
+  for (let effect = last?.next; effect; effect = effect === last ? null : effect.next) effects.push(effect);
+  return effects;
+}
+
+function effectChanges(fiber) {
+  const prev = effectList(fiber.alternate);
+  return effectList(fiber).map((effect, index) => ({
+    index,
+    fired: (effect.tag & HAS_EFFECT) !== 0,
+    changed: (effect.deps ?? []).flatMap((dep, i) => (Object.is(dep, prev[index]?.deps?.[i]) ? [] : [i])),
+  }));
+}
+
 function reasonsFor(fiber) {
   const reasons = {};
   for (const [kind, list] of [['props', propReasons(fiber)], ['state', stateReasons(fiber)], ['context', contextReasons(fiber)]]) {
@@ -94,7 +113,7 @@ window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
     const entries = [];
     walk(root.current.child, (fiber) => {
       if (!isComposite(fiber) || !fiber.alternate || !(fiber.flags & PERFORMED_WORK)) return;
-      entries.push({ id: idOf(fiber), name: nameOf(fiber.type), reasons: reasonsFor(fiber) });
+      entries.push({ id: idOf(fiber), name: nameOf(fiber.type), reasons: reasonsFor(fiber), effects: effectChanges(fiber) });
     });
     commits.push(entries);
   },
@@ -103,12 +122,15 @@ window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
   checkDCE() {},
 };
 
+const latest = (name) => {
+  for (let i = commits.length - 1; i >= 0; i--) {
+    const entry = commits[i].find((e) => e.name === name);
+    if (entry) return entry;
+  }
+  return null;
+};
+
 window.__reactdxDx = {
-  lastReasons(name) {
-    for (let i = commits.length - 1; i >= 0; i--) {
-      const entry = commits[i].find((e) => e.name === name);
-      if (entry) return entry.reasons;
-    }
-    return null;
-  },
+  lastReasons: (name) => latest(name)?.reasons ?? null,
+  lastEffects: (name) => latest(name)?.effects ?? null,
 };
