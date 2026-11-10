@@ -47,3 +47,34 @@ extensionTest.describe('static content script', () => {
     });
   }
 });
+
+extensionTest.describe('static content script, bfcache enabled', () => {
+  extensionTest.use({ extensionPath: 'injection-timing/static', bfcache: true });
+
+  const leaveAndReturn = async (page: Page, port: number) => {
+    await page.goto(`http://localhost:${port}`);
+    const before = await expectBeforeReact(page);
+    await page.goto(`http://localhost:${port}/other.html`);
+    // A bfcache restore fires pageshow but no load event, which goBack waits for by default.
+    await page.goBack({ waitUntil: 'commit' });
+    return before;
+  };
+
+  for (const port of [5128, 5129]) {
+    extensionTest(`same hook keeps receiving commits after a bfcache restore on port ${port}`, async ({ page }) => {
+      const before = await leaveAndReturn(page, port);
+      await expect.poll(async () => (await timing(page)).persisted).toBe(true);
+      const restored = await timing(page);
+      expect(restored.loadId).toBe(before.loadId);
+      await page.getByTestId('counter').click();
+      await expect.poll(async () => (await timing(page)).commits).toBeGreaterThan(restored.commits);
+    });
+  }
+
+  extensionTest('records whether the dev server page is restored from bfcache', async ({ page }) => {
+    const before = await leaveAndReturn(page, 5118);
+    await page.waitForTimeout(500);
+    const after = await timing(page);
+    console.log(`[dev server bfcache] persisted=${after.persisted} sameLoad=${after.loadId === before.loadId} injected=${after.injected}`);
+  });
+});
