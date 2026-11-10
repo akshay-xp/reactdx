@@ -8,7 +8,9 @@ window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
     this.renderers.set(id, renderer);
     return id;
   },
-  onCommitFiberRoot() {},
+  onCommitFiberRoot(id, root) {
+    console.log(`[reactdx] commit renderer=${id} container=${root.containerInfo.nodeName}`);
+  },
   onCommitFiberUnmount() {},
   onPostCommitFiberRoot() {},
   checkDCE() {},
