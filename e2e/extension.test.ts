@@ -1,12 +1,11 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Browser } from 'puppeteer';
 import { startFixture } from '../fixtures/start.ts';
 import { launchWithExtension, type BrowserName } from './launch.ts';
 
-let browser: Browser;
-before(async () => ({ browser } = await launchWithExtension(process.env.E2E_BROWSER as BrowserName)));
-after(() => browser?.close());
+let extension: Awaited<ReturnType<typeof launchWithExtension>>;
+before(async () => (extension = await launchWithExtension(process.env.E2E_BROWSER as BrowserName)));
+after(() => extension?.browser.close());
 
 for (const [script, port, renderers] of [
   ['fixture:18', 5218, 1],
@@ -20,7 +19,7 @@ for (const [script, port, renderers] of [
     after(() => stop?.());
 
     test('React registers with our hook', async () => {
-      const page = await browser.newPage();
+      const page = await extension.browser.newPage();
       const messages: string[] = [];
       page.on('console', (message) => messages.push(message.text()));
       await page.goto(`http://localhost:${port}`);
@@ -31,3 +30,13 @@ for (const [script, port, renderers] of [
     });
   });
 }
+
+test('the devtools page creates the ReactDX panel', async () => {
+  assert.equal(await extension.panelCreated(), true);
+  // Firefox can't open moz-extension:// pages over BiDi, so only Chrome renders the panel here.
+  if (!extension.panelUrl) return;
+  const page = await extension.browser.newPage();
+  await page.goto(extension.panelUrl);
+  assert.ok(await page.waitForSelector('[data-testid=panel-root]'));
+  await page.close();
+});
