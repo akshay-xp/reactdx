@@ -78,3 +78,15 @@ for (const { label, port, root, entries } of cases) {
     console.log(`${label} defined-in: ${hits}/${entries.length}`);
   });
 }
+
+test('React 19 stops capturing call sites past 10k elements', async ({ page }) => {
+  await page.goto('http://localhost:5119/debug-stack.html?many=10500');
+  await page.getByTestId('ready').waitFor({ state: 'attached' });
+  const items = (await page.evaluate(collectComponents)).filter((component) => component.name === 'Item');
+  const resolved = items.filter((item) => item.stack && new URL(callSite(item.stack)!.url).pathname === '/src/debug-stack.jsx');
+  const lost = items.length - resolved.length;
+  console.log(`items: ${items.length}, with call site: ${resolved.length}, without: ${lost}`);
+  console.log(`a lost stack starts: ${items.find((item) => !resolved.includes(item))?.stack?.split("\n")[1].trim()}`);
+  expect(lost).toBeGreaterThan(0);
+  expect(resolved.length).toBeLessThanOrEqual(10000);
+});

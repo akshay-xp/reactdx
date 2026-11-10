@@ -48,6 +48,13 @@ function Wrapped() {
 
 const Bordered = withBorder(Wrapped);
 
+// ?many=<n> renders n extra Items, past React 19's 10k owner-stack limit.
+const many = Number(new URLSearchParams(location.search).get('many') ?? 0);
+
+function Many() {
+  return Array.from({ length: many }, (_, index) => <Item key={index} label={index} />);
+}
+
 function Root() {
   return (
     <>
@@ -67,6 +74,7 @@ function Root() {
       <Suspense fallback={null}>
         <LazyThing />
       </Suspense>
+      {many > 0 && <Many />}
     </>
   );
 }
