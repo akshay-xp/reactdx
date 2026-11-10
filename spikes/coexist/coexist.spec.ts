@@ -90,3 +90,21 @@ test.describe('ours alone', () => {
     });
   }
 });
+
+test.describe('RDT first, ours late', () => {
+  test.use({ extensionPath: 'coexist/extension-late,hook-cost/rdt' });
+
+  for (const port of ports) {
+    test(`ours attaches to RDT's hook and both receive commits on port ${port}`, async ({
+      context,
+      page,
+      consoleMessages,
+    }) => {
+      await gotoWithRdt(context, page, `http://localhost:${port}`);
+      await expect.poll(async () => (await coexist(page))?.order).toBe('late');
+      expect((await coexist(page)).renderersAtInstall).toBe(0);
+      await expect.poll(() => rdtWorking(page)).toBe(true);
+      await expectOurCommits(page, consoleMessages);
+    });
+  }
+});
