@@ -29,5 +29,6 @@ All are development builds.
 - Ports differ from the M0 `spikes/` servers (5118-5129) until #16 deletes `spikes/`.
 
 ## Related
-- `fixtures/fixtures.test.ts`: smoke test and the `startFixture(script, port)` helper.
+- `fixtures/fixtures.test.ts`: smoke test. `fixtures/start.ts`: the `startFixture(script, port)` helper, shared with e2e.
+- `docs/e2e.md`: the e2e suite that runs the extension on these fixtures.
 - `docs/extension.md`: the extension that e2e loads into these pages.

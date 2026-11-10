@@ -24,7 +24,7 @@ WXT 0.21 app that builds the MV3 extension for Chrome and Firefox.
   - `data_collection_permissions: { required: ["none"] }`: required for new AMO extensions; ReactDX sends no data.
 
 ## Devtools page and panel
-- `entrypoints/devtools/`: `devtools_page`. Calls `browser.devtools.panels.create('ReactDX', '', '/panel.html')`, then logs `[reactdx] panel created` (the e2e signal for M1 #12).
+- `entrypoints/devtools/`: `devtools_page`. Calls `browser.devtools.panels.create('ReactDX', '', '/panel.html')`, then logs `[reactdx] panel created` (the e2e signal; see `docs/e2e.md`).
 - `entrypoints/panel/`: `panel.html`, renders `Panel` from `@reactdx/panel` (Solid, via `@wxt-dev/module-solid`). `Panel` is an empty `<main data-testid="panel-root">` for now.
 
 ## Manual check (M1 #10, 2026-11-10, macOS 26.5)
