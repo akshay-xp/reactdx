@@ -1,6 +1,10 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { test as extensionTest } from '../harness/e2e/fixtures';
+import { chromium } from '@playwright/test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 for (const [port, version] of [
   [5128, '18.3.1'],
@@ -76,5 +80,47 @@ extensionTest.describe('static content script, bfcache enabled', () => {
     await page.waitForTimeout(500);
     const after = await timing(page);
     console.log(`[dev server bfcache] persisted=${after.persisted} sameLoad=${after.loadId === before.loadId} injected=${after.injected}`);
+  });
+});
+
+test.describe('registered content script', () => {
+  const extension = path.resolve(import.meta.dirname, 'registered');
+  const launch = (userDataDir: string) =>
+    chromium.launchPersistentContext(userDataDir, {
+      channel: 'chromium',
+      args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`],
+    });
+  const registered = async (context: Awaited<ReturnType<typeof launch>>) => {
+    const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
+    await expect
+      .poll(() => worker.evaluate(async () => (await (globalThis as any).chrome.scripting.getRegisteredContentScripts()).length))
+      .toBe(1);
+  };
+
+  test('installs before React once registered, and again after a restart', async () => {
+    const userDataDir = mkdtempSync(path.join(tmpdir(), 'reactdx-timing-'));
+    try {
+      let context = await launch(userDataDir);
+      await registered(context);
+      let page = context.pages()[0] ?? (await context.newPage());
+      await test.step('load after registration', async () => {
+        await page.goto('http://localhost:5118');
+        await expectBeforeReact(page);
+      });
+      await context.close();
+
+      context = await launch(userDataDir);
+      page = context.pages()[0] ?? (await context.newPage());
+      // The very first load after a restart can beat Chrome restoring the registration
+      // (measured by `pnpm timing:race`), so this checks the registration survived.
+      await registered(context);
+      await test.step('load after restart', async () => {
+        await page.goto('http://localhost:5118');
+        await expectBeforeReact(page);
+      });
+      await context.close();
+    } finally {
+      rmSync(userDataDir, { recursive: true, force: true });
+    }
   });
 });
