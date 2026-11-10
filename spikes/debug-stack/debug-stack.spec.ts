@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { collectComponents } from './collect.ts';
 import { callSite, resolveFrame } from './resolve.ts';
+import { expected, KNOWN_MISSES } from './expected.ts';
 
 const VITE_ROOT = 'harness/vite-fixture';
 
@@ -38,4 +39,19 @@ test('resolves a React 19 call site through Vite source maps', async ({ page }) 
 
 test('callSite is null when no frame follows the factory', () => {
   expect(callSite('Error: react-stack-top-frame\n    at exports.jsxDEV (http://x/a.js:1:1)')).toBeNull();
+});
+
+test('rendered-at share on Vite with React 19', async ({ page }) => {
+  let hits = 0;
+  for (const entry of expected.vite) {
+    await page.goto(`http://localhost:5119${entry.page}`);
+    await page.getByTestId(entry.page === '/' ? 'counter' : 'ready').waitFor({ state: 'attached' });
+    const component = (await page.evaluate(collectComponents)).find((c) => c.name === entry.name)!;
+    const frame = callSite(component.stack);
+    const location = frame && (await resolveFrame(frame, VITE_ROOT));
+    const actual = location && `${location.file}:${location.line}`;
+    if (actual === entry.rendered) hits++;
+    if (!(entry.name in KNOWN_MISSES.vite19)) expect.soft(actual, entry.name).toBe(entry.rendered);
+  }
+  console.log(`vite 19 rendered-at: ${hits}/${expected.vite.length}`);
 });
