@@ -17,6 +17,7 @@
     "@playwright/test": "1.65.0",
     "bippy": "0.7.3",
     "esbuild": "0.28.2",
+    "source-map-js": "1.2.2",
     "web-ext": "10.8.0"
   }
 }

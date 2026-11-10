@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
 import { collectComponents } from './collect.ts';
+import { callSite, resolveFrame } from './resolve.ts';
+
+const VITE_ROOT = 'harness/vite-fixture';
 
 // React 18's _debugSource comes from the JSX transform, so createElement calls have none.
 const NO_SOURCE_18 = ['NoJsx'];
@@ -23,3 +26,16 @@ for (const [port, field, other] of [[5119, 'stack', 'source'], [5118, 'source', 
     expect(components.filter((component) => component.name === 'Item')).toHaveLength(3);
   });
 }
+
+test('resolves a React 19 call site through Vite source maps', async ({ page }) => {
+  await page.goto('http://localhost:5119/');
+  await page.getByTestId('counter').waitFor();
+  const components = await page.evaluate(collectComponents);
+  const counter = components.find((component) => component.name === 'Counter')!;
+  const location = await resolveFrame(callSite(counter.stack)!, VITE_ROOT);
+  expect(location).toMatchObject({ file: 'src/App.jsx', line: 8 });
+});
+
+test('callSite is null when no frame follows the factory', () => {
+  expect(callSite('Error: react-stack-top-frame\n    at exports.jsxDEV (http://x/a.js:1:1)')).toBeNull();
+});
