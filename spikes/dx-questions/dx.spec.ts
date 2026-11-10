@@ -74,3 +74,23 @@ for (const port of [5118, 5119]) {
     });
   });
 }
+
+test('lists the Server Components that rendered a client component (Next)', async ({ page }) => {
+  await page.goto('http://localhost:5120/dx');
+  await page.getByTestId('client-item').first().waitFor();
+  const owners = await dx(page, 'serverOwners', 'ClientItem');
+  console.log(`next: server owners ${JSON.stringify(owners)}`);
+  expect(owners).toEqual([
+    { name: 'ServerList', env: 'Server' },
+    { name: 'DxPage', env: 'Server' },
+    { name: 'RootLayout', env: 'Server' },
+  ]);
+});
+
+for (const port of [5118, 5119]) {
+  test(`no Server Components without a framework on port ${port}`, async ({ page }) => {
+    await page.goto(`http://localhost:${port}/`);
+    await page.getByTestId('counter').waitFor();
+    expect(await dx(page, 'serverOwners', 'Counter')).toEqual([]);
+  });
+}

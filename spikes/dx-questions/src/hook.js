@@ -224,5 +224,17 @@ window.__reactdxDx = {
       isDxPromise: waitingOn.has(window.__dxPromise),
       thrower: lastThrower,
     })),
+  // React 19 puts the Server Components that produced a fiber in its _debugInfo (and its ancestors').
+  serverOwners(name) {
+    const [fiber] = findAll((f) => isComposite(f) && nameOf(f.type) === name);
+    const owners = [];
+    for (let f = fiber; f; f = f.return) {
+      // Each _debugInfo lists outermost first; reverse it so owners read nearest first.
+      for (const info of [...(f._debugInfo ?? [])].reverse()) {
+        if (info.name && info.env && !owners.some((o) => o.name === info.name)) owners.push({ name: info.name, env: info.env });
+      }
+    }
+    return owners;
+  },
   consumersOf: (name) => findAll((fiber) => isComposite(fiber) && readsContext(fiber, name)).map((fiber) => nameOf(fiber.type)),
 };
