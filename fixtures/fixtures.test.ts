@@ -78,3 +78,25 @@ describe('fixture:next', () => {
     await page.close();
   });
 });
+
+describe('fixture:multi', () => {
+  let stop: (() => void) | undefined;
+  before(async () => (stop = await startFixture('fixture:multi', 5221)));
+  after(() => stop?.());
+
+  test('runs a React 18 root and a React 19 root side by side', async () => {
+    const page = await browser.newPage();
+    const errors: string[] = [];
+    page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.goto('http://localhost:5221');
+    await page.waitForSelector('[data-testid=root-19] [data-testid=react-version]');
+    assert.match((await text(page, '[data-testid=root-18] [data-testid=react-version]'))!, /^18\.3\./);
+    assert.match((await text(page, '[data-testid=root-19] [data-testid=react-version]'))!, /^19\./);
+    await expectCounter(page, '[data-testid=root-18]');
+    assert.equal(await text(page, '[data-testid=root-19] [data-testid=counter]'), 'Count: 0');
+    await expectCounter(page, '[data-testid=root-19]');
+    assert.deepEqual(errors, []);
+    await page.close();
+  });
+});
