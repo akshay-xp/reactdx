@@ -16,8 +16,12 @@ for (const port of [5118, 5119, 5120]) {
     if (port !== 5120) {
       await expect.poll(() => consoleMessages).toContain('[reactdx:bippy] rendered App');
     }
-    await page.getByTestId('counter').click({ timeout: 3000 });
-    await expect.poll(() => consoleMessages).toContain('[reactdx:bippy] rendered Counter');
+    const counterRenders = () =>
+      consoleMessages.filter((message) => message === '[reactdx:bippy] rendered Counter').length;
+    await expect.poll(counterRenders).toBeGreaterThan(0);
+    const before = counterRenders();
+    await page.getByTestId('counter').click();
+    await expect.poll(counterRenders).toBeGreaterThan(before);
   });
 }
 
