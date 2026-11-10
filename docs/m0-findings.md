@@ -250,6 +250,28 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm preview:18`, then run `pnpm exec web-ext run --source-dir injection-timing/<static|registered> --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url "http://localhost:<5128|5118>/?sequence" --verbose --no-reload --arg=--headless --pref devtools.console.stdout.content=true`. The global setup (or `copyTimingHook()`) must have copied `hook.js` into both variant folders first.
 
 ## inspectedWindow.reload injectedScript (#6)
+- **Question:** can ReactDX get its hook in before React with **no host permissions**, using `devtools.inspectedWindow.reload({ injectedScript })`, and what happens on a full navigation?
+- **Verdict:**
+  - **No-go as the default.** It works mechanically on both browsers, but the DX costs below are worse than the all-sites install warning we chose (see #5).
+  - **Possible later** as an opt-in "no site access" mode for users who refuse that warning. It's not v1 scope.
+- **Mechanism (`spikes/injected-script/extension/`):** the manifest has only a `devtools_page`. On load and on each `devtools.network.onNavigated`, the DevTools page checks with `inspectedWindow.eval` whether the hook is present. If it isn't, it calls `inspectedWindow.reload({ injectedScript: hook source })`. The injected script runs before the page's own scripts.
+- **Results:**
+
+  | | Chromium 158 | Firefox 159.0.1 |
+  |---|---|---|
+  | Hook before React after the injected reload | yes (`injected === 1`) | yes |
+  | After a full navigation | hook gone; reconnecting takes exactly 1 extra load (5/5 runs) | same |
+  | Needs DevTools open | yes (`devtools_page` only runs then) | yes |
+
+- **DX costs:**
+  - **Opening DevTools reloads the page.** The app's current state is lost at exactly the moment the developer wants to inspect it.
+  - **Every full navigation loads twice.** That means double requests and double side effects, and a navigation that came from a POST may be re-submitted. SPA navigations aren't affected.
+  - **Nothing works while DevTools is closed,** so there's no toolbar "React detected" state, unlike a content script.
+- **Trap found:**
+  - Our own injected reload fires `onNavigated`, and `inspectedWindow.eval` at that moment reports no hook. Re-checking there reloaded in a loop: about 115 reloads in under 3 s.
+  - The fix is to skip the navigation we caused. Any future use of this API needs the same guard.
+- **Versions tested:** Playwright Chromium 158.0.8127.18 (headed, `--auto-open-devtools-for-tabs`), Firefox 159.0.1 (headed), React 18.3.1 / 19.3.1 dev servers, macOS 26.5.
+- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test injected` (opens browser windows); Firefox: see below.
 
 ### Firefox check
 - **Result:** works the same as Chromium. With no host permissions, the injected reload installs the hook before React. Every full navigation arrives without the hook and costs one extra load to reconnect.
