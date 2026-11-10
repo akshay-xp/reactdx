@@ -62,3 +62,19 @@ for (const [script, port, version] of [
     });
   });
 }
+
+describe('fixture:next', () => {
+  let stop: (() => void) | undefined;
+  before(async () => (stop = await startFixture('fixture:next', 5220)));
+  after(() => stop?.());
+
+  test('renders a Server Component and a client counter on React 19', async () => {
+    const page = await browser.newPage();
+    await page.goto('http://localhost:5220');
+    await page.waitForSelector('[data-testid=react-version]');
+    assert.ok(await page.$('[data-testid=server]'), 'Server Component output missing');
+    assert.match((await text(page, '[data-testid=react-version]'))!, /^19\./);
+    await expectCounter(page, 'body');
+    await page.close();
+  });
+});
