@@ -7,7 +7,14 @@ const shapes = (name: string, rendered: number, defined = 'src/debug-stack.jsx')
   defined,
 });
 
-export const expected: Record<'vite', Expected[]> = {
+const nextShapes = (name: string, rendered: number) => ({
+  name,
+  page: '/debug-stack',
+  rendered: `app/debug-stack/Shapes.jsx:${rendered}`,
+  defined: 'app/debug-stack/Shapes.jsx',
+});
+
+export const expected: Record<'vite' | 'next', Expected[]> = {
   vite: [
     { name: 'App', page: '/', rendered: 'src/main.jsx:4', defined: 'src/App.jsx' },
     { name: 'Counter', page: '/', rendered: 'src/App.jsx:8', defined: 'src/Counter.jsx' },
@@ -23,6 +30,15 @@ export const expected: Record<'vite', Expected[]> = {
     shapes('Other', 66, 'src/shapes/Other.jsx'),
     { name: 'Nested', page: '/debug-stack.html', rendered: 'src/shapes/Other.jsx:6', defined: 'src/shapes/Other.jsx' },
     shapes('LazyThing', 68, 'src/shapes/Lazy.jsx'),
+  ],
+  // Shapes is created by a Server Component, the rest by client code.
+  next: [
+    { name: 'Shapes', page: '/debug-stack', rendered: 'app/debug-stack/page.jsx:4', defined: 'app/debug-stack/Shapes.jsx' },
+    nextShapes('Plain', 30),
+    nextShapes('Memoized', 31),
+    nextShapes('Forwarded', 32),
+    nextShapes('Klass', 33),
+    nextShapes('Item', 36),
   ],
 };
 

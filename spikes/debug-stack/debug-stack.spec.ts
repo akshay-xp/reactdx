@@ -1,9 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { collectComponents } from './collect.ts';
-import { callSite, definedIn, fromSource, resolveFrame, type Location } from './resolve.ts';
+import { callSite, definedIn, locate, resolveFrame } from './resolve.ts';
 import { expected, KNOWN_MISSES, type Expected } from './expected.ts';
 
 const VITE_ROOT = 'harness/vite-fixture';
+const NEXT_ROOT = 'harness/next-fixture';
 
 const SHAPES = ['Root', 'Plain', 'Arrow', 'Memoized', 'Forwarded', 'Klass', 'NoJsx', 'Item', 'Wrapped', 'LazyThing', 'Other', 'Nested'];
 
@@ -44,49 +45,36 @@ async function componentsOn(page: Page, port: number, entry: Expected) {
   return page.evaluate(collectComponents);
 }
 
-async function renderedAtShare(
-  page: Page,
-  port: number,
-  misses: Record<string, string>,
-  locate: (component: any) => Promise<Location | null>,
-) {
-  let hits = 0;
-  for (const entry of expected.vite) {
-    const component = (await componentsOn(page, port, entry)).find((c) => c.name === entry.name)!;
-    const location = await locate(component);
-    const actual = location && `${location.file}:${location.line}`;
-    if (actual === entry.rendered) hits++;
-    if (!(entry.name in misses)) expect.soft(actual, entry.name).toBe(entry.rendered);
-  }
-  return `${hits}/${expected.vite.length}`;
-}
+const cases = [
+  { label: 'vite19', port: 5119, root: VITE_ROOT, entries: expected.vite },
+  { label: 'vite18', port: 5118, root: VITE_ROOT, entries: expected.vite },
+  { label: 'next19', port: 5120, root: NEXT_ROOT, entries: expected.next },
+];
 
-test('rendered-at share on Vite with React 19', async ({ page }) => {
-  const share = await renderedAtShare(page, 5119, KNOWN_MISSES.vite19, async (component) => {
-    const frame = callSite(component.stack);
-    return frame && resolveFrame(frame, VITE_ROOT);
-  });
-  console.log(`vite 19 rendered-at: ${share}`);
-});
-
-test('rendered-at share on Vite with React 18', async ({ page }) => {
-  const share = await renderedAtShare(page, 5118, KNOWN_MISSES.vite18, async (component) =>
-    component.source && fromSource(component.source, VITE_ROOT),
-  );
-  console.log(`vite 18 rendered-at: ${share}`);
-});
-
-for (const [port, version] of [[5119, 'vite19'], [5118, 'vite18']] as const) {
-  test(`defined-in share on Vite on port ${port}`, async ({ page }) => {
+for (const { label, port, root, entries } of cases) {
+  test(`rendered-at share on ${label}`, async ({ page }) => {
     let hits = 0;
-    const misses = KNOWN_MISSES[`${version}Defined`] ?? {};
-    for (const entry of expected.vite) {
+    const misses = KNOWN_MISSES[label] ?? {};
+    for (const entry of entries) {
+      const component = (await componentsOn(page, port, entry)).find((c) => c.name === entry.name);
+      const location = component ? await locate(component, root) : null;
+      const actual = location && `${location.file}:${location.line}`;
+      if (actual === entry.rendered) hits++;
+      if (!(entry.name in misses)) expect.soft(actual, entry.name).toBe(entry.rendered);
+    }
+    console.log(`${label} rendered-at: ${hits}/${entries.length}`);
+  });
+
+  test(`defined-in share on ${label}`, async ({ page }) => {
+    let hits = 0;
+    const misses = KNOWN_MISSES[`${label}Defined`] ?? {};
+    for (const entry of entries) {
       const components = await componentsOn(page, port, entry);
-      if (entry === expected.vite[0]) expect(await definedIn('Missing', components, VITE_ROOT)).toBeNull();
-      const actual = (await definedIn(entry.name, components, VITE_ROOT))?.file ?? null;
+      if (entry === entries[0]) expect(await definedIn('Missing', components, root)).toBeNull();
+      const actual = (await definedIn(entry.name, components, root))?.file ?? null;
       if (actual === entry.defined) hits++;
       if (!(entry.name in misses)) expect.soft(actual, entry.name).toBe(entry.defined);
     }
-    console.log(`${version} defined-in: ${hits}/${expected.vite.length}`);
+    console.log(`${label} defined-in: ${hits}/${entries.length}`);
   });
 }
