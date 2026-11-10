@@ -49,3 +49,14 @@ test('getters are reported, never invoked', () => {
   };
   expect(serialize(value)).toMatchObject({ props: { boom: { type: 'getter' } } });
 });
+
+test('objects past the depth limit become refs that expand on demand', () => {
+  const { serialize, expand } = createInspector();
+  const value = { a: { b: { c: { d: 1 } } } };
+  const result: any = serialize(value);
+  const ref = result.props.a.props.b;
+  expect(ref).toEqual({ type: 'ref', id: expect.any(Number), preview: { type: 'object', className: 'Object', size: 1 } });
+  expect(expand(ref.id)).toMatchObject({ type: 'object', props: { c: { type: 'object', props: { d: 1 } } } });
+  expect((serialize(value) as any).props.a.props.b.id).toBe(ref.id);
+  roundTrips(result);
+});

@@ -1,4 +1,5 @@
 const MAX_STRING = 1000;
+const MAX_DEPTH = 2;
 
 function serializeNumber(value: number) {
   if (Number.isNaN(value)) return { type: 'number', value: 'NaN' };
@@ -25,22 +26,26 @@ export function createInspector() {
   };
 
   // Reads own properties through descriptors so getters (app code) never run.
-  function serializeObject(value: object) {
-    const props: Record<string, unknown> = {};
-    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
-      props[key] = 'value' in descriptor ? serialize(descriptor.value) : { type: 'getter' };
+  function serializeObject(value: object, depth: number) {
+    const descriptors = Object.entries(Object.getOwnPropertyDescriptors(value));
+    if (depth >= MAX_DEPTH) {
+      return { type: 'ref', id: idOf(value), preview: { type: 'object', className: className(value), size: descriptors.length } };
     }
-    return { type: 'object', className: className(value), id: idOf(value), size: Object.keys(props).length, props };
+    const props: Record<string, unknown> = {};
+    for (const [key, descriptor] of descriptors) {
+      props[key] = 'value' in descriptor ? serialize(descriptor.value, depth + 1) : { type: 'getter' };
+    }
+    return { type: 'object', className: className(value), id: idOf(value), size: descriptors.length, props };
   }
 
-  function serialize(value: unknown): unknown {
+  function serialize(value: unknown, depth = 0): unknown {
     switch (typeof value) {
       case 'function':
         return { type: 'function', name: value.name };
       case 'symbol':
         return { type: 'symbol', description: value.description };
       case 'object':
-        return value === null ? null : serializeObject(value);
+        return value === null ? null : serializeObject(value, depth);
       case 'undefined':
         return { type: 'undefined' };
       case 'number':
@@ -57,9 +62,9 @@ export function createInspector() {
   }
 
   return {
-    serialize,
+    serialize: (value: unknown) => serialize(value),
     expand(id: number, offset = 0): unknown {
-      throw new Error('not implemented');
+      return serialize(objects.get(id));
     },
   };
 }
