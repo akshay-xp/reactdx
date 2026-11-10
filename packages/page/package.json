@@ -1,0 +1,9 @@
+{
+  "name": "@reactdx/page",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/hook.ts" },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\""
+  }
+}
