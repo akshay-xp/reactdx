@@ -26,15 +26,21 @@ export function createInspector() {
   };
 
   // Reads own properties through descriptors so getters (app code) never run.
+  // Objects on the current path; meeting one again means a cycle.
+  const path = new Set<object>();
+
   function serializeObject(value: object, depth: number) {
+    if (path.has(value)) return { type: 'ref', id: idOf(value), circular: true };
     const descriptors = Object.entries(Object.getOwnPropertyDescriptors(value));
     if (depth >= MAX_DEPTH) {
       return { type: 'ref', id: idOf(value), preview: { type: 'object', className: className(value), size: descriptors.length } };
     }
     const props: Record<string, unknown> = {};
+    path.add(value);
     for (const [key, descriptor] of descriptors) {
       props[key] = 'value' in descriptor ? serialize(descriptor.value, depth + 1) : { type: 'getter' };
     }
+    path.delete(value);
     return { type: 'object', className: className(value), id: idOf(value), size: descriptors.length, props };
   }
 

@@ -60,3 +60,15 @@ test('objects past the depth limit become refs that expand on demand', () => {
   expect((serialize(value) as any).props.a.props.b.id).toBe(ref.id);
   roundTrips(result);
 });
+
+test('circular references become refs marked circular', () => {
+  const { serialize } = createInspector();
+  const o: any = { name: 'o' };
+  o.self = o;
+  const result: any = serialize(o);
+  expect(result.props.self).toEqual({ type: 'ref', id: result.id, circular: true });
+
+  const parent: any = { children: [] };
+  parent.children.push({ parent });
+  roundTrips(serialize(parent));
+});
