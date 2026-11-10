@@ -1,6 +1,8 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { globSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import puppeteer, { type Browser, type Page } from 'puppeteer';
 
 // Starts `pnpm <script>` and resolves once the port answers.
@@ -99,4 +101,15 @@ describe('fixture:multi', () => {
     assert.deepEqual(errors, []);
     await page.close();
   });
+});
+
+test('React is a dependency of fixtures only', () => {
+  const repo = path.resolve(import.meta.dirname, '..');
+  for (const file of globSync(['packages/*/package.json', 'apps/*/package.json'], { cwd: repo })) {
+    const pkg = JSON.parse(readFileSync(path.join(repo, file), 'utf8'));
+    for (const field of ['dependencies', 'devDependencies', 'peerDependencies']) {
+      const react = Object.keys(pkg[field] ?? {}).filter((name) => /^react(-dom)?(-\d+)?$/.test(name));
+      assert.deepEqual(react, [], `${file} ${field}`);
+    }
+  }
 });
