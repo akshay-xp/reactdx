@@ -152,6 +152,46 @@ Shared setup for every experiment, in `spikes/harness/`.
   5. Read the `[reactdx:coexist] status` line.
 
 ## Injection timing (#5)
+- **Question:** does a MAIN world content script at `document_start` install the hook before React, for a normal load, a hard reload, a bfcache restore, and a script registered with `scripting.registerContentScripts`?
+- **Verdict:** go for **static `content_scripts`**: before React in every tested scenario on both browsers. **Partial for registered scripts:** before React once the registration has settled, but **flaky on the first load after a browser restart in Chromium** (55 to 75% missed).
+- **Signal:** React only calls `inject` on a hook that exists when it loads. `injected === 1` means before React. A random `loadId` set at install tells a fresh load from a bfcache restore.
+- **Results:**
+
+  | Scenario | Chromium 158 | Firefox 159.0.1 |
+  |---|---|---|
+  | Normal load (static) | before | before |
+  | Hard reload (static; CDP `ignoreCache` / `location.reload(true)`) | before | before |
+  | bfcache restore (static) | same hook kept, still gets commits | same hook kept, still gets commits (preview only) |
+  | Registered, after the registration has settled | before | before |
+  | Registered, after a browser restart (registration persisted) | before, once restored | not tested (web-ext) |
+  | Registered, **first load right after install** | **missed 20/20** | before (web-ext waits for install) |
+  | Registered, **first load right after restart** | **flaky: missed 11/20 and 15/20** | not tested |
+  | Static, first load right after install / restart | before 20/20 / 20/20 | not measured |
+
+  `pnpm timing:race`, two runs:
+  ```
+  static     first load after install  before React 20/20, after React 0/20, missed 0/20
+  static     first load after restart  before React 20/20, after React 0/20, missed 0/20
+  registered first load after install  before React 0/20, after React 0/20, missed 20/20
+  registered first load after restart  before React 9/20, after React 0/20, missed 11/20
+  ```
+  ```
+  static     first load after install  before React 20/20, after React 0/20, missed 0/20
+  static     first load after restart  before React 20/20, after React 0/20, missed 0/20
+  registered first load after install  before React 0/20, after React 0/20, missed 20/20
+  registered first load after restart  before React 5/20, after React 0/20, missed 15/20
+  ```
+- **What a miss looks like:** always "no hook at all", never a late hook. A static or registered script either runs before React or doesn't run for that load.
+- **bfcache:** content scripts don't re-run on a restore and don't need to. The cached page keeps the same hook object, still connected, and still receiving commits. Chromium 158 bfcaches even the Vite dev-server page (HMR WebSocket open); Firefox doesn't, and does a full reload instead, which is also before React.
+- **What this means for M2 (permissions):**
+  - Localhost uses a **static** `content_scripts` entry: reliable everywhere.
+  - Per-site opt-in through `registerContentScripts` is fine right after the user enables a site, since the page is reloaded anyway. But **after a browser restart, the first page on that site misses the hook more than half the time in Chromium.** M2 needs to detect "React present but our hook missing" and offer "reload to connect", or else put opted-in sites in static `content_scripts` with Chrome's site-access controls.
+- **Test gotchas:**
+  - Playwright launches Chromium with `--disable-back-forward-cache`; the `bfcache` fixture option removes it.
+  - `page.goBack()` hangs on a bfcache restore unless it's given `waitUntil: 'commit'`, because no `load` event fires.
+  - Firefox MV3 needs `background.scripts`, as it has no `service_worker`.
+- **Versions tested:** React 18.3.1 / 19.3.1 (dev builds), Vite 8.3.7, Playwright Chromium 158.0.8127.18, Firefox 159.0.1, macOS 26.5.
+- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test timing` (starts the dev and preview servers); start `pnpm dev:18`, then run `pnpm timing:race`; Firefox: see below.
 
 ### Firefox check
 - **Result:**
@@ -201,7 +241,7 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Reading it:**
   - The `injected=0 commits=0` line is `other.html`, which has no React.
   - On the preview, the bfcache restore brings back the **same `loadId`** as the page before leaving, and the click adds a commit (`commits=2`).
-  - On the dev server, going back is a full reload (`persisted=false`, new `loadId`). Firefox won't bfcache a page with Vite's HMR WebSocket open; Chrome does (see the verdict above).
+  - On the dev server, going back is a full reload (`persisted=false`, new `loadId`). Firefox won't bfcache a page with Vite's HMR WebSocket open; Chromium does (see the results above).
 - **Limits:**
   - The registered variant's first load counted as before React here. But web-ext only opens the start URL once the temporary add-on has finished installing, so this isn't the "navigate immediately after install" race that `pnpm timing:race` measures in Chromium.
   - The first load after a Firefox restart wasn't tested, because web-ext removes temporary add-ons on exit.
