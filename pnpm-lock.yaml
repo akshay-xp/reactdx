@@ -41,6 +41,9 @@ importers:
 
   apps/extension:
     dependencies:
+      '@reactdx/messages':
+        specifier: workspace:*
+        version: link:../../packages/messages
       '@reactdx/page':
         specifier: workspace:*
         version: link:../../packages/page

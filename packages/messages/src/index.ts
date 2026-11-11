@@ -34,10 +34,19 @@ export function parsePageMessage(data: unknown): RendererMessage | undefined {
   })
 }
 
-export type ToolbarState = {
-  icon: "none" | "development" | "production"
-  title: string
-}
+export type ToolbarIcon = "none" | "development" | "production"
+
+export type ToolbarState = { icon: ToolbarIcon; title: string }
+
+// Rendered by `pnpm icons` into apps/extension/public/icon/.
+export const toolbarIcons = (icon: ToolbarIcon) =>
+  Object.fromEntries(
+    [16, 32, 48, 128].map((size) => [size, `icon/${icon}-${size}.png`]),
+  )
+
+// Content script to background: every renderer the tab's document has, so the
+// background needs no state of its own.
+export type RenderersMessage = { type: "renderers"; renderers: RendererInfo[] }
 
 // A development copy is what ReactDX can inspect, so it decides the state;
 // production copies alongside it (Next's dev overlay) aren't listed.

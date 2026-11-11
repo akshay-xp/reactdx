@@ -22,12 +22,18 @@ export function toolbar(
     : firefoxToolbar(browser)
 }
 
-async function chromeToolbar(browser: Browser, page: Page) {
+// Chrome: ReactDX's service worker, to evaluate extension APIs in.
+export async function reactdxWorker(browser: Browser) {
   const target = await browser.waitForTarget(
     (t) => t.type() === "service_worker" && t.url().endsWith("/background.js"),
   )
   const worker = await target.worker()
   if (!worker) throw new Error("no ReactDX service worker")
+  return worker
+}
+
+async function chromeToolbar(browser: Browser, page: Page) {
+  const worker = await reactdxWorker(browser)
   // Without the tabs permission a URL query matches nothing; the page under test is the active tab.
   await page.bringToFront()
   return worker.evaluate(async () => {

@@ -24,7 +24,7 @@ test("builds without warnings", () => {
 })
 
 for (const target of targets) {
-  test(`${target}: MV3 with only scripting and storage, hook script on every site`, () => {
+  test(`${target}: MV3 with only scripting and storage, hook and relay scripts on every site`, () => {
     const m = manifest(target)
     assert.equal(m.manifest_version, 3)
     assert.deepEqual(m.permissions, ["scripting", "storage"])
@@ -35,6 +35,12 @@ for (const target of targets) {
         run_at: "document_start",
         world: "MAIN",
         js: ["content-scripts/hook.js"],
+      },
+      // Isolated world, top frame only (no all_frames).
+      {
+        matches: ["<all_urls>"],
+        run_at: "document_start",
+        js: ["content-scripts/relay.js"],
       },
     ])
   })
