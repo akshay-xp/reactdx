@@ -45,6 +45,10 @@ const FIXED_NAMES: Partial<Record<TreeKind, string>> = {
 
 const LAZY = Symbol.for("react.lazy")
 
+// Offscreen (tag 22) keeps suspended or hidden content mounted but off screen.
+const isHidden = (fiber: Fiber) =>
+  fiber.tag === 22 && fiber.memoizedState !== null
+
 // Every other tag (root, text, fragment, mode, portal, offscreen...) is skipped.
 function kindOf(fiber: Fiber): TreeKind | undefined {
   const kind = KINDS[fiber.tag]
@@ -101,7 +105,7 @@ export function createTree() {
   const visible = (fiber: Fiber, out: Fiber[] = []) => {
     for (let child = fiber.child; child; child = child.sibling)
       if (kindOf(child)) out.push(child)
-      else visible(child, out)
+      else if (!isHidden(child)) visible(child, out)
     return out
   }
 

@@ -189,7 +189,11 @@ test("a resync over 2,000 ops is split into consecutive batches", async () => {
 
 // Fake timers drive the agent's 100 ms flush; watching starts with a mirrored resync.
 async function watching(
-  run: (flush: () => TreeBatchMessage[], resync: TreeOp[]) => Promise<void>,
+  run: (
+    flush: () => TreeBatchMessage[],
+    resync: TreeOp[],
+    tree: ReturnType<typeof mirror>,
+  ) => Promise<void>,
 ) {
   // Let a flush scheduled on real timers (by earlier commits) run first.
   await new Promise((resolve) => setTimeout(resolve, 150))
@@ -201,13 +205,17 @@ async function watching(
     const resync = batches().flatMap((batch) => batch.ops)
     tree.apply(resync)
     posted.length = 0
-    await run(() => {
-      vi.advanceTimersByTime(100)
-      const sent = batches()
-      for (const batch of sent) tree.apply(batch.ops)
-      posted.length = 0
-      return sent
-    }, resync)
+    await run(
+      () => {
+        vi.advanceTimersByTime(100)
+        const sent = batches()
+        for (const batch of sent) tree.apply(batch.ops)
+        posted.length = 0
+        return sent
+      },
+      resync,
+      tree,
+    )
     return tree
   } finally {
     vi.useRealTimers()
@@ -340,5 +348,61 @@ test("a component whose name changes is renamed", async () => {
     ])
     await React.act(() => rerender(2))
     expect(flush()).toEqual([])
+  })
+})
+
+test("suspended content is hidden from the tree until it shows", async () => {
+  let resolve = () => {}
+  let ready = false
+  const promise = new Promise<void>((r) => {
+    resolve = () => {
+      ready = true
+      r()
+    }
+  })
+  let setWaiting = (_: boolean) => {}
+  function Spinner() {
+    return null
+  }
+  function Shown() {
+    return h("i")
+  }
+  function Waits() {
+    if (!ready) throw promise
+    return null
+  }
+  function Page() {
+    const [waiting, set] = React.useState(false)
+    setWaiting = set
+    return h(
+      React.Suspense,
+      { fallback: h(Spinner) },
+      h(Shown),
+      waiting && h(Waits),
+    )
+  }
+  await render(h(Page))
+  await watching(async (flush, _, tree) => {
+    await React.act(() => setWaiting(true))
+    expect(summary(flush()[0])).toEqual(["remove", "add Spinner at 0"])
+    expect(tree.outline()).toEqual([
+      "Page function",
+      "  Suspense suspense",
+      "    Spinner function",
+    ])
+    await React.act(async () => resolve())
+    expect(summary(flush()[0])).toEqual([
+      "remove",
+      "add Shown at 0",
+      "add i at 0",
+      "add Waits at 1",
+    ])
+    expect(tree.outline()).toEqual([
+      "Page function",
+      "  Suspense suspense",
+      "    Shown function",
+      "      i host",
+      "    Waits function",
+    ])
   })
 })
