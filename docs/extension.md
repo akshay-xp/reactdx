@@ -12,9 +12,9 @@ WXT 0.21 app that builds the MV3 extension for Chrome and Firefox.
 ## Entrypoints
 
 - `entrypoints/hook.content.ts`: static content script on `<all_urls>`, `world: "MAIN"`, `run_at: "document_start"`. Calls `installHook(window, onRenderer)` from `@reactdx/page`, posting each renderer to the relay. WXT's wrapper calls `main()` synchronously, so the hook exists before any page script.
-- `entrypoints/relay.content.ts`: ISOLATED world, `<all_urls>`, `document_start`, top frame only. Validates page messages, owns the document's tab state, asks for the agent on the first development renderer, answers `get-state` (`docs/messages.md`).
+- `entrypoints/relay.content.ts`: ISOLATED world, `<all_urls>`, `document_start`, top frame only. Validates page messages, owns the document's tab state, asks for the agent on the first development renderer, answers `get-state`, and while a panel watches streams tree batches over a `tree` port (`docs/messages.md`, "Tree flow").
 - `entrypoints/agent.ts`: unlisted script, built to `agent.js`; `startAgent(window, post)` from `@reactdx/page/agent`. Injected by the background with `scripting.executeScript` (MAIN world, top frame), never at `document_start`.
-- `entrypoints/background.ts`: toolbar icon and title per tab, agent injection, and relaying tab state to open panels' ports (service worker on Chrome, background script on Firefox). Holds no page data.
+- `entrypoints/background.ts`: toolbar icon and title per tab, agent injection, and relaying tab state and tree batches to open panels' ports, plus panel resync requests to the relay (service worker on Chrome, background script on Firefox). Holds no page data, only ports.
 
 ## Toolbar icons
 

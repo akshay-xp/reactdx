@@ -4,12 +4,22 @@ Solid UI rendered in the DevTools panel. The browser glue (`browser.devtools.*`)
 
 ## Connection list (`src/ConnectionList.tsx`, `src/Panel.tsx`)
 
-- `Panel(props: { renderers: RendererView[] })` renders `ConnectionList` in the themed `<main>`. `apps/extension/entrypoints/panel/main.tsx` connects a `runtime` port named `panel`, subscribes with `browser.devtools.inspectedWindow.tabId`, and sets a signal from each `TabStateMessage` (`docs/messages.md`).
+- `Panel(props: { renderers: RendererView[]; tree: TreeStore })` renders `ConnectionList` in the themed `<main>`. `apps/extension/entrypoints/panel/main.tsx` connects a `runtime` port named `panel`, subscribes with `browser.devtools.inspectedWindow.tabId`, sets a signal from each `TabStateMessage`, and applies each tree batch to the store (`docs/messages.md`, "Tree flow").
 - States: no renderers: "No React on this page". Only production: "Production build of React <versions>. ReactDX inspects development builds." Otherwise one `[data-testid=renderer]` per copy (`React <version> <development|production> <rendererPackageName>`) with `[data-testid=root]` rows ("Root N", "N commits", `data-commits`). Production copies are listed with their roots (Next's dev overlay) but get no agent.
+- Under each development root, its component rows (`[data-testid=node]`, name as text, `padding-left` 12px per depth). Production roots list no components.
 - Page data is only ever a Solid text node, never markup (unit test and `e2e/forged.test.ts` check an `<img onerror>` version renders as text).
-- `test/ConnectionList.test.tsx` (Vitest `panel` project): each state, text-only, no Tailwind palette classes.
+- `test/ConnectionList.test.tsx` (Vitest `panel` project): each state, component rows under development roots only, text-only, no Tailwind palette classes.
 - Reconnect: `main.tsx` `connect()` opens the `panel` port and subscribes; when the port drops (the background stopped), it connects again, which wakes the background and asks the relay for current state.
 - Reset: `browser.devtools.network.onNavigated` clears the list and subscribes again on the current port, so a new document shows only what it reports ("No React on this page" until its React connects).
+
+## Tree store (`createTreeStore()`, `src/tree.ts`; M3 #25)
+
+The page's component tree, rebuilt from the agent's ops (`docs/messages.md`, "Tree batches"). Exported as `@reactdx/panel/tree`.
+
+- `apply(batch)` applies `reset`, `add`, `remove` (with descendants), `reorder` and `rename`, and bumps a Solid `version` signal. It returns true when the panel must ask for a resync: the first time a batch has the wrong `seq` or an op names an unknown id (an `add` under an unknown parent, a `reorder` of one, a `remove` or `rename` of an unknown node). After that it ignores batches until one starting with `reset`, so a burst of bad batches asks once.
+- `rows(rootId)`: `Row = { id, name, depth }`, depth-first. Host (DOM element) nodes are hidden: their children take their place and depth.
+- `clear()`: on `onNavigated`, with the renderer list.
+- `test/tree.test.ts`: rows, hidden hosts, each op, the resync rules.
 
 ## Themes (`src/themes.ts`, `src/index.css`)
 
@@ -27,7 +37,7 @@ Copied from SnapQL (`~/Code/snapql/apps/extension/src/panel/themes.ts`, `index.c
   - `@theme inline` maps `--color-<token>` to `--theme-<token>`.
   - Biome needs `css.parser.tailwindDirectives` (`biome.json`).
 - Type: labels `font-sans` 12px (`text-xs`), page data `font-mono` (M2 list onwards).
-- Exports: `@reactdx/panel` (`Panel`), `@reactdx/panel/themes`, `@reactdx/panel/index.css`.
+- Exports: `@reactdx/panel` (`Panel`), `@reactdx/panel/tree`, `@reactdx/panel/themes`, `@reactdx/panel/index.css`.
 
 ## Theme source (`apps/extension/entrypoints/panel/theme.ts`, `main.tsx`)
 
