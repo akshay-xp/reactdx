@@ -138,11 +138,48 @@ export function createTree() {
     })
   }
 
+  const forget = (id: number) => {
+    for (const child of children.get(id) ?? []) forget(child)
+    children.delete(id)
+  }
+
+  // Brings a known node's stored children in line with this commit.
+  const update = (
+    fiber: Fiber,
+    key: number,
+    parentId: number,
+    rootId: number,
+    ops: TreeOp[],
+  ) => {
+    const prev = children.get(key)
+    // A bailed-out subtree keeps its child fibers, so nothing below it changed.
+    if (prev && fiber.alternate && fiber.child === fiber.alternate.child) return
+    const kids = visible(fiber)
+    const next = kids.map(idOf)
+    const kept = new Set(next)
+    for (const id of prev ?? [])
+      if (!kept.has(id)) {
+        ops.push({ op: "remove", id })
+        forget(id)
+      }
+    const known = new Set(prev)
+    kids.forEach((kid, index) => {
+      const id = next[index] as number
+      if (known.has(id)) update(kid, id, id, rootId, ops)
+      else addSubtree(kid, parentId, rootId, index, ops)
+    })
+    children.set(key, next)
+  }
+
   return {
     // Appends rather than returns: spreading a large tree into push() overflows the stack.
     full(root: FiberRoot, rootId: number, ops: TreeOp[]) {
       const host = root.current as unknown as Fiber
       addChildren(host, idOf(host), 0, rootId, ops)
+    },
+    commit(root: FiberRoot, rootId: number, ops: TreeOp[]) {
+      const host = root.current as unknown as Fiber
+      update(host, idOf(host), 0, rootId, ops)
     },
   }
 }

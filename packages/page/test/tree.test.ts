@@ -8,7 +8,7 @@ import {
 } from "@reactdx/messages"
 import React from "react"
 import type { Root } from "react-dom/client"
-import { afterEach, beforeAll, expect, test } from "vitest"
+import { afterEach, beforeAll, expect, test, vi } from "vitest"
 import { startAgent } from "../src/agent.ts"
 import { installHook } from "../src/hook.ts"
 import { mirror } from "./tree-mirror.ts"
@@ -185,4 +185,103 @@ test("a resync over 2,000 ops is split into consecutive batches", async () => {
   expect(extra).toBeUndefined()
   for (const batch of [first, second])
     expect(parseTreeBatch(batch)).toEqual(batch)
+})
+
+// Fake timers drive the agent's 100 ms flush; watching starts with a mirrored resync.
+async function watching(
+  run: (flush: () => TreeBatchMessage[]) => Promise<void>,
+) {
+  // Let a flush scheduled on real timers (by earlier commits) run first.
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  posted.length = 0
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+  try {
+    send(WATCH)
+    const tree = mirror()
+    for (const batch of batches()) tree.apply(batch.ops)
+    posted.length = 0
+    await run(() => {
+      vi.advanceTimersByTime(100)
+      const sent = batches()
+      for (const batch of sent) tree.apply(batch.ops)
+      posted.length = 0
+      return sent
+    })
+    return tree
+  } finally {
+    vi.useRealTimers()
+  }
+}
+
+const summary = (batch?: TreeBatchMessage) =>
+  batch?.ops.map((op) =>
+    op.op === "add"
+      ? `add ${op.name} at ${op.index}`
+      : op.op === "remove"
+        ? "remove"
+        : op.op,
+  )
+
+test("mounts and unmounts send only the changed subtree, on the flush", async () => {
+  let setShow = (_: boolean) => {}
+  let setCount = (_: number) => {}
+  const Sibling = React.memo(function Sibling() {
+    return h("b")
+  })
+  function Extra() {
+    return h("span")
+  }
+  function Toggle() {
+    const [show, set] = React.useState(false)
+    const [count, setCountState] = React.useState(0)
+    setShow = set
+    setCount = setCountState
+    return h("div", null, h(Sibling), show && h(Extra), h(Sibling), count)
+  }
+  await render(h(Toggle))
+  const ids: number[] = []
+
+  const tree = await watching(async (flush) => {
+    await React.act(() => setShow(true))
+    expect(batches()).toEqual([])
+    const [mounted, ...rest] = flush()
+    expect(rest).toEqual([])
+    expect(mounted?.seq).toBe(2)
+    expect(summary(mounted)).toEqual(["add Extra at 1", "add span at 0"])
+    ids.push(...adds(mounted?.ops ?? []).map((op) => op.id))
+
+    await React.act(() => setShow(false))
+    const [unmounted, ...more] = flush()
+    expect(more).toEqual([])
+    expect(unmounted?.ops).toEqual([{ op: "remove", id: ids[0] }])
+
+    await React.act(() => setCount(1))
+    expect(flush()).toEqual([])
+  })
+  expect(tree.outline()).toEqual([
+    "Toggle function",
+    "  div host",
+    "    Sibling memo",
+    "      b host",
+    "    Sibling memo",
+    "      b host",
+  ])
+})
+
+test("a root mounted while watched is added, and removed when it unmounts", async () => {
+  await render(h(App))
+  await watching(async (flush) => {
+    const first = adds(batches()[0]?.ops ?? [])
+    const second = await render(h(Child))
+    const [mounted] = flush()
+    expect(summary(mounted)).toEqual(["add Child at 0", "add span at 0"])
+    const [child] = adds(mounted?.ops ?? [])
+    expect(child?.parentId).toBe(0)
+    expect(child?.rootId).not.toBe(first[0]?.rootId)
+
+    roots.splice(roots.indexOf(second), 1)
+    await React.act(() => second.unmount())
+    const [unmounted] = flush()
+    expect(unmounted?.ops).toEqual([{ op: "remove", id: child?.id }])
+  })
 })

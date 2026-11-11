@@ -40,11 +40,17 @@ export function startAgent(
 
   const tree = createTree()
   let seq = 1
+  let watching = false
+  // Diffed on every commit (the bail-out check only holds against the previous
+  // commit), posted on the flush.
+  const buffer: TreeOp[] = []
   const send = (ops: TreeOp[]) => {
     for (let i = 0; i < ops.length; i += MAX_OPS)
       post(treeBatch(seq++, ops.slice(i, i + MAX_OPS)))
   }
   const watch = () => {
+    watching = true
+    buffer.length = 0
     seq = 1
     const ops: TreeOp[] = [{ op: "reset" }]
     for (const set of record.roots.values())
@@ -54,12 +60,15 @@ export function startAgent(
 
   let pending = false
   record.listeners.add((_, root) => {
-    info(root).commits++
+    const entry = info(root)
+    entry.commits++
+    if (watching) tree.commit(root, entry.id, buffer)
     if (pending) return
     pending = true
     setTimeout(() => {
       pending = false
       snapshot()
+      if (buffer.length) send(buffer.splice(0))
     }, THROTTLE_MS)
   })
   target.addEventListener("message", (event) => {
