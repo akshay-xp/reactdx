@@ -7,7 +7,7 @@ WXT 0.21 app that builds the MV3 extension for Chrome and Firefox.
 - `pnpm build` (root) runs `wxt build && wxt build -b firefox --mv3` in `apps/extension`. Outputs: `apps/extension/.output/chrome-mv3/`, `apps/extension/.output/firefox-mv3/`.
 - `--mv3` is required: WXT builds Firefox as MV2 by default.
 - Version comes from `apps/extension/package.json`.
-- `apps/extension/test/build.test.ts` runs the build and checks the manifests, the hook script size, and that the build prints no warnings (stdout and stderr).
+- `apps/extension/test/build.test.ts` runs the build and checks the manifests and that the build prints no warnings (stdout and stderr). The hook size budget and other shipped-code invariants are in `pnpm check` (`docs/check.md`).
 
 ## Entrypoints
 
@@ -17,7 +17,8 @@ WXT 0.21 app that builds the MV3 extension for Chrome and Firefox.
 ## Hook script budget
 
 - `content-scripts/hook.js` must be at most 2,048 bytes: it runs on every site (permissions decision in `docs/overview.md`).
-- Measured: 597 bytes in both builds (M1 #10), WXT's content-script wrapper included.
+- Measured: 610 bytes in both builds (M1 #14), WXT's content-script wrapper included.
+- Enforced by `pnpm check` (`docs/check.md`).
 
 ## Manifest
 
@@ -39,5 +40,6 @@ WXT 0.21 app that builds the MV3 extension for Chrome and Firefox.
 
 ## Related
 
+- `docs/check.md`: invariant checks on the built extension.
 - `packages/page/src/hook.ts`: the hook itself.
 - `docs/m0-findings.md`: why a static content script, and why `document_start` in the MAIN world.

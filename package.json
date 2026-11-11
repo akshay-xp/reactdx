@@ -10,6 +10,7 @@
     "build": "pnpm --filter @reactdx/extension build",
     "typecheck": "tsc -p . && tsc -p packages/panel && tsc -p apps/extension",
     "lint": "biome check --error-on-warnings",
+    "check": "pnpm lint && pnpm typecheck && pnpm build && node scripts/check/run.ts",
     "test": "pnpm test:unit && pnpm test:check && pnpm -r test",
     "test:unit": "vitest run",
     "test:check": "node --test \"scripts/check/*.test.ts\"",

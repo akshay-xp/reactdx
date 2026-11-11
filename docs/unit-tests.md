@@ -5,7 +5,7 @@ Vitest 5.1.0 in jsdom 31.0.0. One suite, run once per React version.
 ## Commands (from the repo root)
 
 - `pnpm test:unit`: `vitest run`, both projects.
-- `pnpm test`: `pnpm test:unit`, then each package's own `test` script (today only `apps/extension`'s build test).
+- `pnpm test`: `pnpm test:unit`, `pnpm test:check` (`docs/check.md`), then each package's own `test` script (today only `apps/extension`'s build test).
 
 ## Projects
 
