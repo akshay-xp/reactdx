@@ -14,12 +14,24 @@ DX first. It answers the questions RDT handles poorly: why something rendered, e
 - In scope: Server Components, multiple roots/copies.
 - Out of scope: React Native, iframes, Electron.
 
-## Architecture (planned)
+## Architecture
 
-- Page side: plain TS. Installs `__REACT_DEVTOOLS_GLOBAL_HOOK__` (shared with RDT if both are installed) and reads fibers.
+- Page side: plain TS. Installs `__REACT_DEVTOOLS_GLOBAL_HOOK__` (shared with RDT if both are installed, M2) and reads fibers.
 - Extension shell: MV3 content script (`world: "MAIN"`, `document_start`), service worker, devtools page.
 - Panel: SolidJS.
 - React is only a test/fixture dependency, never shipped.
+
+| Folder             | Contents                                                   | Doc                            |
+| ------------------ | ---------------------------------------------------------- | ------------------------------ |
+| `packages/page`    | Page-side hook; no runtime dependencies                    | [page.md](page.md)             |
+| `packages/panel`   | Solid panel UI (empty in M1)                               |                                |
+| `apps/extension`   | WXT app: entrypoints, manifest, builds for both browsers   | [extension.md](extension.md)   |
+| `fixtures/*`       | Test apps: Vite on React 18/19, Next, two React copies     | [fixtures.md](fixtures.md)     |
+| `test-env/*`       | React 18 and 19 for the unit test projects                 | [unit-tests.md](unit-tests.md) |
+| `e2e/`             | Puppeteer suite with the built extension, Chrome + Firefox | [e2e.md](e2e.md)               |
+| `scripts/check/`   | Invariant checks on the build and the repo                 | [check.md](check.md)           |
+| `bench/hook-cost/` | Per-commit hook cost benchmark (M8 baseline)               | [bench.md](bench.md)           |
+| `.github/`         | CI workflow and setup action                               | [ci.md](ci.md)                 |
 
 ## Permissions (planned)
 

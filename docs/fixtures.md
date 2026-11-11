@@ -20,6 +20,10 @@ All are development builds.
 - `fixtures/next` also renders `data-testid="server"` from the Server Component (`app/page.jsx`); the counter and version come from the client component (`app/Counter.jsx`).
 - `fixtures/multi` puts each root in `data-testid="root-18"` or `data-testid="root-19"`.
 
+## Bench page
+
+`fixtures/vite` also serves `/bench.html` (`src/bench.jsx`): 10,000 `Cell` components (`data-testid="cell"`) and `window.__bench(mode, iterations)`, which times `flushSync` commits (`all` updates every cell, `one` the first) and returns the durations in ms. Used by `pnpm bench:hook-cost` (`docs/bench.md`); checked by `pnpm test:fixtures`.
+
 ## How each fixture picks its React
 
 - **`vite`:** npm aliases `react-18`/`react-dom-18` and `react-19`/`react-dom-19`. `vite.config.js` rewrites `react` and `react-dom` (and subpaths) by `--mode`, with a separate prebundle `cacheDir` per mode. `pnpm-workspace.yaml`'s `peerDependencyRules` allows react-dom's aliased `react` peer.
@@ -36,3 +40,4 @@ All are development builds.
 - `docs/e2e.md`: the e2e suite that runs the extension on these fixtures.
 - `docs/extension.md`: the extension that e2e loads into these pages.
 - `docs/unit-tests.md`: Vitest unit tests on React 18 and 19.
+- `docs/bench.md`: the benchmark that uses the bench page.
