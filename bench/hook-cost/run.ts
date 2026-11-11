@@ -1,8 +1,8 @@
 import path from "node:path"
 import { chromium, type Page } from "@playwright/test"
 import { build } from "esbuild"
+import { ensureRdt } from "../../e2e/rdt.ts"
 import { startFixture } from "../../fixtures/start.ts"
-import { ensureRdt, rdtDir } from "./rdt.ts"
 import { median, p95 } from "./stats.ts"
 
 declare global {
@@ -13,6 +13,7 @@ declare global {
 }
 
 const here = import.meta.dirname
+const rdtDir = await ensureRdt("chrome")
 const WARMUP = 10
 const ITERATIONS = 50
 const fixtures = [
@@ -135,7 +136,6 @@ async function measure(benchCase: Case, port: number) {
   }
 }
 
-await ensureRdt()
 await build({
   entryPoints: [path.join(here, "src/hook.js")],
   bundle: true,

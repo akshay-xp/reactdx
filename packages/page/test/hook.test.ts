@@ -1,10 +1,13 @@
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { type Hook, installHook } from "../src/hook.ts"
 
 test("installs a hook React accepts", () => {
-  const target: { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook } = {}
-  const hook = installHook(target)
-  expect(target.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBe(hook)
+  const target: { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook } = Object.create(
+    Object.create(null),
+  )
+  installHook(target)
+  const hook = target.__REACT_DEVTOOLS_GLOBAL_HOOK__
+  if (!hook) throw new Error("no hook")
   expect(hook.supportsFiber).toBe(true)
   for (const name of [
     "checkDCE",
@@ -19,4 +22,24 @@ test("installs a hook React accepts", () => {
   expect(hook.inject(rendererA)).toBe(1)
   expect(hook.inject(rendererB)).toBe(2)
   expect(hook.renderers.get(1)).toBe(rendererA)
+})
+
+test("reports each renderer as it injects", () => {
+  const target: { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook } = Object.create(
+    Object.create(null),
+  )
+  const onRenderer = vi.fn()
+  installHook(target, onRenderer)
+  target.__REACT_DEVTOOLS_GLOBAL_HOOK__?.inject({
+    version: "19.3.1",
+    bundleType: 1,
+    rendererPackageName: "react-dom",
+    extra: "dropped",
+  })
+  expect(onRenderer).toHaveBeenCalledTimes(1)
+  expect(onRenderer).toHaveBeenCalledWith(1, {
+    version: "19.3.1",
+    bundleType: 1,
+    rendererPackageName: "react-dom",
+  })
 })

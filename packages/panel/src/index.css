@@ -1,0 +1,27 @@
+@import "tailwindcss" source(".");
+
+/* No default palette: components use the theme tokens below, never a color name. */
+@theme {
+  --color-*: initial;
+}
+
+/* The active theme sets the --theme-* vars (themes.ts applyTheme). */
+@theme inline {
+  --color-bg: var(--theme-bg);
+  --color-fg: var(--theme-fg);
+  --color-muted: var(--theme-muted);
+  --color-border: var(--theme-border);
+  --color-selected: var(--theme-selected);
+  --color-error: var(--theme-error);
+  --color-surface: var(--theme-surface);
+  --color-accent: var(--theme-accent);
+  --color-success: var(--theme-success);
+  --color-syntax-key: var(--theme-syntax-key);
+  --color-syntax-string: var(--theme-syntax-string);
+  --color-syntax-number: var(--theme-syntax-number);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+}

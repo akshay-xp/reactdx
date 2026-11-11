@@ -1,33 +1,36 @@
 import React from "react"
-import { expect, test, vi } from "vitest"
+import { expect, test } from "vitest"
 import { installHook } from "../src/hook.ts"
+import { KEY, mount, windowLike } from "./window.ts"
 
 test("runs on the React version of its project", () => {
   expect(React.version.startsWith(String(process.env.REACT_VERSION))).toBe(true)
 })
 
-test("a React root commits through the hook", async () => {
-  const hook = installHook(globalThis)
-  const onCommit = vi.spyOn(hook, "onCommitFiberRoot")
-  ;(
-    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true
-  // react-dom registers with the hook as it loads, so it's imported after installHook.
-  const { createRoot } = await import("react-dom/client")
+test("React commits through our prototype hook, and the record tracks it", async () => {
+  const native = Object.defineProperty
+  const record = installHook(windowLike())
+  expect(Object.hasOwn(globalThis, KEY)).toBe(false)
+  const calls: [number, { current: { tag: number } }][] = []
+  record.listeners.add((id, root) => calls.push([id, root]))
 
-  const div = document.createElement("div")
-  const root = createRoot(div)
-  await React.act(() => root.render(React.createElement("p", null, "hi")))
+  const { div, root } = await mount()
 
-  expect(hook.renderers.size).toBe(1)
-  expect((hook.renderers.get(1) as { version: string }).version).toBe(
-    React.version,
-  )
-  const [id, fiberRoot] = onCommit.mock.calls[0] as [
-    number,
-    { current: { tag: number } },
-  ]
-  expect(id).toBe(1)
-  expect(fiberRoot.current.tag).toBe(3) // HostRoot
   expect(div.textContent).toBe("hi")
+  expect(record.renderers.get(1)).toEqual({
+    version: React.version,
+    bundleType: 1,
+    rendererPackageName: "react-dom",
+  })
+  expect(calls[0]?.[0]).toBe(1)
+  expect(calls[0]?.[1].current.tag).toBe(3) // HostRoot
+  expect(record.roots.get(1)?.size).toBe(1)
+  expect(Object.defineProperty).toBe(native)
+  expect((globalThis as Record<symbol, unknown>)[Symbol.for("reactdx")]).toBe(
+    record,
+  )
+  expect(Object.keys(globalThis)).not.toContain(Symbol.for("reactdx"))
+
+  await React.act(() => root.unmount())
+  expect(record.roots.get(1)?.size).toBe(0)
 })

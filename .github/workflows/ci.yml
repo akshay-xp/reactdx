@@ -33,11 +33,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        react: ["18", "19"]
+        project: [react-18, react-19, panel]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
-      - run: pnpm test:unit --project react-${{ matrix.react }}
+      - run: pnpm test:unit --project ${{ matrix.project }}
 
   build:
     runs-on: ubuntu-latest
@@ -72,11 +72,16 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chrome, firefox]
-        fixture: ["18", "19", next, multi]
+        fixture: ["18", "19", next, multi, prod]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
         with:
           browsers: ${{ matrix.browser }}
+      # RDT is locked in e2e/rdt.lock.json; download only when the lock changes.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: e2e/.rdt
+          key: rdt-${{ hashFiles('e2e/rdt.lock.json') }}
       # DevTools pages only exist in a headed browser.
       - run: xvfb-run -a pnpm test:e2e --browser=${{ matrix.browser }} --fixture=${{ matrix.fixture }}

@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/hook.ts"
+    ".": "./src/hook.ts",
+    "./agent": "./src/agent.ts"
+  },
+  "dependencies": {
+    "@reactdx/messages": "workspace:*"
   }
 }

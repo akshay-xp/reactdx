@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { readdirSync, readFileSync } from "node:fs"
+import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { before, test } from "node:test"
 
@@ -24,17 +24,24 @@ test("builds without warnings", () => {
 })
 
 for (const target of targets) {
-  test(`${target}: MV3 with only scripting and storage, hook script on every site`, () => {
+  test(`${target}: MV3 with scripting, storage and all-sites access, hook and relay scripts on every site`, () => {
     const m = manifest(target)
     assert.equal(m.manifest_version, 3)
     assert.deepEqual(m.permissions, ["scripting", "storage"])
-    assert.equal(m.host_permissions, undefined)
+    // Chrome refuses scripting.executeScript (the agent) on a content script match alone.
+    assert.deepEqual(m.host_permissions, ["<all_urls>"])
     assert.deepEqual(m.content_scripts, [
       {
         matches: ["<all_urls>"],
         run_at: "document_start",
         world: "MAIN",
         js: ["content-scripts/hook.js"],
+      },
+      // Isolated world, top frame only (no all_frames).
+      {
+        matches: ["<all_urls>"],
+        run_at: "document_start",
+        js: ["content-scripts/relay.js"],
       },
     ])
   })
@@ -80,5 +87,68 @@ for (const target of targets) {
       contains(target, "[reactdx] panel created"),
       "devtools chunk missing log",
     )
+  })
+}
+
+const css = (target: string) =>
+  builtFiles(target)
+    .filter((file) => file.endsWith(".css"))
+    .map((file) =>
+      readFileSync(path.join(root, ".output", target, file), "utf8"),
+    )
+    .join("\n")
+
+for (const target of targets) {
+  test(`${target}: the panel's Tailwind classes read the theme tokens`, () => {
+    assert.match(css(target), /\.bg-bg\{background-color:var\(--theme-bg\)\}/)
+  })
+}
+
+test("Tailwind's default palette doesn't exist, only theme tokens", () => {
+  const planted = path.resolve(root, "../../packages/panel/src/planted.tsx")
+  writeFileSync(
+    planted,
+    'export const Planted = () => <p class="bg-red-500 text-muted" />\n',
+  )
+  try {
+    const build = spawnSync("pnpm", ["build:chrome"], {
+      cwd: root,
+      encoding: "utf8",
+    })
+    assert.equal(build.status, 0, build.stdout + build.stderr)
+    assert.match(css("chrome-mv3"), /\.text-muted\{/)
+    assert.doesNotMatch(css("chrome-mv3"), /\.bg-red-500/)
+  } finally {
+    rmSync(planted, { force: true })
+  }
+})
+
+const iconSet = (state: string) =>
+  Object.fromEntries(
+    [16, 32, 48, 128].map((size) => [
+      String(size),
+      `icon/${state}-${size}.png`,
+    ]),
+  )
+
+for (const target of targets) {
+  test(`${target}: toolbar defaults to the grey icon and "no React"`, () => {
+    const m = manifest(target)
+    assert.deepEqual(m.action, {
+      default_title: "ReactDX: no React",
+      default_icon: iconSet("none"),
+    })
+    assert.deepEqual(m.icons, iconSet("development"))
+    for (const state of ["none", "development", "production"]) {
+      for (const [size, file] of Object.entries(iconSet(state))) {
+        const png = readFileSync(path.join(root, ".output", target, file))
+        // PNG IHDR: width and height are big-endian uint32s at bytes 16 and 20.
+        assert.deepEqual(
+          [png.readUInt32BE(16), png.readUInt32BE(20)],
+          [Number(size), Number(size)],
+          file,
+        )
+      }
+    }
   })
 }

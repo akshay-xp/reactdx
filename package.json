@@ -20,17 +20,24 @@
     "fixture:19": "pnpm -C fixtures/vite exec vite --mode 19 --port 5219 --strictPort",
     "fixture:next": "NEXT_TELEMETRY_DISABLED=1 pnpm -C fixtures/next exec next dev --port 5220",
     "fixture:multi": "node fixtures/multi/serve.ts",
+    "fixture:prod": "pnpm -C fixtures/vite exec vite build --mode 19 --outDir dist-prod --logLevel warn && pnpm -C fixtures/vite exec vite preview --outDir dist-prod --port 5222 --strictPort",
     "test:e2e": "node e2e/run.ts",
-    "bench:hook-cost": "pnpm --filter @reactdx/bench-hook-cost bench"
+    "bench:hook-cost": "pnpm --filter @reactdx/bench-hook-cost bench",
+    "rdt:update": "node e2e/rdt-update.ts",
+    "icons": "node scripts/icons.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
+    "@resvg/resvg-js": "2.6.2",
+    "@solidjs/testing-library": "0.8.10",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
     "jsdom": "31.0.0",
     "puppeteer": "25.17.0",
     "typescript": "7.0.2",
+    "vite-plugin-solid": "2.11.16",
     "vitest": "5.1.0"
   }
 }

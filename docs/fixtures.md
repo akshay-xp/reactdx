@@ -10,9 +10,12 @@ Test apps for every supported React setup. Each is a workspace package, so React
 | `pnpm fixture:19`    | 5219 | `fixtures/vite` on React 19.3.1                                                                 |
 | `pnpm fixture:next`  | 5220 | `fixtures/next`: Next 16.4.6 (Turbopack dev), React 19.3.1                                      |
 | `pnpm fixture:multi` | 5221 | `fixtures/multi`: a React 18.3.1 root and a React 19.3.1 root on one page                       |
+| `pnpm fixture:prod`  | 5222 | `fixtures/vite` production build (`vite build --mode 19`, then `vite preview`), React 19.3.1    |
 | `pnpm test:fixtures` |      | Smoke test: starts each fixture, checks it in headless Chrome (Puppeteer 25.17.0, no extension) |
 
-All are development builds.
+All but `fixture:prod` are development builds. `fixture:prod` builds into `fixtures/vite/dist-prod/` (gitignored); its smoke test checks React registers `bundleType` 0.
+
+- `fixture:next`'s browser React is the canary Next bundles for the App Router (`19.3.0-canary-278794d7-20261002` with Next 16.4.6), not the app's react-dom 19.3.1. The page's `react-version` shows it too.
 
 ## Test ids (used by e2e)
 
