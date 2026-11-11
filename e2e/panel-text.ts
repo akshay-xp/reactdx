@@ -67,7 +67,7 @@ export async function openPanelText(
           const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab)
           const iframe = toolbox?.doc.getElementById(${JSON.stringify(`toolbox-panel-iframe-${selected}`)})
           const panel = iframe?.contentDocument?.querySelector("browser")
-          if (!panel) return ""
+          if (!panel) return "[no panel browser]"
           const service = Cc["@mozilla.org/accessibilityService;1"].getService(Ci.nsIAccessibilityService)
           const texts = []
           const walk = (node) => {
@@ -75,8 +75,12 @@ export async function openPanelText(
             if (node.childCount === 0 && node.name) texts.push(node.name)
             for (let i = 0; i < node.childCount; i++) walk(node.getChildAt(i))
           }
-          walk(service.getAccessibleFor(panel))
-          return texts.join(" ")
+          const root = service.getAccessibleFor(panel)
+          walk(root)
+          // No text: say what was there, so a failure explains itself.
+          return texts.length
+            ? texts.join(" ")
+            : "[no panel text: url=" + panel.currentURI?.spec + " accessible=" + !!root + " children=" + (root?.childCount ?? 0) + "]"
         })()`,
       )) ?? "",
     )
