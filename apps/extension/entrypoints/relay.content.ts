@@ -41,6 +41,13 @@ export default defineContentScript({
       browser.runtime.sendMessage(state())
     })
 
+    // Browsers reset the tab's icon on a history navigation, and a page restored from
+    // bfcache runs no scripts, so re-announce what this document already has.
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted && renderers.size)
+        browser.runtime.sendMessage(state())
+    })
+
     browser.runtime.onMessage.addListener(
       (message: GetStateMessage, _, sendResponse) => {
         if (message.type !== "get-state") return

@@ -3,7 +3,7 @@ import { after, before, test } from "node:test"
 import type { Page } from "puppeteer"
 import { startFixture } from "../fixtures/start.ts"
 import { stopBackground } from "./background.ts"
-import type { BrowserName } from "./launch.ts"
+import { type BrowserName, launchWithExtension } from "./launch.ts"
 import {
   type PanelText,
   panelFor,
@@ -15,23 +15,28 @@ import { plainPage } from "./plain.ts"
 import { toolbar } from "./toolbar.ts"
 
 const name = process.env.E2E_BROWSER as BrowserName
-const skip =
-  process.env.E2E_FIXTURE !== undefined && process.env.E2E_FIXTURE !== "18"
+const runs = (fixture: string) =>
+  process.env.E2E_FIXTURE === undefined || process.env.E2E_FIXTURE === fixture
+const skip = !runs("18")
 const URL_18 = "http://localhost:5218"
 const HEADING = "React 18.3.1 development react-dom"
 const plainUrl = plainPage()
 
-let stop: (() => void) | undefined
+const stops: (() => void)[] = []
 before(async () => {
-  if (!skip) stop = await startFixture("fixture:18", 5218)
+  if (runs("18")) stops.push(await startFixture("fixture:18", 5218))
+  if (runs("multi")) stops.push(await startFixture("fixture:multi", 5221))
 })
-after(() => stop?.())
+after(() => {
+  for (const stop of stops) stop()
+})
 
-const listed = (text: string) =>
-  parseCopies(text).some((c) => c.heading === HEADING && c.commits.length > 0)
+const listing = (heading: string) => (text: string) =>
+  parseCopies(text).some((c) => c.heading === heading && c.commits.length > 0)
 
-// The panel lists React 18.3.1 with a root, and its commit count rises on a click.
-async function expectLive(page: Page, panel: PanelText) {
+// The panel lists the copy with a root, and the commit count rises on a click.
+async function expectLive(page: Page, panel: PanelText, heading = HEADING) {
+  const listed = listing(heading)
   await page.waitForSelector("[data-testid=counter]")
   const text = await until(panel, listed)
   assert.ok(listed(text), text)
@@ -84,6 +89,57 @@ test("a navigation resets the panel to the new document", {
 
     await page.reload()
     await expectLive(page, panel)
+  } finally {
+    await browser.close()
+  }
+})
+
+// bfcache: fixture:multi, because Vite's dev pages hold an HMR WebSocket that keeps
+// Firefox from caching them. history.back(), because a Firefox restore fires no load
+// event for page.goBack() to wait on.
+const URL_MULTI = "http://localhost:5221"
+const MULTI_TITLE = "ReactDX: React 18.3.1, 19.3.1"
+
+async function leaveAndRestore(page: Page) {
+  await page.evaluateOnNewDocument(() =>
+    addEventListener("pageshow", (event) => {
+      if (event.persisted)
+        (window as unknown as { restored: boolean }).restored = true
+    }),
+  )
+  await page.goto(URL_MULTI)
+  await page.waitForSelector("[data-testid=root-19] [data-testid=counter]")
+  await page.goto(plainUrl())
+  await page.evaluate(() => history.back())
+  // Proves the page came back from bfcache, not a fresh load.
+  await page.waitForFunction(
+    () => (window as unknown as { restored?: boolean }).restored === true,
+    { timeout: 5000 },
+  )
+}
+
+test("a bfcache restore shows the right toolbar, with no panel open", {
+  skip: !runs("multi"),
+}, async () => {
+  const { browser } = await launchWithExtension(name)
+  try {
+    const [page] = await browser.pages()
+    if (!page) throw new Error("no page")
+    await leaveAndRestore(page)
+    await expectTitle(page, MULTI_TITLE)
+  } finally {
+    await browser.close()
+  }
+})
+
+test("a bfcache restore shows the right panel", {
+  skip: !runs("multi"),
+}, async () => {
+  const { browser, page, panel } = await panelFor(name, plainUrl(), "after")
+  try {
+    await leaveAndRestore(page)
+    await expectTitle(page, MULTI_TITLE)
+    await expectLive(page, panel, "React 18.3.1 development react-dom")
   } finally {
     await browser.close()
   }
