@@ -59,7 +59,7 @@ Per fixture, with the store RDT installed, each case asserts that RDT's backend 
 - `e2e/run.ts`: flag parsing, per-browser build, test run.
 - `e2e/launch.ts`: `launchWithExtension(name, extensions = [reactdxBuild(name)], { devtoolsTheme })` returns `{ browser, panelCreated() }`. `devtoolsTheme` (Chrome) writes DevTools' `ui-theme` into a temp profile's `Default/Preferences`.
 - `openPanel(browser)` (Chrome): selects the ReactDX tab through DevTools' `InspectorView` and returns the panel frame. The panel needs `browser.devtools`, so it's only tested inside DevTools.
-- `e2e/panel-text.ts`: `openPanelText(name, browser)` returns a reader for the panel's visible text, whitespace-normalized, in both browsers; `parseCopies(text)` and `until(read, check)`. Chrome walks the panel frame's text nodes. Firefox runs DevTools panels in an extension process Puppeteer can't reach, so chrome scope (`e2e/firefox.ts` `chromeEval`) selects the ReactDX tool through `gDevTools` and reads the panel's accessibility tree, which Firefox mirrors into the parent process.
+- `e2e/panel-text.ts`: `openPanelText(name, browser)` returns a reader for the panel's visible text, whitespace-normalized, in both browsers; `parseCopies(text)` and `until(read, check)`. Chrome walks the panel frame's text nodes. Firefox runs DevTools panels in an extension process Puppeteer can't reach, so chrome scope (`e2e/firefox.ts` `chromeEval`) selects the ReactDX tool through `gDevTools` (by `toolbox.getAdditionalTools()`, not the tab DOM: CI's narrow xvfb window moves the last tabs into an overflow menu) and reads the panel's accessibility tree, which Firefox mirrors into the parent process.
 - `e2e/panel.test.ts`: per fixture, the panel lists each copy and a commit count that rises after a click, with DevTools opened after and before load; no React and production notices. Each test launches its own browser, so DevTools has one window.
 - `e2e/agent.test.ts`: the agent is injected on development fixtures only.
 - `e2e/forged.test.ts`: forged and malformed page messages (`docs/messages.md`).
@@ -74,6 +74,8 @@ Per fixture, with the store RDT installed, each case asserts that RDT's backend 
 - `e2e/toolbar.ts`: `toolbar(name, browser, page)`. Chrome evaluates `chrome.action.getTitle` for the active tab in the service worker (`reactdxWorker(browser)`; without the `tabs` permission a URL query matches nothing; Chrome can't read icons back). Firefox launches with `MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1` and sends raw WebDriver BiDi over `browser.connection` in the browser's chrome scope, reading the action's per-tab data (`browserActionFor(extension).action.getContextData(tab)`): MV3 buttons sit in the extensions panel, whose nodes are built lazily.
 - `e2e/coexist.test.ts`, `e2e/preload.ts`, `e2e/rdt.ts`, `e2e/rdt.lock.json`, `e2e/rdt-update.ts`.
 - Test files run one at a time (`--test-concurrency=1`): they share fixture ports.
+- `--test-timeout=120000` and `--test-force-exit` (`e2e/run.ts`): `node --test` prints failure details only at the end of the run, so a hung test or a file whose browser outlives its tests would otherwise run into CI's 15-minute job timeout with no details.
+- CI timing: the Chrome DevTools page can take over 10 s to appear (`launchChrome` waits 30 s), and Next's server-rendered counter appears before React hydrates, so tests that need commits wait for ReactDX's record to see a root.
 - `fixtures/start.ts`: `startFixture(script, port)`, shared with the fixture smoke test.
 
 ## Related
