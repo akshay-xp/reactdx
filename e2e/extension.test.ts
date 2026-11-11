@@ -19,6 +19,11 @@ for (const [script, port, renderers] of [
   ["fixture:next", 5220, 2], // the dev overlay brings its own production react-dom
   ["fixture:multi", 5221, 2],
 ] as const) {
+  if (
+    process.env.E2E_FIXTURE &&
+    script !== `fixture:${process.env.E2E_FIXTURE}`
+  )
+    continue
   describe(script, () => {
     let stop: (() => void) | undefined
     before(async () => (stop = await startFixture(script, port)))

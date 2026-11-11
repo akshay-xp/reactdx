@@ -1,19 +1,36 @@
 import { spawnSync } from "node:child_process"
 
-const browser = process.argv
-  .slice(2)
-  .find((arg) => arg.startsWith("--browser="))
-  ?.slice("--browser=".length)
-if (browser !== "chrome" && browser !== "firefox") {
-  console.error("usage: pnpm test:e2e --browser=chrome|firefox")
+const flag = (name: string) =>
+  process.argv
+    .slice(2)
+    .find((arg) => arg.startsWith(`--${name}=`))
+    ?.slice(name.length + 3)
+
+const browser = flag("browser")
+const fixture = flag("fixture")
+if (
+  (browser !== "chrome" && browser !== "firefox") ||
+  (fixture !== undefined && !["18", "19", "next", "multi"].includes(fixture))
+) {
+  console.error(
+    "usage: pnpm test:e2e --browser=chrome|firefox [--fixture=18|19|next|multi]",
+  )
   process.exit(1)
 }
 
-const build = spawnSync("pnpm", ["build"], { stdio: "inherit" })
+const build = spawnSync(
+  "pnpm",
+  ["--filter", "@reactdx/extension", `build:${browser}`],
+  { stdio: "inherit" },
+)
 if (build.status !== 0) process.exit(build.status ?? 1)
 
 const test = spawnSync("node", ["--test", "e2e/extension.test.ts"], {
   stdio: "inherit",
-  env: { ...process.env, E2E_BROWSER: browser },
+  env: {
+    ...process.env,
+    E2E_BROWSER: browser,
+    ...(fixture && { E2E_FIXTURE: fixture }),
+  },
 })
 process.exit(test.status ?? 1)
