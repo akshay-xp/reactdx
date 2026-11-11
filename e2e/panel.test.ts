@@ -151,3 +151,49 @@ describe("fixture:prod panel", {
     }
   })
 })
+
+describe("fixture:19 tree page", {
+  skip:
+    process.env.E2E_FIXTURE !== undefined && process.env.E2E_FIXTURE !== "19",
+}, () => {
+  let stop: (() => void) | undefined
+  before(async () => (stop = await startFixture("fixture:19", 5219)))
+  after(() => stop?.())
+
+  test("every component kind shows by name, wrappers hidden", async () => {
+    const { browser, panel } = await panelFor(
+      name,
+      "http://localhost:5219/tree.html",
+      "after",
+    )
+    try {
+      const expected = [
+        "Kinds",
+        "Klass",
+        "Memoized",
+        "Fwd",
+        "Named",
+        "Suspense",
+        "Lazy",
+        "Theme",
+        "Theme",
+        "Context",
+        "Profiler",
+        "Item",
+        "Anonymous",
+        "Item",
+        "Item",
+        "Activity",
+        "Item",
+      ]
+      const names = (t: string) => JSON.stringify(parseCopies(t)[0]?.names)
+      const text = await until(
+        panel,
+        (t) => names(t) === JSON.stringify(expected),
+      )
+      assert.equal(names(text), JSON.stringify(expected), text)
+    } finally {
+      await browser.close()
+    }
+  })
+})
