@@ -18,6 +18,8 @@ export default defineConfig({
       default_icon: toolbarIcons("none"),
     },
     permissions: ["scripting", "storage"],
+    // Chrome needs it for scripting.executeScript (the agent); same warning as the content scripts.
+    host_permissions: ["<all_urls>"],
     ...(browser === "firefox" && {
       browser_specific_settings: {
         gecko: {

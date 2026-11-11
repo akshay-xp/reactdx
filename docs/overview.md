@@ -36,7 +36,7 @@ DX first. It answers the questions RDT handles poorly: why something rendered, e
 
 ## Permissions (planned)
 
-- `scripting` and `storage`, plus a static `content_scripts` entry matching all sites. That means the same "all websites" install warning as RDT.
+- `scripting`, `storage` and `host_permissions: ["<all_urls>"]`, plus static `content_scripts` entries matching all sites. That means the same "all websites" install warning as RDT. `host_permissions` is needed because Chrome refuses `scripting.executeScript` (the agent) on a content-script match alone (M2 #21).
 - Why not localhost plus per-site opt-in: runtime-registered scripts miss most first loads after a Chrome restart (M0 #5), and a "reload to connect" prompt is the kind of friction the DX pitch can't afford. All-site access also leaves room for production-build support later.
 - Users can still narrow access with the browser's own per-site controls (Chrome site access, Firefox's revocable host permissions).
 - The script runs on every page, so the `document_start` part stays tiny and does nothing until React connects. Heavier code is injected only after a renderer connects.

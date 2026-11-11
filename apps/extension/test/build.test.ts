@@ -24,11 +24,12 @@ test("builds without warnings", () => {
 })
 
 for (const target of targets) {
-  test(`${target}: MV3 with only scripting and storage, hook and relay scripts on every site`, () => {
+  test(`${target}: MV3 with scripting, storage and all-sites access, hook and relay scripts on every site`, () => {
     const m = manifest(target)
     assert.equal(m.manifest_version, 3)
     assert.deepEqual(m.permissions, ["scripting", "storage"])
-    assert.equal(m.host_permissions, undefined)
+    // Chrome refuses scripting.executeScript (the agent) on a content script match alone.
+    assert.deepEqual(m.host_permissions, ["<all_urls>"])
     assert.deepEqual(m.content_scripts, [
       {
         matches: ["<all_urls>"],

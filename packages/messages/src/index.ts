@@ -48,6 +48,9 @@ export const toolbarIcons = (icon: ToolbarIcon) =>
 // background needs no state of its own.
 export type RenderersMessage = { type: "renderers"; renderers: RendererInfo[] }
 
+// Content script to background, once per document: the first development renderer connected.
+export type InjectAgentMessage = { type: "inject-agent" }
+
 // A development copy is what ReactDX can inspect, so it decides the state;
 // production copies alongside it (Next's dev overlay) aren't listed.
 export function toolbarState(renderers: RendererInfo[]): ToolbarState {

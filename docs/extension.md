@@ -30,7 +30,8 @@ WXT 0.21 app that builds the MV3 extension for Chrome and Firefox.
 
 ## Manifest
 
-- Permissions: `scripting`, `storage`. No `host_permissions`; the content script's `<all_urls>` match gives site access.
+- Permissions: `scripting`, `storage`, `host_permissions: ["<all_urls>"]`.
+- `host_permissions` result (M2 #21, Chrome 157 / Firefox 159): without it, Chrome's `scripting.executeScript` into a page fails with "Cannot access contents of the page. Extension manifest must request permission to access the respective host." even though the `<all_urls>` content scripts run there; Firefox injects without it. Adding it changes no install warning (the content scripts already ask for all sites).
 - Firefox only, `browser_specific_settings.gecko`:
   - `id: "reactdx@akxp.net"`: permanent once on AMO; same pattern as SnapQL (`snapql@akxp.net`).
   - `strict_min_version: "128.0"`: first Firefox with `world: "MAIN"` content scripts.
