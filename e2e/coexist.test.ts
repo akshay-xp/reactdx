@@ -54,6 +54,24 @@ async function openWithRdt(page: Page, port: number) {
   for (let attempt = 1; ; attempt++) {
     await page.goto(`http://localhost:${port}`)
     await page.waitForSelector("[data-testid=counter]")
+    // Next server-renders the counter, so it appears before React hydrates (and
+    // next dev compiles the client on the first request, slow on CI). Wait for
+    // ReactDX's record to see a development react-dom root commit.
+    await page.waitForFunction(
+      () => {
+        const record = (window as unknown as Record<symbol, HookRecord>)[
+          Symbol.for("reactdx")
+        ]
+        if (!record?.renderers.size) return true
+        return [...record.renderers].some(
+          ([id, info]) =>
+            info.bundleType === 1 &&
+            info.rendererPackageName === "react-dom" &&
+            (record.roots.get(id)?.size ?? 0) > 0,
+        )
+      },
+      { timeout: 60_000 },
+    )
     const result = await page.evaluate(status)
     if (result.rdt > 0 || attempt === 5) return result
   }
