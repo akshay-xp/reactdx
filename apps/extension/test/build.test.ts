@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { readdirSync, readFileSync } from "node:fs"
+import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { before, test } from "node:test"
 
@@ -82,3 +82,36 @@ for (const target of targets) {
     )
   })
 }
+
+const css = (target: string) =>
+  builtFiles(target)
+    .filter((file) => file.endsWith(".css"))
+    .map((file) =>
+      readFileSync(path.join(root, ".output", target, file), "utf8"),
+    )
+    .join("\n")
+
+for (const target of targets) {
+  test(`${target}: the panel's Tailwind classes read the theme tokens`, () => {
+    assert.match(css(target), /\.bg-bg\{background-color:var\(--theme-bg\)\}/)
+  })
+}
+
+test("Tailwind's default palette doesn't exist, only theme tokens", () => {
+  const planted = path.resolve(root, "../../packages/panel/src/planted.tsx")
+  writeFileSync(
+    planted,
+    'export const Planted = () => <p class="bg-red-500 text-muted" />\n',
+  )
+  try {
+    const build = spawnSync("pnpm", ["build:chrome"], {
+      cwd: root,
+      encoding: "utf8",
+    })
+    assert.equal(build.status, 0, build.stdout + build.stderr)
+    assert.match(css("chrome-mv3"), /\.text-muted\{/)
+    assert.doesNotMatch(css("chrome-mv3"), /\.bg-red-500/)
+  } finally {
+    rmSync(planted, { force: true })
+  }
+})
