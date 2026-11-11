@@ -1,0 +1,37 @@
+name: Setup
+description: Node, pnpm, install, and only the Puppeteer browsers the job needs.
+
+inputs:
+  browsers:
+    description: "none, chrome, or firefox"
+    default: none
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 24
+        cache: pnpm
+    - if: inputs.browsers != 'none'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/puppeteer
+        key: puppeteer-${{ runner.os }}-${{ inputs.browsers }}-${{ hashFiles('pnpm-lock.yaml', '.puppeteerrc.cjs') }}
+    # Ubuntu 24.04's AppArmor blocks the unprivileged user namespaces Chrome's
+    # sandbox needs; Puppeteer's documented fix, so the code needs no --no-sandbox.
+    - if: inputs.browsers != 'none'
+      shell: bash
+      run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+    # Postinstall downloads are skipped and the job's browser installed explicitly:
+    # a restored pnpm store can skip Puppeteer's postinstall, leaving no browser.
+    - shell: bash
+      env:
+        PUPPETEER_SKIP_DOWNLOAD: "true"
+      run: pnpm install --frozen-lockfile
+    - if: inputs.browsers != 'none'
+      shell: bash
+      env:
+        BROWSER: ${{ inputs.browsers }}
+      run: pnpm exec puppeteer browsers install "$BROWSER"

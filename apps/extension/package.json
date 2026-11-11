@@ -1,0 +1,22 @@
+{
+  "name": "@reactdx/extension",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "wxt prepare",
+    "build": "pnpm build:chrome && pnpm build:firefox",
+    "build:chrome": "wxt build",
+    "build:firefox": "wxt build -b firefox --mv3",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@reactdx/page": "workspace:*",
+    "@reactdx/panel": "workspace:*",
+    "solid-js": "1.9.18"
+  },
+  "devDependencies": {
+    "wxt": "0.21.5",
+    "@wxt-dev/module-solid": "1.1.4"
+  }
+}
