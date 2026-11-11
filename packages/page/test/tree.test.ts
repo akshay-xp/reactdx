@@ -317,3 +317,28 @@ test("a keyed reorder sends one reorder op with the same ids", async () => {
     "  Item function key=a",
   ])
 })
+
+test("a component whose name changes is renamed", async () => {
+  let rerender = (_: number) => {}
+  const Renamable: React.FC<{ n: number }> = function Renamable() {
+    return null
+  }
+  function Parent() {
+    const [n, set] = React.useState(0)
+    rerender = set
+    return h(Renamable, { n })
+  }
+  await render(h(Parent))
+  await watching(async (flush, resync) => {
+    const child = adds(resync).find((op) => op.name === "Renamable")
+    Renamable.displayName = "Renamed"
+    await React.act(() => rerender(1))
+    const [renamed, ...rest] = flush()
+    expect(rest).toEqual([])
+    expect(renamed?.ops).toEqual([
+      { op: "rename", id: child?.id, name: "Renamed" },
+    ])
+    await React.act(() => rerender(2))
+    expect(flush()).toEqual([])
+  })
+})

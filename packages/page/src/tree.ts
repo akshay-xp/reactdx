@@ -92,6 +92,10 @@ export function createTree() {
 
   // Emitted child ids per emitted id; a root's HostRoot is keyed by its own id.
   const children = new Map<number, number[]>()
+  // Last name sent per id: Fast Refresh or a late displayName renames a mounted fiber.
+  const names = new Map<number, string>()
+  const label = (fiber: Fiber) =>
+    bounded(nameOf(fiber, kindOf(fiber) as TreeKind))
 
   // Skipped fibers (fragments, text, modes...) pass their children up.
   const visible = (fiber: Fiber, out: Fiber[] = []) => {
@@ -110,13 +114,15 @@ export function createTree() {
   ) => {
     const id = idOf(fiber)
     const kind = kindOf(fiber) as TreeKind
+    const name = label(fiber)
+    names.set(id, name)
     ops.push({
       op: "add",
       id,
       parentId,
       rootId,
       kind,
-      name: bounded(nameOf(fiber, kind)),
+      name,
       key: fiber.key === null ? null : bounded(fiber.key),
       index,
     })
@@ -141,6 +147,7 @@ export function createTree() {
   const forget = (id: number) => {
     for (const child of children.get(id) ?? []) forget(child)
     children.delete(id)
+    names.delete(id)
   }
 
   // Brings a known node's stored children in line with this commit.
@@ -167,8 +174,14 @@ export function createTree() {
     const applied = (prev ?? []).filter((id) => kept.has(id))
     kids.forEach((kid, index) => {
       const id = next[index] as number
-      if (known.has(id)) update(kid, id, id, rootId, ops)
-      else {
+      if (known.has(id)) {
+        const name = label(kid)
+        if (name !== names.get(id)) {
+          names.set(id, name)
+          ops.push({ op: "rename", id, name })
+        }
+        update(kid, id, id, rootId, ops)
+      } else {
         addSubtree(kid, parentId, rootId, index, ops)
         applied.splice(index, 0, id)
       }
