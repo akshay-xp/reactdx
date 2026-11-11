@@ -1,4 +1,5 @@
 import type { Browser, Page } from "puppeteer"
+import { chromeEval } from "./firefox.ts"
 import type { BrowserName } from "./launch.ts"
 
 export type Toolbar = { title: string; icon?: string }
@@ -46,28 +47,13 @@ async function chromeToolbar(browser: Browser, page: Page) {
   })
 }
 
-type BidiResult = {
-  contexts: { context: string }[]
-  result: { type: string; value?: string }
-}
-
-// Raw WebDriver BiDi in the browser's chrome scope (needs MOZ_REMOTE_ALLOW_SYSTEM_ACCESS).
 // Reads the selected tab's state; the page under test is selected.
 async function firefoxToolbar(browser: Browser) {
-  const connection = (
-    browser as unknown as {
-      connection: {
-        send(method: string, params: object): Promise<{ result: BidiResult }>
-      }
-    }
-  ).connection
-  const tree = await connection.send("browsingContext.getTree", {
-    "moz:scope": "chrome",
-  })
-  const { result } = await connection.send("script.evaluate", {
-    // MV3 buttons sit in the extensions panel, whose nodes are built lazily, so read
-    // the action's per-tab data that the button renders.
-    expression: `(() => {
+  // MV3 buttons sit in the extensions panel, whose nodes are built lazily, so read
+  // the action's per-tab data that the button renders.
+  const value = await chromeEval(
+    browser,
+    `(() => {
       const { ExtensionParent } = ChromeUtils.importESModule(
         "resource://gre/modules/ExtensionParent.sys.mjs",
       )
@@ -77,9 +63,7 @@ async function firefoxToolbar(browser: Browser) {
       const data = action.action.getContextData(gBrowser.selectedTab)
       return JSON.stringify({ title: data.title, icon: data.icon["16"] })
     })()`,
-    target: { context: tree.result.contexts[0].context },
-    awaitPromise: false,
-  })
-  if (result.result.type !== "string") throw new Error("no ReactDX action")
-  return JSON.parse(result.result.value ?? "") as Toolbar
+  )
+  if (value === null) throw new Error("no ReactDX action")
+  return JSON.parse(value) as Toolbar
 }
