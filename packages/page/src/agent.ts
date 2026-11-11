@@ -1,4 +1,5 @@
 import {
+  MAX_OPS,
   type PageMessage,
   type RootInfo,
   snapshotMessage,
@@ -38,11 +39,17 @@ export function startAgent(
   }
 
   const tree = createTree()
+  let seq = 1
+  const send = (ops: TreeOp[]) => {
+    for (let i = 0; i < ops.length; i += MAX_OPS)
+      post(treeBatch(seq++, ops.slice(i, i + MAX_OPS)))
+  }
   const watch = () => {
+    seq = 1
     const ops: TreeOp[] = [{ op: "reset" }]
     for (const set of record.roots.values())
-      for (const root of set) ops.push(...tree.full(root, info(root).id))
-    post(treeBatch(1, ops))
+      for (const root of set) tree.full(root, info(root).id, ops)
+    send(ops)
   }
 
   let pending = false

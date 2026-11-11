@@ -139,11 +139,10 @@ export function createTree() {
   }
 
   return {
-    full(root: FiberRoot, rootId: number): TreeOp[] {
+    // Appends rather than returns: spreading a large tree into push() overflows the stack.
+    full(root: FiberRoot, rootId: number, ops: TreeOp[]) {
       const host = root.current as unknown as Fiber
-      const ops: TreeOp[] = []
       addChildren(host, idOf(host), 0, rootId, ops)
-      return ops
     },
   }
 }

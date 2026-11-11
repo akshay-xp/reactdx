@@ -164,3 +164,25 @@ test("every visible kind gets its kind and name; wrappers emit nothing", async (
     ...(Activity ? ["  Activity activity", "    Item function"] : []),
   ])
 })
+
+test("a resync over 2,000 ops is split into consecutive batches", async () => {
+  function List() {
+    return h(
+      "ul",
+      null,
+      Array.from({ length: 2500 }, (_, i) => h("li", { key: i })),
+    )
+  }
+  await render(h(List))
+  send(WATCH)
+
+  const [first, second, extra] = batches()
+  expect(first?.seq).toBe(1)
+  expect(first?.ops).toHaveLength(2000)
+  expect(first?.ops[0]).toEqual({ op: "reset" })
+  expect(second?.seq).toBe(2)
+  expect(second?.ops).toHaveLength(503)
+  expect(extra).toBeUndefined()
+  for (const batch of [first, second])
+    expect(parseTreeBatch(batch)).toEqual(batch)
+})
