@@ -49,9 +49,10 @@ function createHook(): Hook {
   }
 }
 
-export function installHook(target: {
-  __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook
-}): HookRecord {
+export function installHook(
+  target: { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook },
+  onRenderer?: (id: number, info: RendererInfo) => void,
+): HookRecord {
   const record: HookRecord = {
     renderers: new Map(),
     roots: new Map(),
@@ -64,7 +65,9 @@ export function installHook(target: {
     restore()
     const { version, bundleType, rendererPackageName } =
       renderer as RendererInfo
-    record.renderers.set(id, { version, bundleType, rendererPackageName })
+    const info = { version, bundleType, rendererPackageName }
+    record.renderers.set(id, info)
+    onRenderer?.(id, info)
   }
 
   // Our listener runs after the hook's own onCommitFiberRoot.
