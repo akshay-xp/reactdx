@@ -97,7 +97,11 @@ export function parseCopies(text: string): Copy[] {
   const headings = [...text.matchAll(HEADING)]
   return headings.map((match, i) => {
     const start = (match.index ?? 0) + match[0].length
-    const segment = text.slice(start, headings[i + 1]?.index ?? text.length)
+    const rest = text.slice(start, headings[i + 1]?.index ?? text.length)
+    // Ends at any other "React ..." heading too, even one this pattern can't parse
+    // (a forged version with spaces): component names are never "React".
+    const end = rest.search(/(^| )React /)
+    const segment = end === -1 ? rest : rest.slice(0, end)
     return {
       heading: match[0],
       commits: [...segment.matchAll(ROOT)].map(([, n]) => Number(n)),

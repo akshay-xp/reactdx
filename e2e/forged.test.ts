@@ -16,6 +16,27 @@ after(() => stop?.())
 
 const xss = (round: number) => `<img src=x onerror=alert(${round})>`
 
+// Valid-shaped tree batches: one out of step, then a whole forged tree whose seq the
+// agent won't follow, so only the panel asking for a resync brings the real tree back.
+function forgeTree() {
+  const tree = (seq: number, ops: unknown[]) =>
+    window.postMessage({ source: "reactdx", type: "tree", seq, ops }, "*")
+  tree(99, [{ op: "remove", id: 1 }])
+  tree(1e6, [
+    { op: "reset" },
+    {
+      op: "add",
+      id: 1e6,
+      parentId: 0,
+      rootId: 1,
+      kind: "function",
+      name: "<img src=x onerror=alert(3)>",
+      key: null,
+      index: 0,
+    },
+  ])
+}
+
 // Any page script can post into the window the relay listens on. Each round ends
 // with its own forged renderer, so the panel showing it means the round was processed.
 function forge(round: number) {
@@ -25,6 +46,13 @@ function forge(round: number) {
   post({ source: "reactdx", type: "renderer", id: "1", version: 18 })
   post({ source: "reactdx", type: "renderer", id: 2, version: "x".repeat(1e6) })
   post({ source: "reactdx", type: "unknown" })
+  const tree = (seq: number, ops: unknown[]) =>
+    post({ source: "reactdx", type: "tree", seq, ops })
+  tree(1, [{ op: "add", id: "1" }])
+  tree(1, Array(2001).fill({ op: "reset" }))
+  // Commands meant for the agent: a resync, and one it doesn't know.
+  post({ source: "reactdx-relay", type: "watch" })
+  post({ source: "reactdx-relay", type: "explode" })
   post({
     source: "reactdx",
     type: "snapshot",
@@ -82,16 +110,28 @@ test("forged page messages can't break the relay or the panel", {
       assert.equal(await frame.$("img"), null)
     }
 
-    const before = real(text)?.commits[0] ?? 0
-    await page.$eval("[data-testid=counter]", (el) =>
-      (el as HTMLElement).click(),
-    )
-    const after = await until(
-      panel,
-      (t) => (real(t)?.commits[0] ?? 0) > before,
-      2000,
-    )
-    assert.ok((real(after)?.commits[0] ?? 0) > before, after)
+    await page.evaluate(forgeTree)
+    // The forged tree shows until the next real batch puts the panel out of step.
+    await until(panel, (t) => real(t)?.names.includes(xss(3)) ?? false)
+    if (name === "chrome")
+      assert.equal(await (await openPanel(browser)).$("img"), null)
+
+    // The real tree comes back (the panel asks for a resync), and stays live.
+    const names = (t: string) => JSON.stringify(real(t)?.names)
+    for (const expected of [
+      ["App", "Counter", "Clicked"],
+      ["App", "Counter"],
+    ]) {
+      const before = real(await panel())?.commits[0] ?? 0
+      await page.$eval("[data-testid=counter]", (el) =>
+        (el as HTMLElement).click(),
+      )
+      const done = (t: string) =>
+        (real(t)?.commits[0] ?? 0) > before &&
+        names(t) === JSON.stringify(expected)
+      const after = await until(panel, done, 5000)
+      assert.ok(done(after), after)
+    }
   } finally {
     await browser.close()
   }
