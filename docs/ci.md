@@ -27,6 +27,7 @@ Input `browsers`: `none` (default), `chrome`, or `firefox`.
 - `pnpm install` runs with `PUPPETEER_SKIP_DOWNLOAD=true`, then `pnpm exec puppeteer browsers install <browser>` installs the job's browser at Puppeteer's pinned version. Not postinstall: a restored pnpm store can skip Puppeteer's postinstall, which left `e2e (chrome, next)` with no Chrome (run 42975206720).
 - With browsers: `~/.cache/puppeteer` cached on `puppeteer-<os>-<browsers>-<hash of pnpm-lock.yaml, .puppeteerrc.cjs>`, restored before install.
 - With browsers: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. Ubuntu 24.04's AppArmor blocks the user namespaces Chrome's sandbox needs; this is Puppeteer's documented fix and keeps `--no-sandbox` out of the code.
+- `e2e` caches `e2e/.rdt` keyed `rdt-<hash of e2e/rdt.lock.json>`, so RDT downloads only when the lock changes. If the cache is evicted (7 days unused) after the Chrome Web Store moved past the locked build, the job fails with the `pnpm rdt:update` message.
 - e2e runs headed under `xvfb-run -a` (DevTools only exists headed; `docs/e2e.md`).
 
 ## Conventions (from SnapQL)

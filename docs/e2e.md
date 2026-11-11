@@ -30,11 +30,37 @@ Both browsers run **headed** (DevTools, and so the devtools page, doesn't exist 
 - **Firefox stdout prefs:** `devtools.console.stdout.chrome` and `devtools.console.stdout.content` (both needed for the devtools page's log). Puppeteer always pipes Firefox's stdout.
 - **Why Firefox doesn't render the panel:** BiDi refuses to navigate to `moz-extension://` (`unsupported operation`), and Firefox gives extension panels random tool ids (`webext-devtools-panel-<random>`), so the toolbox can't be switched to ours. Chrome covers the render.
 
+## Coexisting with RDT (`e2e/coexist.test.ts`)
+
+Per fixture, with the store RDT installed, each case asserts that RDT's backend attached (`rendererInterfaces.size` = renderers, `getFiberRoots` non-empty for every `react-dom` renderer), that ReactDX's record has the same renderers, and that a ReactDX commit listener fires on a click.
+
+| Case                       | How the order is forced                                                                                                | Asserts order              |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| ReactDX first, then RDT    | `page.evaluateOnNewDocument(preloadHook("first"))`: our bundled `installHook` runs before any page or extension script | ours on `Window.prototype` |
+| RDT first, then ReactDX    | `preloadHook("after-rdt")`: waits (10 ms polls, up to 2 s) for RDT's own-property hook, then installs                  | RDT's on `window`          |
+| The shipped build with RDT | real extension + RDT, whatever order the browser gives                                                                 | none                       |
+
+- Orders are forced because the browsers don't vary them: under Puppeteer, Chrome 157 always installs RDT's hook first and Firefox 159 always ReactDX's, whatever the extension load order. M0 #4 saw ReactDX first in Chromium 158 under Playwright `--load-extension`, so real-world order isn't assumed.
+- RDT registers its hook from its service worker, so a load can miss it; the test reloads until it's attached, up to 5 times.
+- Renderers with RDT: 1 on `fixture:18`/`19`, 2 on `multi`, 3 on `next` (Next's Server Components client also registers, because RDT's hook has `supportsFlight`; `docs/page.md`).
+- `e2e/preload.ts` bundles the preload scripts in memory with esbuild (a root devDependency).
+
+## RDT, locked like a dependency (`e2e/rdt.ts`)
+
+- `e2e/rdt.lock.json`: RDT `version`, Firefox's versioned AMO `url` and `sha256`, Chrome's `sha256`. The Chrome Web Store only serves the latest build, so Chrome is pinned by hash.
+- `ensureRdt(browser)` returns `e2e/.rdt/<browser>-<version>/` (gitignored), unpacked. A cached folder means no network; otherwise it downloads, checks the hash and unzips.
+- A store build that isn't the locked one throws `RDT from the <store> isn't the locked <version> (sha256 …); run pnpm rdt:update`, so a new RDT release never silently changes what's tested.
+- `pnpm rdt:update` (`e2e/rdt-update.ts`): latest from AMO's API (checked against AMO's hash) and the Chrome Web Store; fails if their versions differ; rewrites the lock and fills the cache.
+- CI caches `e2e/.rdt` on the lock's hash (`docs/ci.md`).
+- `e2e/rdt.test.ts`: cached means offline; a wrong hash throws and caches nothing.
+
 ## Key files
 
 - `e2e/run.ts`: flag parsing, per-browser build, test run.
-- `e2e/launch.ts`: `launchWithExtension(name)` returns `{ browser, panelCreated(), panelUrl }` (`panelUrl` is `null` in Firefox).
-- `e2e/extension.test.ts`: the suite.
+- `e2e/launch.ts`: `launchWithExtension(name, extensions = [reactdxBuild(name)])` returns `{ browser, panelCreated(), panelUrl }` (`panelUrl` is `null` in Firefox or without the ReactDX build).
+- `e2e/extension.test.ts`: ReactDX alone (hook on the prototype, record, panel).
+- `e2e/coexist.test.ts`, `e2e/preload.ts`, `e2e/rdt.ts`, `e2e/rdt.lock.json`, `e2e/rdt-update.ts`.
+- Test files run one at a time (`--test-concurrency=1`): they share fixture ports.
 - `fixtures/start.ts`: `startFixture(script, port)`, shared with the fixture smoke test.
 
 ## Related

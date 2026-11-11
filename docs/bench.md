@@ -4,7 +4,7 @@ Per-commit cost of a page-side hook on a 10,000-component tree. Moved from `spik
 
 ## Command (from the repo root)
 
-`pnpm bench:hook-cost`: installs Playwright's Chromium if missing, downloads RDT into `bench/hook-cost/rdt/` if missing (gitignored), bundles `src/hook.js` into `extension/hook.js` (gitignored), starts `fixture:18` and `fixture:19`, prints the table, stops the fixtures. Windows open during the run (about 2 minutes).
+`pnpm bench:hook-cost`: installs Playwright's Chromium if missing, gets the locked RDT from `ensureRdt("chrome")` (`e2e/rdt.ts`, cached in `e2e/.rdt/`; `docs/e2e.md`), bundles `src/hook.js` into `extension/hook.js` (gitignored), starts `fixture:18` and `fixture:19`, prints the table, stops the fixtures. Windows open during the run (about 2 minutes).
 
 ## What it measures
 
@@ -60,7 +60,7 @@ Matches M0 #3 (`docs/m0-findings.md`) within about 0.5 ms on medians: bippy + tr
 ## Key files
 
 - `bench/hook-cost/run.ts`: cases, measurement, table.
-- `bench/hook-cost/rdt.ts`: RDT download. `bench/hook-cost/stats.ts` (+ `stats.test.ts`).
+- `e2e/rdt.ts`: the locked RDT download. `bench/hook-cost/stats.ts` (+ `stats.test.ts`).
 - `fixtures/start.ts`: starts the fixture servers (always from the repo root).
 
 ## Related

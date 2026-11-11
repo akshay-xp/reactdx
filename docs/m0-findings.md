@@ -129,10 +129,11 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Side findings:**
   - **RDT's own startup race:** RDT registers its hook script from its service worker, so a page load can miss it. Under parallel load, this failed 3 of 30 times even with RDT alone. A reliable signal that RDT's script ran is its `react-devtools-hook-installer` handshake message, which it posts even when it later bails. The tests reload until that message appears.
   - **Chrome's order:** our static `document_start` content script always runs before RDT's runtime-registered one, whatever the `--load-extension` order. So "ours first" is the real-world order in Chrome, and "RDT first" needs a test-only delay (`coexist/src/late.js`).
-- **Risks to handle in M2:**
-  - The `Object.defineProperty` wrapper is visible to the page and stays in place forever. It should restore itself once React has connected, or after the first hook attaches.
-  - A hook defined by plain assignment (not `defineProperty`) on `window` won't be noticed. RDT 8 uses `defineProperty`, so this only matters for other tools.
-  - If RDT installs after React has connected, for example when it's enabled with the page already open, nothing reaches RDT until a reload. That's RDT's normal behavior anyway.
+- **Risks to handle in M2** (status after M2 #18, `docs/page.md`):
+  - The `Object.defineProperty` wrapper is visible to the page and stays in place forever. **Handled:** removed on the first renderer inject.
+  - A hook defined by plain assignment (not `defineProperty`) on `window` won't be noticed. **Handled:** the prototype accessor's setter attaches to it.
+  - If RDT installs after React has connected, for example when it's enabled with the page already open, nothing reaches RDT until a reload. That's RDT's normal behavior anyway. **Documented, not fixed.**
+  - Found in M2 #18: Chrome 157 under Puppeteer installs RDT's hook before ours (the opposite of this experiment), and RDT defines it with a getter; the attach-first path handles both.
 - **Versions tested:** RDT 8.0.0 (Chrome Web Store and AMO), bippy 0.7.3, React 18.3.1 / 19.3.1, Next.js 16.4.6, Playwright Chromium 158.0.8127.18, Firefox 159.0.1, macOS 26.5.
 - **Steps to reproduce (at `12bf178`, from `spikes/`):** `pnpm exec playwright test coexist`. The global setup downloads RDT and bundles `coexist/src/first.js` and `coexist/src/late.js`. Firefox: see below.
 

@@ -23,9 +23,9 @@ Vitest 5.1.0 in jsdom 31.0.0. One suite, run once per React version.
 
 ## Writing React tests
 
-- Call `installHook(globalThis)` before `await import('react-dom/client')`: react-dom registers with the hook as it loads.
+- Call `installHook(windowLike())` (`packages/page/test/window.ts`) before `mount()`, which imports `react-dom/client`: react-dom registers with the hook as it loads, and only once per module load, so each React scenario is its own test file. `windowLike()` gives `globalThis` a fresh prototype standing in for `Window.prototype`, where ReactDX's hook lives.
 - Set `globalThis.IS_REACT_ACT_ENVIRONMENT = true` and wrap renders in `React.act` (exported by `react` in 18.3 and 19).
-- `onCommitFiberRoot` is looked up on the hook per commit, so `vi.spyOn(hook, 'onCommitFiberRoot')` sees commits. React calls it as `(rendererId, fiberRoot, priorityLevel, didError)`.
+- Observe commits through the returned record's `listeners` (`docs/page.md`). React calls `onCommitFiberRoot` as `(rendererId, fiberRoot, priorityLevel, didError)`.
 
 ## Not covered yet
 
@@ -35,7 +35,7 @@ Vitest 5.1.0 in jsdom 31.0.0. One suite, run once per React version.
 
 - `vitest.config.ts`: projects and aliases.
 - `test-env/react-18/package.json`, `test-env/react-19/package.json`.
-- `packages/page/test/commit.test.ts`: a real root committing through the hook.
+- `packages/page/test/*.test.ts`: real roots committing through the hook in each install order (`docs/page.md`).
 
 ## Related
 
