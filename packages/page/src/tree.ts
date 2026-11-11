@@ -163,11 +163,18 @@ export function createTree() {
         forget(id)
       }
     const known = new Set(prev)
+    // What the panel holds after the removes and adds, in its order.
+    const applied = (prev ?? []).filter((id) => kept.has(id))
     kids.forEach((kid, index) => {
       const id = next[index] as number
       if (known.has(id)) update(kid, id, id, rootId, ops)
-      else addSubtree(kid, parentId, rootId, index, ops)
+      else {
+        addSubtree(kid, parentId, rootId, index, ops)
+        applied.splice(index, 0, id)
+      }
     })
+    if (applied.some((id, index) => id !== next[index]))
+      ops.push({ op: "reorder", rootId, parentId, children: next })
     children.set(key, next)
   }
 

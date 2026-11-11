@@ -189,7 +189,7 @@ test("a resync over 2,000 ops is split into consecutive batches", async () => {
 
 // Fake timers drive the agent's 100 ms flush; watching starts with a mirrored resync.
 async function watching(
-  run: (flush: () => TreeBatchMessage[]) => Promise<void>,
+  run: (flush: () => TreeBatchMessage[], resync: TreeOp[]) => Promise<void>,
 ) {
   // Let a flush scheduled on real timers (by earlier commits) run first.
   await new Promise((resolve) => setTimeout(resolve, 150))
@@ -198,7 +198,8 @@ async function watching(
   try {
     send(WATCH)
     const tree = mirror()
-    for (const batch of batches()) tree.apply(batch.ops)
+    const resync = batches().flatMap((batch) => batch.ops)
+    tree.apply(resync)
     posted.length = 0
     await run(() => {
       vi.advanceTimersByTime(100)
@@ -206,7 +207,7 @@ async function watching(
       for (const batch of sent) tree.apply(batch.ops)
       posted.length = 0
       return sent
-    })
+    }, resync)
     return tree
   } finally {
     vi.useRealTimers()
@@ -270,8 +271,8 @@ test("mounts and unmounts send only the changed subtree, on the flush", async ()
 
 test("a root mounted while watched is added, and removed when it unmounts", async () => {
   await render(h(App))
-  await watching(async (flush) => {
-    const first = adds(batches()[0]?.ops ?? [])
+  await watching(async (flush, resync) => {
+    const first = adds(resync)
     const second = await render(h(Child))
     const [mounted] = flush()
     expect(summary(mounted)).toEqual(["add Child at 0", "add span at 0"])
@@ -284,4 +285,35 @@ test("a root mounted while watched is added, and removed when it unmounts", asyn
     const [unmounted] = flush()
     expect(unmounted?.ops).toEqual([{ op: "remove", id: child?.id }])
   })
+})
+
+test("a keyed reorder sends one reorder op with the same ids", async () => {
+  let setOrder = (_: string[]) => {}
+  function List() {
+    const [order, set] = React.useState(["a", "b", "c"])
+    setOrder = set
+    return order.map((key) => h(Item, { key }))
+  }
+  await render(h(List))
+  const tree = await watching(async (flush, resync) => {
+    const items = adds(resync).filter((op) => op.key)
+    const list = adds(resync).find((op) => op.name === "List")
+    await React.act(() => setOrder(["c", "b", "a"]))
+    const sent = flush()
+    expect(sent).toHaveLength(1)
+    expect(sent[0]?.ops).toEqual([
+      {
+        op: "reorder",
+        rootId: list?.rootId,
+        parentId: list?.id,
+        children: items.map((op) => op.id).reverse(),
+      },
+    ])
+  })
+  expect(tree.outline()).toEqual([
+    "List function",
+    "  Item function key=c",
+    "  Item function key=b",
+    "  Item function key=a",
+  ])
 })
