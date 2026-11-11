@@ -1,0 +1,13 @@
+{
+  "name": "@reactdx/bench-hook-cost",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"*.test.ts\""
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "bippy": "0.7.3",
+    "esbuild": "0.28.2"
+  }
+}

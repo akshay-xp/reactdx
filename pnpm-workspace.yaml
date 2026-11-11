@@ -3,6 +3,7 @@ packages:
   - apps/*
   - fixtures/*
   - test-env/*
+  - bench/*
 
 peerDependencyRules:
   # The Vite fixture's aliases rewrite react-dom's own `react` import to the matching version per mode.

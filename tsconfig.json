@@ -17,6 +17,7 @@
     "packages/page",
     "e2e",
     "scripts",
+    "bench",
     "fixtures/*.ts",
     "fixtures/multi/serve.ts",
     "vitest.config.ts"
