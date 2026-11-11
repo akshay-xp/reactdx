@@ -34,6 +34,9 @@ const test = spawnSync(
     // A hung test fails on its own, so the run still prints every failure's details
     // (CI's job timeout would cancel it with none).
     "--test-timeout=120000",
+    // A file whose browser or server outlives its tests would otherwise hold the run
+    // open, and node --test only prints failure details at the very end.
+    "--test-force-exit",
     "e2e/*.test.ts",
   ],
   {
