@@ -55,6 +55,9 @@ async function openWithRdt(page: Page, port: number) {
   const errors: string[] = []
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
   page.on("pageerror", (e) => errors.push(String(e)))
+  page.on("response", (r) => {
+    if (r.status() >= 400) errors.push(`${r.status()} ${r.url()}`)
+  })
   page.on("requestfailed", (r) =>
     errors.push(`request failed: ${r.url()} ${r.failure()?.errorText}`),
   )
