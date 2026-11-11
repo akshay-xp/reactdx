@@ -86,6 +86,95 @@ function parseSnapshot(message: Record<string, unknown>) {
   return snapshotMessage(parsed)
 }
 
+export type TreeKind =
+  | "function"
+  | "class"
+  | "forwardRef"
+  | "memo"
+  | "lazy"
+  | "suspense"
+  | "provider"
+  | "consumer"
+  | "profiler"
+  | "activity"
+  | "host"
+
+// parentId 0 is the root's top level; removing a node removes its descendants.
+export type TreeOp =
+  | { op: "reset" }
+  | {
+      op: "add"
+      id: number
+      parentId: number
+      rootId: number
+      kind: TreeKind
+      name: string
+      key: string | null
+      index: number
+    }
+  | { op: "remove"; id: number }
+  | { op: "reorder"; rootId: number; parentId: number; children: number[] }
+  | { op: "rename"; id: number; name: string }
+
+export type TreeBatchMessage = {
+  source: "reactdx"
+  type: "tree"
+  seq: number
+  ops: TreeOp[]
+}
+
+export const treeBatch = (seq: number, ops: TreeOp[]): TreeBatchMessage => ({
+  source: "reactdx",
+  type: "tree",
+  seq,
+  ops,
+})
+
+export function parseTreeBatch(data: unknown): TreeBatchMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, seq, ops } = data as Record<string, unknown>
+  if (source !== "reactdx" || type !== "tree" || !Array.isArray(ops)) return
+  const parsed: TreeOp[] = []
+  for (const op of ops) {
+    const result = parseTreeOp(op)
+    if (!result) return
+    parsed.push(result)
+  }
+  return treeBatch(seq as number, parsed)
+}
+
+function parseTreeOp(data: unknown): TreeOp | undefined {
+  const o = data as Record<string, unknown>
+  switch (o.op) {
+    case "reset":
+      return { op: "reset" }
+    case "add": {
+      const { id, parentId, rootId, kind, name, key, index } = o
+      return {
+        op: "add",
+        id,
+        parentId,
+        rootId,
+        kind,
+        name,
+        key,
+        index,
+      } as TreeOp
+    }
+    case "remove":
+      return { op: "remove", id: o.id as number }
+    case "reorder":
+      return {
+        op: "reorder",
+        rootId: o.rootId as number,
+        parentId: o.parentId as number,
+        children: o.children as number[],
+      }
+    case "rename":
+      return { op: "rename", id: o.id as number, name: o.name as string }
+  }
+}
+
 export type ToolbarIcon = "none" | "development" | "production"
 
 export type ToolbarState = { icon: ToolbarIcon; title: string }
