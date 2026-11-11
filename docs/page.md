@@ -1,6 +1,6 @@
 # Page (`packages/page`)
 
-Code that runs in the page's MAIN world. Today: installing the React DevTools global hook and recording what React registers. Fiber reading comes later.
+Code that runs in the page's MAIN world: installing the React DevTools global hook, recording what React registers, and (in the injected agent) reading the component tree.
 
 ## Rules
 
@@ -38,6 +38,19 @@ React connects to whichever `__REACT_DEVTOOLS_GLOBAL_HOOK__` exists when it load
 - Posts `snapshotMessage(roots)` at start, at most every 100 ms after commits (one timer per burst, so a page committing every frame can't flood the extension), and on a `get-snapshot` message event on `target`.
 - Unmounted roots drop out of the next snapshot (the record removes them).
 
+## Tree (`createTree()`, `src/tree.ts`; M3 #24)
+
+The agent tracks the component tree only between `WATCH` and `UNWATCH` message events from the relay (`docs/messages.md`, "Tree batches"), so a page with DevTools closed pays nothing beyond M2.
+
+- **Watch:** posts `reset` plus every root's tree, depth-first, starting a new `seq` at 1. Every watch is a full resync.
+- **Ids:** a `WeakMap` sets each id on both the fiber and its `alternate` (React swaps them on every update), counting from 1 per document. Ids survive `UNWATCH`, so a re-watch gives the same component the same id.
+- **Kinds (by fiber tag):** 0 function, 1 class, 11 forwardRef, 14/15 memo, 9 consumer, 10 provider, 12 profiler, 13 suspense, 31 activity, 5/26/27 host; `lazy` when `elementType` is a lazy wrapper. Every other tag (root, text, fragment, mode, portal, offscreen...) emits nothing; its children attach to the nearest emitted ancestor.
+- **Names:** `displayName`, then the wrapped component for forwardRef (`render`) and memo (`type`), then `name`, then `Anonymous`. Providers and consumers: the context's `displayName` or `Context`. Host: the tag. Profiler, Suspense, Activity: fixed. Names and keys are cut to 256 chars (`MAX_TREE_STRING`), the validator's bound.
+- **Hidden content:** an Offscreen fiber (tag 22) with `memoizedState !== null` is suspended or hidden, so its subtree isn't emitted. A Suspense showing its fallback lists only the fallback.
+- **Per-commit diff:** every commit while watched, not once per flush, because the shortcut only holds against the previous commit: a node whose fiber has an `alternate` with the same `child` bailed out, so nothing below it changed. Otherwise its emitted children are compared with the stored list: `remove` the gone (descendants implied), `add` the new in ascending index with their subtrees, then `reorder` if the order still differs. A known child whose name changed (Fast Refresh, a late `displayName`) gets `rename`.
+- **Posting:** ops are buffered and posted on the existing 100 ms flush, split into batches of at most 2,000 (`MAX_OPS`), each with the next `seq`. A commit with no structural change posts nothing.
+- **Unwatch:** stops diffing, drops the buffer and the stored children and names.
+
 ## Types
 
 - `Hook`, `HookRecord`, `FiberRoot`; `RendererInfo` comes from `@reactdx/messages` (re-exported), so `page` depends on `messages`, never the reverse. `declare global { var __REACT_DEVTOOLS_GLOBAL_HOOK__: Hook | undefined }` types `window` and `globalThis`.
@@ -52,6 +65,7 @@ One file per React scenario, because react-dom registers with the hook only once
 - `test/rdt-first.test.ts`: an RDT-like hook defined first with a getter.
 - `test/define-later.test.ts`: a hook defined with `defineProperty` after ours.
 - `test/assign-later.test.ts`: a hook set by plain assignment after ours.
+- `test/tree.test.ts`: kinds and names, watch/unwatch, splitting, mounts, unmounts, reorders, renames and Suspense (fake timers drive the flush). `test/tree-mirror.ts` applies ops like the panel and prints an outline.
 - `test/agent.test.ts`: the agent's first snapshot, 100 ms batching, `get-snapshot`, unmount, a second start (fake timers).
 - `test/window.ts`: `windowLike()` inserts a fresh prototype under `globalThis` to stand in for `Window.prototype`; `mount()` renders a root. `test/fake-hook.ts`: an RDT-like hook.
 

@@ -44,6 +44,32 @@ Nothing lives in the background, so every scenario is the panel or the relay ask
 
 **Trust:** the page shares the MAIN world with the hook, so any page script can post a message that passes. Validation guarantees shape and size, not origin. A forged message can at worst change that tab's icon, title and panel list (or ask for the agent, which does nothing without a hook record); the panel renders page data as text only. `e2e/forged.test.ts` posts malformed, oversized (1,000 roots) and forged messages before and after React loads, in both browsers.
 
+## Tree batches (`parseTreeBatch(data)`; M3 #24)
+
+The agent's component tree (`docs/page.md`, "Tree"), posted only while watched. Not wired into the relay yet (#25): the relay treats any accepted non-snapshot message as a renderer, so `parsePageMessage` doesn't dispatch `tree`.
+
+- `WATCH` / `UNWATCH` (`{ source: "reactdx-relay", type: "watch" | "unwatch" }`): content script to agent, through the page.
+- `TreeBatchMessage = { source: "reactdx", type: "tree", seq, ops: TreeOp[] }`, built with `treeBatch(seq, ops)`. `seq` restarts at 1 on every watch, whose first batch starts with `reset`.
+- `TreeOp`:
+  - `{ op: "reset" }`
+  - `{ op: "add", id, parentId, rootId, kind, name, key, index }`: `parentId` 0 is the root's top level; `index` is the position among the parent's children once earlier ops apply.
+  - `{ op: "remove", id }`: removes descendants too.
+  - `{ op: "reorder", rootId, parentId, children }`: the parent's full child id list.
+  - `{ op: "rename", id, name }`
+
+Any invalid op drops the whole batch (a partial batch would desync the mirror). Extra keys are stripped.
+
+| Field               | Accepted                                      |
+| ------------------- | --------------------------------------------- |
+| `seq`               | positive safe integer                         |
+| `ops`               | array of 1 to 2,000 (`MAX_OPS`)               |
+| `id`, `rootId`      | positive safe integer                         |
+| `parentId`, `index` | non-negative safe integer                     |
+| `kind`              | a `TreeKind` (`docs/page.md`)                 |
+| `name`              | string, at most 256 chars (`MAX_TREE_STRING`) |
+| `key`               | `null` or string, at most 256 chars           |
+| `children`          | array of at most 10,000 positive ids          |
+
 ## Toolbar (`toolbarState(renderers)`, `toolbarIcons(icon)`)
 
 | Renderers                        | Icon          | Title                                                                         |
@@ -57,7 +83,7 @@ Nothing lives in the background, so every scenario is the panel or the relay ask
 
 ## Key files
 
-- `packages/messages/src/index.ts`, `packages/messages/test/messages.test.ts`.
+- `packages/messages/src/index.ts`, `packages/messages/test/messages.test.ts`, `packages/messages/test/tree.test.ts`.
 - `apps/extension/entrypoints/hook.content.ts`, `relay.content.ts`, `background.ts`.
 - `e2e/toolbar.test.ts`, `e2e/toolbar.ts` (`docs/e2e.md`).
 
