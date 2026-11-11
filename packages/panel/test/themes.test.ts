@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  applyTheme,
   type ColorToken,
   colorTokens,
   defaultTheme,
@@ -110,5 +111,27 @@ describe("themes", () => {
         ),
       )
     }
+  })
+
+  it("applies a theme to the root element", () => {
+    for (const theme of themes) {
+      const root = document.createElement("html")
+      applyTheme(theme, root)
+      for (const [name, value] of Object.entries(themeVars(theme))) {
+        expect(root.style.getPropertyValue(name), name).toBe(value)
+      }
+      expect(root.dataset.theme).toBe(theme.id)
+      expect(root.dataset.themeKind).toBe(theme.kind)
+      expect(root.style.colorScheme).toBe(theme.kind)
+    }
+  })
+
+  it("replaces the previous theme", () => {
+    const root = document.createElement("html")
+    applyTheme(defaultTheme("dark"), root)
+    applyTheme(defaultTheme("light"), root)
+    expect(root.style.getPropertyValue("--theme-bg")).toBe("#ffffff")
+    expect(root.dataset.theme).toBe("devtools-light")
+    expect(root.style.colorScheme).toBe("light")
   })
 })

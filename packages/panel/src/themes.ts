@@ -80,3 +80,13 @@ export function themeVars(theme: Theme): Record<string, string> {
     colorTokens.map((token) => [`--theme-${token}`, theme.colors[token]]),
   )
 }
+
+export function applyTheme(theme: Theme, root: HTMLElement) {
+  for (const [name, value] of Object.entries(themeVars(theme))) {
+    root.style.setProperty(name, value)
+  }
+  root.dataset.theme = theme.id
+  root.dataset.themeKind = theme.kind
+  // Native scrollbars and form controls otherwise stay light.
+  root.style.colorScheme = theme.kind
+}
