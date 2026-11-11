@@ -33,3 +33,33 @@ export function parsePageMessage(data: unknown): RendererMessage | undefined {
     rendererPackageName,
   })
 }
+
+export type ToolbarState = {
+  icon: "none" | "development" | "production"
+  title: string
+}
+
+// A development copy is what ReactDX can inspect, so it decides the state;
+// production copies alongside it (Next's dev overlay) aren't listed.
+export function toolbarState(renderers: RendererInfo[]): ToolbarState {
+  const versions = (bundleType: number) => [
+    ...new Set(
+      renderers
+        .filter((r) => r.bundleType === bundleType)
+        .map((r) => r.version),
+    ),
+  ]
+  const development = versions(1)
+  if (development.length)
+    return {
+      icon: "development",
+      title: `ReactDX: React ${development.join(", ")}`,
+    }
+  const production = versions(0)
+  if (production.length)
+    return {
+      icon: "production",
+      title: `ReactDX: React ${production.join(", ")} (production build)`,
+    }
+  return { icon: "none", title: "ReactDX: no React" }
+}
