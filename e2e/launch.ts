@@ -1,5 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import path from "node:path"
-import puppeteer, { type Browser } from "puppeteer"
+import puppeteer, { type Browser, type Frame } from "puppeteer"
 
 export type BrowserName = "chrome" | "firefox"
 
@@ -14,25 +16,34 @@ export const reactdxBuild = (name: BrowserName) =>
 export function launchWithExtension(
   name: BrowserName,
   extensions = [reactdxBuild(name)],
+  options: { devtoolsTheme?: "light" | "dark" } = {},
 ): Promise<{
   browser: Browser
   panelCreated(): Promise<boolean>
-  panelUrl: string | null
 }> {
   return name === "chrome"
-    ? launchChrome(extensions)
+    ? launchChrome(extensions, options.devtoolsTheme)
     : launchFirefox(extensions)
 }
 
-async function launchChrome(extensions: string[]) {
+async function launchChrome(
+  extensions: string[],
+  devtoolsTheme?: "light" | "dark",
+) {
+  const userDataDir = devtoolsTheme && themedProfile(devtoolsTheme)
   const browser = await puppeteer.launch({
     headless: false,
     devtools: true,
     pipe: true,
     enableExtensions: extensions,
+    userDataDir,
   })
+  if (userDataDir)
+    browser.on("disconnected", () =>
+      rmSync(userDataDir, { recursive: true, force: true }),
+    )
   if (!extensions.includes(reactdxBuild("chrome")))
-    return { browser, panelCreated: async () => false, panelUrl: null }
+    return { browser, panelCreated: async () => false }
   const devtools = await browser.waitForTarget(
     (target) => target.url().endsWith("/devtools.html"),
     { timeout: 10_000 },
@@ -49,7 +60,6 @@ async function launchChrome(extensions: string[]) {
       await session.send("Runtime.enable")
       return poll(() => logs.includes(PANEL_CREATED), 2_000)
     },
-    panelUrl: new URL("/panel.html", devtools.url()).href,
   }
 }
 
@@ -70,8 +80,6 @@ async function launchFirefox(extensions: string[]) {
   return {
     browser,
     panelCreated: () => poll(() => stdout.includes(PANEL_CREATED), 10_000),
-    // BiDi refuses to navigate to moz-extension:// URLs.
-    panelUrl: null,
   }
 }
 
@@ -82,4 +90,37 @@ async function poll(check: () => boolean, timeout: number) {
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   return true
+}
+
+// DevTools settings are JSON strings inside the profile's preferences.
+function themedProfile(theme: "light" | "dark") {
+  const dir = mkdtempSync(path.join(tmpdir(), "reactdx-e2e-"))
+  mkdirSync(path.join(dir, "Default"))
+  writeFileSync(
+    path.join(dir, "Default", "Preferences"),
+    JSON.stringify({
+      devtools: {
+        preferences: {
+          "ui-theme": JSON.stringify(theme === "dark" ? "dark" : "default"),
+        },
+      },
+    }),
+  )
+  return dir
+}
+
+// Chrome only: selects the ReactDX tab in the open DevTools window and returns the panel frame.
+export async function openPanel(browser: Browser): Promise<Frame> {
+  const target = await browser.waitForTarget((t) =>
+    t.url().startsWith("devtools://devtools/bundled/devtools_app.html"),
+  )
+  const devtools = await target.asPage()
+  await devtools.waitForFunction(
+    `import("./ui/legacy/legacy.js").then(({ InspectorView }) => {
+      const view = InspectorView.InspectorView.instance()
+      const id = view.tabbedPane.tabIds().find((id) => id.includes("ReactDX"))
+      return id && view.showPanel(id).then(() => true)
+    })`,
+  )
+  return devtools.waitForFrame((f) => f.url().endsWith("/panel.html"))
 }

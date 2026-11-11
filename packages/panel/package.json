@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/Panel.tsx",
+    "./themes": "./src/themes.ts",
     "./index.css": "./src/index.css"
   },
   "peerDependencies": {

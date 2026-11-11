@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { after, before, describe, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
 import type { HookRecord } from "../packages/page/src/hook.ts"
-import { type BrowserName, launchWithExtension } from "./launch.ts"
+import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 
 let extension: Awaited<ReturnType<typeof launchWithExtension>>
 before(
@@ -55,10 +55,8 @@ for (const [script, port, renderers] of [
 
 test("the devtools page creates the ReactDX panel", async () => {
   assert.equal(await extension.panelCreated(), true)
-  // Firefox can't open moz-extension:// pages over BiDi, so only Chrome renders the panel here.
-  if (!extension.panelUrl) return
-  const page = await extension.browser.newPage()
-  await page.goto(extension.panelUrl)
-  assert.ok(await page.waitForSelector("[data-testid=panel-root]"))
-  await page.close()
+  // Firefox can't open moz-extension:// frames over BiDi, so only Chrome renders the panel here.
+  if (process.env.E2E_BROWSER !== "chrome") return
+  const panel = await openPanel(extension.browser)
+  assert.ok(await panel.waitForSelector("[data-testid=panel-root]"))
 })
