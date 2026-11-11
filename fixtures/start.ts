@@ -1,8 +1,13 @@
 import { spawn } from "node:child_process"
+import path from "node:path"
 
 // Starts `pnpm <script>` and resolves once the port answers.
 export function startFixture(script: string, port: number) {
-  const child = spawn("pnpm", [script], { detached: true, stdio: "ignore" })
+  const child = spawn("pnpm", [script], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    detached: true,
+    stdio: "ignore",
+  })
   let exited = false
   const stop = () => {
     if (!exited && child.pid) process.kill(-child.pid, "SIGTERM")

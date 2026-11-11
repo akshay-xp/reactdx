@@ -20,7 +20,8 @@
     "fixture:19": "pnpm -C fixtures/vite exec vite --mode 19 --port 5219 --strictPort",
     "fixture:next": "NEXT_TELEMETRY_DISABLED=1 pnpm -C fixtures/next exec next dev --port 5220",
     "fixture:multi": "node fixtures/multi/serve.ts",
-    "test:e2e": "node e2e/run.ts"
+    "test:e2e": "node e2e/run.ts",
+    "bench:hook-cost": "pnpm --filter @reactdx/bench-hook-cost bench"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
