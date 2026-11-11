@@ -43,13 +43,13 @@ export async function openPanelText(
       const { gDevTools } = require("devtools/client/framework/devtools")
       const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab) ??
         await gDevTools.showToolboxForTab(gBrowser.selectedTab)
+      // The toolbox's tool list, not its tab DOM: in a narrow window (xvfb on CI)
+      // the last tabs move into an overflow menu and aren't rendered as tabs.
       for (let i = 0; i < 100; i++) {
-        const tab = [...toolbox.doc.querySelectorAll(".devtools-tab")]
-          .find((t) => t.textContent.trim() === "ReactDX")
-        if (tab) {
-          const id = tab.id.replace(/^toolbox-tab-/, "")
-          await toolbox.selectTool(id)
-          return id
+        const tool = toolbox.getAdditionalTools().find((t) => t.label === "ReactDX")
+        if (tool) {
+          await toolbox.selectTool(tool.id)
+          return tool.id
         }
         await new Promise((r) => setTimeout(r, 100))
       }
