@@ -59,7 +59,9 @@ export function installHook(target: {
   }
   Object.defineProperty(target, Symbol.for("reactdx"), { value: record })
 
+  let restore = () => {}
   const addRenderer = (id: number, renderer: unknown) => {
+    restore()
     const { version, bundleType, rendererPackageName } =
       renderer as RendererInfo
     record.renderers.set(id, { version, bundleType, rendererPackageName })
@@ -99,5 +101,18 @@ export function installHook(target: {
     configurable: true,
     get: () => hook,
   })
+
+  // A tool installing after us (RDT) defines its hook on window, shadowing ours:
+  // attach to it as it lands. The page sees this wrapper only until React connects.
+  const native = Object.defineProperty
+  const wrapper = ((object, key, descriptor) => {
+    native(object, key, descriptor)
+    if (object === target && key === KEY && target[KEY]) attachTo(target[KEY])
+    return object
+  }) as typeof Object.defineProperty
+  Object.defineProperty = wrapper
+  restore = () => {
+    if (Object.defineProperty === wrapper) Object.defineProperty = native
+  }
   return record
 }
