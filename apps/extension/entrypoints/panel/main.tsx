@@ -1,7 +1,9 @@
 import type {
   RendererView,
+  ResyncMessage,
   SubscribeMessage,
   TabStateMessage,
+  TreeBatchMessage,
 } from "@reactdx/messages"
 import { Panel } from "@reactdx/panel"
 import { applyTheme, defaultTheme, type Theme } from "@reactdx/panel/themes"
@@ -18,20 +20,20 @@ onThemeChanged((kind) => apply(defaultTheme(kind)))
 
 const [renderers, setRenderers] = createSignal<RendererView[]>([])
 const tree = createTreeStore()
+const tabId = browser.devtools.inspectedWindow.tabId
 const subscribe = (port: Browser.runtime.Port) =>
-  port.postMessage({
-    type: "subscribe",
-    tabId: browser.devtools.inspectedWindow.tabId,
-  } satisfies SubscribeMessage)
+  port.postMessage({ type: "subscribe", tabId } satisfies SubscribeMessage)
 
 // The port drops whenever the background stops (an idle service worker); connecting
 // again wakes it, and subscribing asks the page's relay for the current state.
 let port = connect()
 function connect() {
   const next = browser.runtime.connect({ name: "panel" })
-  next.onMessage.addListener((message: TabStateMessage) =>
-    setRenderers(message.renderers),
-  )
+  next.onMessage.addListener((message: TabStateMessage | TreeBatchMessage) => {
+    if (message.type === "state") setRenderers(message.renderers)
+    else if (tree.apply(message))
+      next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)
+  })
   next.onDisconnect.addListener(() => {
     port = connect()
   })
@@ -42,6 +44,7 @@ function connect() {
 // A new document starts empty: show only what it reports.
 browser.devtools.network.onNavigated.addListener(() => {
   setRenderers([])
+  tree.clear()
   subscribe(port)
 })
 

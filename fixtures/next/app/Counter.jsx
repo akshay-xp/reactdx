@@ -2,6 +2,11 @@
 
 import React, { useState } from "react"
 
+// Mounted on odd counts, so a click adds or removes a component (and no text).
+function Clicked() {
+  return null
+}
+
 export default function Counter() {
   const [count, setCount] = useState(0)
   return (
@@ -14,6 +19,7 @@ export default function Counter() {
       >
         Count: {count}
       </button>
+      {count % 2 === 1 && <Clicked />}
     </>
   )
 }

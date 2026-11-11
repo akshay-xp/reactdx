@@ -31,19 +31,28 @@ after(() => {
   for (const stop of stops) stop()
 })
 
+const copy = (heading: string, text: string) =>
+  parseCopies(text).find((c) => c.heading === heading)
 const listing = (heading: string) => (text: string) =>
-  parseCopies(text).some((c) => c.heading === heading && c.commits.length > 0)
+  (copy(heading, text)?.commits.length ?? 0) > 0 &&
+  (copy(heading, text)?.names.includes("Counter") ?? false)
+const clicked = (heading: string, text: string) =>
+  copy(heading, text)?.names.includes("Clicked") ?? false
 
-// The panel lists the copy with a root, and the commit count rises on a click.
+// The panel lists the copy with a root and its tree; a click raises the commit
+// count and adds or removes Counter's Clicked child.
 async function expectLive(page: Page, panel: PanelText, heading = HEADING) {
   const listed = listing(heading)
   await page.waitForSelector("[data-testid=counter]")
   const text = await until(panel, listed)
   assert.ok(listed(text), text)
   const before = total(parseCopies(text))
+  const wasClicked = clicked(heading, text)
   await page.$eval("[data-testid=counter]", (el) => (el as HTMLElement).click())
-  const after = await until(panel, (t) => total(parseCopies(t)) > before, 5000)
-  assert.ok(total(parseCopies(after)) > before, after)
+  const done = (t: string) =>
+    total(parseCopies(t)) > before && clicked(heading, t) !== wasClicked
+  const after = await until(panel, done, 5000)
+  assert.ok(done(after), after)
 }
 
 test("the panel reconnects after the background stops", { skip }, async () => {

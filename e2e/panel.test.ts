@@ -8,9 +8,38 @@ import { plainPage } from "./plain.ts"
 const name = process.env.E2E_BROWSER as BrowserName
 const plainUrl = plainPage()
 
-for (const [script, port, expected] of [
-  ["fixture:18", 5218, [/^React 18\.3\.1 development react-dom$/]],
-  ["fixture:19", 5219, [/^React 19\.3\.1 development react-dom$/]],
+// Each fixture's tree check, given its development copies (Counter's click toggles Clicked).
+const exactly = (names: string[]) => (copies: Copy[]) =>
+  copies.every((c) => JSON.stringify(c.names) === JSON.stringify(names))
+const app = exactly(["App", "Counter"])
+const appClicked = exactly(["App", "Counter", "Clicked"])
+const counters = exactly(["Counter"])
+const oneClicked = (copies: Copy[]) =>
+  copies.filter((c) => c.names.includes("Clicked")).length === 1 &&
+  copies.every((c) => c.names.includes("Counter"))
+// Next's App Router wraps the page in its own components.
+const nextTree = (copies: Copy[]) =>
+  copies.every(
+    (c) => c.names.includes("Counter") && !c.names.includes("Clicked"),
+  )
+const nextClicked = (copies: Copy[]) =>
+  copies.every((c) => c.names.includes("Clicked"))
+
+for (const [script, port, expected, tree, clicked] of [
+  [
+    "fixture:18",
+    5218,
+    [/^React 18\.3\.1 development react-dom$/],
+    app,
+    appClicked,
+  ],
+  [
+    "fixture:19",
+    5219,
+    [/^React 19\.3\.1 development react-dom$/],
+    app,
+    appClicked,
+  ],
   [
     "fixture:next",
     5220,
@@ -18,6 +47,8 @@ for (const [script, port, expected] of [
       /^React 19\.3\.0-canary-\S+ development react-dom$/,
       /^React \S+ production react-dom$/,
     ],
+    nextTree,
+    nextClicked,
   ],
   [
     "fixture:multi",
@@ -26,6 +57,8 @@ for (const [script, port, expected] of [
       /^React 18\.3\.1 development react-dom$/,
       /^React 19\.3\.1 development react-dom$/,
     ],
+    counters,
+    oneClicked,
   ],
 ] as const) {
   if (
@@ -39,7 +72,7 @@ for (const [script, port, expected] of [
     after(() => stop?.())
 
     for (const order of ["after", "before"] as const) {
-      test(`lists each React copy and counts commits (DevTools opened ${order} load)`, async () => {
+      test(`lists each React copy, its commits and its tree (DevTools opened ${order} load)`, async () => {
         const { browser, page, panel } = await panelFor(
           name,
           `http://localhost:${port}`,
@@ -48,30 +81,35 @@ for (const [script, port, expected] of [
         try {
           await page.waitForSelector("[data-testid=counter]")
           // Roots arrive with the agent's next snapshot, after hydration on Next.
+          const development = (copies: Copy[]) =>
+            copies.filter((c) => c.heading.includes("development"))
           const ready = (copies: Copy[]) =>
             copies.length === expected.length &&
             copies.every(
               (c) => c.heading.includes("production") || c.commits.length > 0,
-            )
+            ) &&
+            tree(development(copies))
           const text = await until(panel, (t) => ready(parseCopies(t)))
           const copies = parseCopies(text)
           assert.equal(copies.length, expected.length, text)
           for (const [i, pattern] of expected.entries())
             assert.match(copies[i]?.heading ?? "", pattern)
-          for (const copy of copies.filter((c) =>
-            c.heading.includes("development"),
-          ))
+          for (const copy of development(copies))
             assert.ok(copy.commits.length >= 1, text)
+          assert.ok(tree(development(copies)), text)
+          for (const copy of copies.filter((c) =>
+            c.heading.includes("production"),
+          ))
+            assert.deepEqual(copy.names, [], text)
           const before = total(copies)
           await page.$eval("[data-testid=counter]", (el) =>
             (el as HTMLElement).click(),
           )
-          const after = await until(
-            panel,
-            (t) => total(parseCopies(t)) > before,
-            2000,
-          )
-          assert.ok(total(parseCopies(after)) > before, after)
+          const done = (t: string) =>
+            total(parseCopies(t)) > before &&
+            clicked(development(parseCopies(t)))
+          const after = await until(panel, done, 2000)
+          assert.ok(done(after), after)
         } finally {
           await browser.close()
         }

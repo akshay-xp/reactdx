@@ -219,6 +219,13 @@ export type GetStateMessage = { type: "get-state" }
 // Panel to background, over its port: send me this tab's state.
 export type SubscribeMessage = { type: "subscribe"; tabId: number }
 
+// Panel to background (with the tab), then background to the relay's tree port:
+// the mirror fell out of step, send the whole tree again.
+export type ResyncMessage = { type: "resync"; tabId: number }
+
+// Background's reply to a TabStateMessage: a panel is open on this tab.
+export type StateReply = { watch: boolean }
+
 // Content script to agent, through the page: post a fresh snapshot.
 export const GET_SNAPSHOT = { source: "reactdx-relay", type: "get-snapshot" }
 

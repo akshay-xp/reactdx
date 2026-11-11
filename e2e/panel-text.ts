@@ -86,20 +86,24 @@ export async function openPanelText(
     )
 }
 
-export type Copy = { heading: string; commits: number[] }
+export type Copy = { heading: string; commits: number[]; names: string[] }
 
-// "React 18.3.1 development react-dom Root 1 3 commits ..." into copies.
+const HEADING = /React (\S+) (development|production) (\S+)/g
+const ROOT = /Root \d+ (\d+) commits/g
+
+// "React 18.3.1 development react-dom Root 1 3 commits App Counter ..." into copies:
+// each root's commit count, and the component names listed under its roots.
 export function parseCopies(text: string): Copy[] {
-  return [
-    ...text.matchAll(
-      /React (\S+) (development|production) (\S+)((?: Root \d+ \d+ commits)*)/g,
-    ),
-  ].map(([, version, build, pkg, roots]) => ({
-    heading: `React ${version} ${build} ${pkg}`,
-    commits: [...(roots ?? "").matchAll(/(\d+) commits/g)].map(([, n]) =>
-      Number(n),
-    ),
-  }))
+  const headings = [...text.matchAll(HEADING)]
+  return headings.map((match, i) => {
+    const start = (match.index ?? 0) + match[0].length
+    const segment = text.slice(start, headings[i + 1]?.index ?? text.length)
+    return {
+      heading: match[0],
+      commits: [...segment.matchAll(ROOT)].map(([, n]) => Number(n)),
+      names: segment.replace(ROOT, " ").split(" ").filter(Boolean),
+    }
+  })
 }
 
 // Polls the panel until the check passes; returns the last text read.
