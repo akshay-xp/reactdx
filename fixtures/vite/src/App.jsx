@@ -1,5 +1,5 @@
-import React from 'react';
-import Counter from './Counter';
+import React from "react"
+import Counter from "./Counter"
 
 export default function App() {
   return (
@@ -7,5 +7,5 @@ export default function App() {
       <p data-testid="react-version">{React.version}</p>
       <Counter />
     </>
-  );
+  )
 }

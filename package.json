@@ -9,6 +9,7 @@
   "scripts": {
     "build": "pnpm --filter @reactdx/extension build",
     "typecheck": "tsc -p . && tsc -p packages/panel && tsc -p apps/extension",
+    "lint": "biome check --error-on-warnings",
     "test": "pnpm test:unit && pnpm test:check && pnpm -r test",
     "test:unit": "vitest run",
     "test:check": "node --test \"scripts/check/*.test.ts\"",
@@ -20,6 +21,7 @@
     "test:e2e": "node e2e/run.ts"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.6",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",

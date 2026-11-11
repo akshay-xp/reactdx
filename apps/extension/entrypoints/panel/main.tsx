@@ -1,4 +1,4 @@
-import { render } from 'solid-js/web';
-import { Panel } from '@reactdx/panel';
+import { Panel } from "@reactdx/panel"
+import { render } from "solid-js/web"
 
-render(() => <Panel />, document.getElementById('app')!);
+render(() => <Panel />, document.getElementById("app")!)

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState } from "react"
 
 export default function Counter() {
-  const [count, setCount] = useState(0);
+  const [count, setCount] = useState(0)
   return (
     <>
       <p data-testid="react-version">{React.version}</p>
@@ -9,5 +9,5 @@ export default function Counter() {
         Count: {count}
       </button>
     </>
-  );
+  )
 }

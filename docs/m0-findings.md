@@ -7,6 +7,7 @@ Environment rule: React 18.3 and the latest 19.x, development builds; the latest
 ## Template
 
 ### <Experiment> (#<issue>)
+
 - **Question:** what this experiment answers.
 - **Verdict:** go, no-go, or partial.
 - **Evidence:** what was observed, with numbers where relevant.
@@ -17,13 +18,13 @@ Environment rule: React 18.3 and the latest 19.x, development builds; the latest
 
 Shared setup for every experiment, in `spikes/harness/`.
 
-| Command (from `spikes/`) | What it does |
-|---|---|
-| `pnpm dev:18` | Vite fixture on React 18.3.1, port 5118 |
-| `pnpm dev:19` | Vite fixture on React 19.3.1, port 5119 |
-| `pnpm dev:next` | Next.js 16 fixture (Server Component + client counter), port 5120 |
-| `pnpm test` | Playwright smoke tests in Chromium; starts the dev servers |
-| `pnpm ext:firefox` | Opens Firefox with the harness extension as a temporary add-on |
+| Command (from `spikes/`) | What it does                                                      |
+| ------------------------ | ----------------------------------------------------------------- |
+| `pnpm dev:18`            | Vite fixture on React 18.3.1, port 5118                           |
+| `pnpm dev:19`            | Vite fixture on React 19.3.1, port 5119                           |
+| `pnpm dev:next`          | Next.js 16 fixture (Server Component + client counter), port 5120 |
+| `pnpm test`              | Playwright smoke tests in Chromium; starts the dev servers        |
+| `pnpm ext:firefox`       | Opens Firefox with the harness extension as a temporary add-on    |
 
 - `harness/extension/` is a bare MV3 extension: `hook.js` runs in the page's context at `document_start` on localhost. It installs `__REACT_DEVTOOLS_GLOBAL_HOOK__` and logs `[reactdx] hook installed`, then `[reactdx] commit renderer=<id> container=<nodeName>` on every commit.
 - Proof that the hook ran before React: React's development build prints "Download the React DevTools" when, at load, there's no hook or the hook lacks `checkDCE`. A real devtools hook (ours, bippy's, RDT's) has `checkDCE`. Vite's React Refresh hook, which it creates when no devtools hook exists, doesn't. All three fixtures print the message without the extension and don't print it with the extension.
@@ -31,6 +32,7 @@ Shared setup for every experiment, in `spikes/harness/`.
 - Playwright can't load Firefox extensions, so Firefox is checked by hand.
 
 ### Firefox check
+
 - **Verdict:** go. The extension loads as a temporary add-on, and the hook is installed before React on all three fixtures.
 - **Evidence:** on each port, `[reactdx] hook installed` is the first console message, "Download the React DevTools" never appears, and `[reactdx] commit ...` follows. Localhost host access was granted to the temporary add-on with no prompt.
 - **Surprise:** in Next.js dev, the page has two renderers. Renderer 1 renders into `#document` (the app). Renderer 2 renders into `NEXTJS-PORTAL`, the dev overlay, which runs its own React copy. Multiple-copy handling (and #9) has to tell app roots apart from framework tooling roots.
@@ -39,6 +41,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   `pnpm exec web-ext run --source-dir harness/extension --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url http://localhost:5118 --verbose --no-reload --arg=--headless --pref devtools.console.stdout.content=true`
 
 ## bippy (#2)
+
 - **Question:** should ReactDX build on bippy, fork parts of it, or replace it?
 - **Verdict (final, after #3 and #4):** fork parts. Don't depend on the `bippy` package. Vendor the fiber helpers we use (`traverseRenderedFibers`, `isCompositeFiber`, `getDisplayName`, renderer access) from bippy's source into ReactDX, with MIT attribution. Write our own hook install (see #4).
   - **Why:** #3 passed, since the tree walk is cheap. #4 failed for bippy's hook install: with both installed, it stops RDT from attaching. And bippy's main entry installs that hook as a side effect of being imported (`index.ts` does `import "./install-hook-only"`). The helpers live in `dist/core.js`, which has no unconditional install but only exports minified names (`x`, `m`, `i` in 0.7.3). So depending on the package means either the RDT conflict or imports that break on every release.
@@ -63,9 +66,11 @@ Shared setup for every experiment, in `spikes/harness/`.
   - Size: `pnpm exec esbuild bippy/src/hook.js --bundle --format=iife --minify | gzip -9c | wc -c`
 
 ## Per-commit hook cost (#3)
+
 - **Question:** does connecting to React and walking the rendered tree on every commit keep page-side cost small on a ~10k component tree?
 - **Verdict:** go. bippy plus a traversal walk adds **0.3 ms** to the median of a one-component commit (2.0 to 2.3 ms on React 18.3, 2.1 to 2.4 ms on React 19.3), which is under the 1 ms rule. For a commit that re-renders all 10k components it adds about 1 ms (6 to 9%). A bare connected hook costs nothing measurable.
 - **Evidence:** second run of `pnpm bench:hook-cost`; the first run agreed within about 0.5 ms on medians. 50 measured commits after 10 warmup, per row:
+
   ```
   React   Case                   Mode   median ms     p95 ms
   18.3.1  no hook                all       13.850     14.900
@@ -89,6 +94,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   19.3.1  RDT, DevTools open     all       38.500     51.900
   19.3.1  RDT, DevTools open     one       21.700     35.200
   ```
+
   - **RDT adds about 18 to 19 ms to every commit**, even one that re-renders a single component (2.0 to 20.2 ms), and its p95 reaches about twice its own median (for example 20.2 vs 36.2 ms), so commits also become less predictable. That's 10x a one-component commit on a 10k tree.
   - **RDT's cost doesn't depend on DevTools being open.** RDT 8.0.0 loads its backend (`hook.rendererInterfaces.size === 1`) with DevTools closed. That corrects the plan's reading of its code: `inject-backend-manager` isn't sent only from the devtools page. Having RDT installed costs the same as having it open.
   - **bippy's extra 0.3 ms on one-component commits** suggests the walk does some work in proportion to tree size, not only for what rendered. It's small, but worth watching once our traversal does real work (diffing, serializing).
@@ -101,6 +107,7 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm dev:19`, then run `pnpm bench:hook-cost`. The first run downloads RDT into `hook-cost/rdt/` (gitignored). Windows open during the run.
 
 ## Sharing the hook with RDT (#4)
+
 - **Question:** can ReactDX's hook and RDT's hook both receive commits, whichever installs first, in Chrome and Firefox?
 - **Verdict:** go, with our own installer. bippy's install breaks RDT.
 - **Root cause of the conflict:** RDT 8.0.0's `installHook.js` checks `window.hasOwnProperty('__REACT_DEVTOOLS_GLOBAL_HOOK__')` twice: once as an outer guard and once inside its installer. If either is `true`, it doesn't install, and it then calls `.on('renderer', ...)` on whatever hook is there. bippy defines its hook as `window`'s own property and overrides `hasOwnProperty` to answer `false` once, which only gets past the first check. RDT's backend never attaches (`rendererInterfaces` is `undefined`), while bippy keeps working.
@@ -110,14 +117,13 @@ Shared setup for every experiment, in `spikes/harness/`.
   - Either way, React connects to exactly one hook, and our listener runs after the original `onCommitFiberRoot`.
 - **Evidence:**
 
-  | Order | Chromium 158 (Playwright) | Firefox 159.0.1 (web-ext) |
-  |---|---|---|
-  | RDT alone (control) | RDT attaches | not run (covered by the rows below) |
-  | bippy + RDT | **RDT broken**, bippy works | not run |
-  | Ours alone | works, installed before React | not run (only the simpler #1 harness hook was tested alone) |
-  | Ours first + RDT | both work | both work |
-  | RDT first + ours | both work, `renderersAtInstall === 0` | both work |
-
+  | Order               | Chromium 158 (Playwright)             | Firefox 159.0.1 (web-ext)                                   |
+  | ------------------- | ------------------------------------- | ----------------------------------------------------------- |
+  | RDT alone (control) | RDT attaches                          | not run (covered by the rows below)                         |
+  | bippy + RDT         | **RDT broken**, bippy works           | not run                                                     |
+  | Ours alone          | works, installed before React         | not run (only the simpler #1 harness hook was tested alone) |
+  | Ours first + RDT    | both work                             | both work                                                   |
+  | RDT first + ours    | both work, `renderersAtInstall === 0` | both work                                                   |
   - **Chromium:** 0 failures in 220 runs of the coexist tests (`--repeat-each 20 --workers 6`) on React 18.3, 19.3, and Next.js.
   - **"RDT works" means** `hook.rendererInterfaces.size > 0` and `getFiberRoots(id).size > 0`. **"Ours works" means** our `rendered Counter` count goes up after a click.
 - **Side findings:**
@@ -131,8 +137,10 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test coexist`. The global setup downloads RDT and bundles `coexist/src/first.js` and `coexist/src/late.js`. Firefox: see below.
 
 ### Firefox check
+
 - **Result:** both orders work. RDT's backend attaches with fiber roots, and ReactDX receives commits on all three fixtures.
 - **Evidence:** the raw status lines, logged on `load` + 1 s:
+
   ```
   ours first, port 5118: order=first rdtAttached=true rdtRoots=1 commits=1
   ours first, port 5119: order=first rdtAttached=true rdtRoots=1 commits=1
@@ -141,6 +149,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   RDT first, port 5119:  order=late  rdtAttached=true rdtRoots=1 commits=1
   RDT first, port 5120:  order=late  rdtAttached=true rdtRoots=2 commits=10
   ```
+
   `commits >= 1` on the Vite ports means we attached before React's first commit. Next.js has 2 roots (app + dev overlay) and more commits.
 - **Firefox timing differs from Chrome:** RDT's hook script runs after a `setTimeout(0)` scheduled from our `document_start` script, so a single-tick delay still left ours first. The test-only "RDT first" variant (`coexist/src/late.js`) therefore polls until RDT's hook is on `window` (every 10 ms, up to about 2 s) before installing.
 - **Versions tested:** Firefox 159.0.1 (headless), RDT 8.0.0 for Firefox (MV3, `@react-devtools`, from AMO), macOS 26.5.
@@ -152,29 +161,32 @@ Shared setup for every experiment, in `spikes/harness/`.
   5. Read the `[reactdx:coexist] status` line.
 
 ## Injection timing (#5)
+
 - **Question:** does a MAIN world content script at `document_start` install the hook before React, for a normal load, a hard reload, a bfcache restore, and a script registered with `scripting.registerContentScripts`?
 - **Verdict:** go for **static `content_scripts`**: before React in every tested scenario on both browsers. **Partial for registered scripts:** before React once the registration has settled, but **flaky on the first load after a browser restart in Chromium** (55 to 75% missed).
 - **Signal:** React only calls `inject` on a hook that exists when it loads. `injected === 1` means before React. A random `loadId` set at install tells a fresh load from a bfcache restore.
 - **Results:**
 
-  | Scenario | Chromium 158 | Firefox 159.0.1 |
-  |---|---|---|
-  | Normal load (static) | before | before |
-  | Hard reload (static; CDP `ignoreCache` / `location.reload(true)`) | before | before |
-  | bfcache restore (static) | same hook kept, still gets commits | same hook kept, still gets commits (preview only) |
-  | Registered, after the registration has settled | before | before |
-  | Registered, after a browser restart (registration persisted) | before, once restored | not tested (web-ext) |
-  | Registered, **first load right after install** | **missed 20/20** | before (web-ext waits for install) |
-  | Registered, **first load right after restart** | **flaky: missed 11/20 and 15/20** | not tested |
-  | Static, first load right after install / restart | before 20/20 / 20/20 | not measured |
+  | Scenario                                                          | Chromium 158                       | Firefox 159.0.1                                   |
+  | ----------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------- |
+  | Normal load (static)                                              | before                             | before                                            |
+  | Hard reload (static; CDP `ignoreCache` / `location.reload(true)`) | before                             | before                                            |
+  | bfcache restore (static)                                          | same hook kept, still gets commits | same hook kept, still gets commits (preview only) |
+  | Registered, after the registration has settled                    | before                             | before                                            |
+  | Registered, after a browser restart (registration persisted)      | before, once restored              | not tested (web-ext)                              |
+  | Registered, **first load right after install**                    | **missed 20/20**                   | before (web-ext waits for install)                |
+  | Registered, **first load right after restart**                    | **flaky: missed 11/20 and 15/20**  | not tested                                        |
+  | Static, first load right after install / restart                  | before 20/20 / 20/20               | not measured                                      |
 
   `pnpm timing:race`, two runs:
+
   ```
   static     first load after install  before React 20/20, after React 0/20, missed 0/20
   static     first load after restart  before React 20/20, after React 0/20, missed 0/20
   registered first load after install  before React 0/20, after React 0/20, missed 20/20
   registered first load after restart  before React 9/20, after React 0/20, missed 11/20
   ```
+
   ```
   static     first load after install  before React 20/20, after React 0/20, missed 0/20
   static     first load after restart  before React 20/20, after React 0/20, missed 0/20
@@ -195,11 +207,13 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test timing` (starts the dev and preview servers); start `pnpm dev:18`, then run `pnpm timing:race`; Firefox: see below.
 
 ### Firefox check
+
 - **Result:**
   - **Normal load and hard reload:** before React, on both the preview (5128) and the dev server (5118), for both the static and the registered variant.
   - **bfcache restore:** works on the preview; the dev server is never bfcached in Firefox.
 - **Evidence:** raw output from `web-ext run` on `/?sequence`. The page goes through a normal load, then `location.reload(true)` (Firefox's force reload), then `/other.html?back`, which calls `history.back()`, then a click on the restored page. Each `status` line is printed 500 ms after a `pageshow`.
   - static, preview 5128:
+
     ```
     [reactdx:timing] step=normal-load
     [reactdx:timing] status loadId=tied3m1dsm injected=1 commits=1 persisted=false
@@ -210,6 +224,7 @@ Shared setup for every experiment, in `spikes/harness/`.
     [reactdx:timing] status loadId=hb0eqc6c3c injected=1 commits=2 persisted=true
     ```
   - static, dev server 5118:
+
     ```
     [reactdx:timing] step=normal-load
     [reactdx:timing] status loadId=qdsfie6u83r injected=1 commits=1 persisted=false
@@ -220,6 +235,7 @@ Shared setup for every experiment, in `spikes/harness/`.
     [reactdx:timing] status loadId=a5x8wukx2dk injected=1 commits=1 persisted=false
     ```
   - registered, preview 5128:
+
     ```
     [reactdx:timing] step=normal-load
     [reactdx:timing] status loadId=avfxoh0l0e injected=1 commits=1 persisted=false
@@ -230,6 +246,7 @@ Shared setup for every experiment, in `spikes/harness/`.
     [reactdx:timing] status loadId=rldiosb5zog injected=1 commits=2 persisted=true
     ```
   - registered, dev server 5118:
+
     ```
     [reactdx:timing] step=normal-load
     [reactdx:timing] status loadId=nat0oxqgdip injected=1 commits=1 persisted=false
@@ -239,6 +256,7 @@ Shared setup for every experiment, in `spikes/harness/`.
     [reactdx:timing] step=back-without-bfcache
     [reactdx:timing] status loadId=6nwm9yplmy6 injected=1 commits=1 persisted=false
     ```
+
 - **Reading it:**
   - The `injected=0 commits=0` line is `other.html`, which has no React.
   - On the preview, the bfcache restore brings back the **same `loadId`** as the page before leaving, and the click adds a commit (`commits=2`).
@@ -250,6 +268,7 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm preview:18`, then run `pnpm exec web-ext run --source-dir injection-timing/<static|registered> --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url "http://localhost:<5128|5118>/?sequence" --verbose --no-reload --arg=--headless --pref devtools.console.stdout.content=true`. The global setup (or `copyTimingHook()`) must have copied `hook.js` into both variant folders first.
 
 ## inspectedWindow.reload injectedScript (#6)
+
 - **Question:** can ReactDX get its hook in before React with **no host permissions**, using `devtools.inspectedWindow.reload({ injectedScript })`, and what happens on a full navigation?
 - **Verdict:**
   - **No-go as the default.** It works mechanically on both browsers, but the DX costs below are worse than the all-sites install warning we chose (see #5).
@@ -257,11 +276,11 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Mechanism (`spikes/injected-script/extension/`):** the manifest has only a `devtools_page`. On load and on each `devtools.network.onNavigated`, the DevTools page checks with `inspectedWindow.eval` whether the hook is present. If it isn't, it calls `inspectedWindow.reload({ injectedScript: hook source })`. The injected script runs before the page's own scripts.
 - **Results:**
 
-  | | Chromium 158 | Firefox 159.0.1 |
-  |---|---|---|
-  | Hook before React after the injected reload | yes (`injected === 1`) | yes |
-  | After a full navigation | hook gone; reconnecting takes exactly 1 extra load (5/5 runs) | same |
-  | Needs DevTools open | yes (`devtools_page` only runs then) | yes |
+  |                                             | Chromium 158                                                  | Firefox 159.0.1 |
+  | ------------------------------------------- | ------------------------------------------------------------- | --------------- |
+  | Hook before React after the injected reload | yes (`injected === 1`)                                        | yes             |
+  | After a full navigation                     | hook gone; reconnecting takes exactly 1 extra load (5/5 runs) | same            |
+  | Needs DevTools open                         | yes (`devtools_page` only runs then)                          | yes             |
 
 - **DX costs:**
   - **Opening DevTools reloads the page.** The app's current state is lost at exactly the moment the developer wants to inspect it.
@@ -274,14 +293,17 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test injected` (opens browser windows); Firefox: see below.
 
 ### Firefox check
+
 - **Result:** works the same as Chromium. With no host permissions, the injected reload installs the hook before React. Every full navigation arrives without the hook and costs one extra load to reconnect.
 - **Evidence:** start URL `http://localhost:5118/?go=5119`. The fixture redirects to 5119 two seconds after load, which gives a full navigation. Real extension, page console via `devtools.console.stdout.content`:
+
   ```
   console.info: "%cDownload the React DevTools ... (5118, first load: no hook)
   console.log: "[reactdx:timing] status loadId=cc8hu1fpijf injected=1 commits=1 persisted=false   (5118 after injected reload)
   console.info: "%cDownload the React DevTools ... (5119 after full navigation: no hook)
   console.log: "[reactdx:timing] status loadId=oi8osoiynyq injected=1 commits=1 persisted=false   (5119 after injected reload)
   ```
+
   An instrumented copy of the DevTools page (logging into the page through `inspectedWindow.eval`) confirmed the sequence: `connect hasHook=false`, then `reloading with injectedScript`, then `onNavigated`, then `skip own reload`.
 - **Setup gotchas:**
   - web-ext's `--devtools` opens DevTools for the **add-on**, not the page, so the `devtools_page` never loads. Firefox's own `-devtools` flag (`--arg=-devtools`) opens the page's toolbox.
@@ -290,6 +312,7 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm dev:19`; copy the hook in (the global setup or `copyTimingHook()`); then run `pnpm exec web-ext run --source-dir injected-script/extension --firefox /Applications/Firefox.app/Contents/MacOS/firefox --arg=-devtools --start-url "http://localhost:5118/?go=5119" --verbose --no-reload --pref devtools.console.stdout.content=true`.
 
 ## Value format for the panel (#7)
+
 - **Question:** what format should props, state, and hook values travel to the panel in, so that large, cyclic, or exotic values stay fast and lossless and are loaded only when the user expands them?
 - **Verdict:** go. Carry `spikes/value-format/serialize.ts` into M4 as the starting point, with the gaps below fixed.
 - **Constraints:**
@@ -301,25 +324,25 @@ Shared setup for every experiment, in `spikes/harness/`.
   - Anything deeper than the depth limit comes back as `ref`, and `expand(id)` serializes it as a new root. A collection with more than one page has `nextOffset`, and `expand(id, nextOffset)` returns the next page.
 - **Descriptors:**
 
-  | Value | Descriptor |
-  |---|---|
-  | JSON-safe primitive (finite number except `-0`, string ≤ 1,000 chars, boolean, `null`) | the value itself |
-  | `undefined` | `{ type: 'undefined' }` |
-  | `NaN`, `±Infinity`, `-0` | `{ type: 'number', value: 'NaN' }` and so on |
-  | `bigint` | `{ type: 'bigint', value: '10' }` |
-  | long string | `{ type: 'string', preview: <first 1,000>, length }` |
-  | function | `{ type: 'function', name }` |
-  | symbol | `{ type: 'symbol', description }` |
-  | object / class instance | `{ type: 'object', className, id, size, props }` (`className: null` for a null prototype) |
-  | accessor property | `{ type: 'getter' }` |
-  | array | `{ type: 'array', id, length, items, nextOffset? }` |
-  | `Map` | `{ type: 'map', id, size, entries: [[key, value]], nextOffset? }` |
-  | `Set` | `{ type: 'set', id, size, values, nextOffset? }` |
-  | past the depth limit | `{ type: 'ref', id, preview: { type, className/size/length } }` |
-  | cycle | `{ type: 'ref', id: <ancestor id>, circular: true }` |
-  | React element (18 `react.element`, 19 `react.transitional.element`) | `{ type: 'react-element', name, key }` |
-  | `Date` / `RegExp` / `Error` / `Promise` | `{ type: 'date', iso }` / `{ type: 'regexp', source, flags }` / `{ type: 'error', name, message }` / `{ type: 'promise' }` |
-  | DOM `Element` / other `Node` | `{ type: 'element', tag, id, className }` / `{ type: 'node', nodeName }` |
+  | Value                                                                                  | Descriptor                                                                                                                 |
+  | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+  | JSON-safe primitive (finite number except `-0`, string ≤ 1,000 chars, boolean, `null`) | the value itself                                                                                                           |
+  | `undefined`                                                                            | `{ type: 'undefined' }`                                                                                                    |
+  | `NaN`, `±Infinity`, `-0`                                                               | `{ type: 'number', value: 'NaN' }` and so on                                                                               |
+  | `bigint`                                                                               | `{ type: 'bigint', value: '10' }`                                                                                          |
+  | long string                                                                            | `{ type: 'string', preview: <first 1,000>, length }`                                                                       |
+  | function                                                                               | `{ type: 'function', name }`                                                                                               |
+  | symbol                                                                                 | `{ type: 'symbol', description }`                                                                                          |
+  | object / class instance                                                                | `{ type: 'object', className, id, size, props }` (`className: null` for a null prototype)                                  |
+  | accessor property                                                                      | `{ type: 'getter' }`                                                                                                       |
+  | array                                                                                  | `{ type: 'array', id, length, items, nextOffset? }`                                                                        |
+  | `Map`                                                                                  | `{ type: 'map', id, size, entries: [[key, value]], nextOffset? }`                                                          |
+  | `Set`                                                                                  | `{ type: 'set', id, size, values, nextOffset? }`                                                                           |
+  | past the depth limit                                                                   | `{ type: 'ref', id, preview: { type, className/size/length } }`                                                            |
+  | cycle                                                                                  | `{ type: 'ref', id: <ancestor id>, circular: true }`                                                                       |
+  | React element (18 `react.element`, 19 `react.transitional.element`)                    | `{ type: 'react-element', name, key }`                                                                                     |
+  | `Date` / `RegExp` / `Error` / `Promise`                                                | `{ type: 'date', iso }` / `{ type: 'regexp', source, flags }` / `{ type: 'error', name, message }` / `{ type: 'promise' }` |
+  | DOM `Element` / other `Node`                                                           | `{ type: 'element', tag, id, className }` / `{ type: 'node', nodeName }`                                                   |
 
 - **Limits:**
   - **`MAX_DEPTH = 2`:** a component's props plus one level inside each prop arrive at once, which is what an inspector shows before the user clicks. Anything deeper is one `expand` away.
@@ -338,6 +361,7 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test serialize`. The DOM test bundles `serialize.ts` in memory with esbuild and runs it in Chromium.
 
 ## _debugStack source locations (#8)
+
 - **Question:** can each component's file and line be found reliably enough for "open in editor", on React 18 and 19, through source maps on Vite and Next.js?
 - **Verdict:** go on development builds, with three conditions:
   - **Read both mechanisms.** React 18 has `fiber._debugSource`; React 19 has `fiber._debugStack` plus source maps.
@@ -353,12 +377,11 @@ Shared setup for every experiment, in `spikes/harness/`.
     - **Server Component call sites** (an element a Server Component creates, e.g. a client component it renders) are frames like `about://React/Server/file:///…/.next/dev/server/chunks/ssr/<chunk>.js?<n>:line:col`. That chunk and its `.map` are on disk, so a browser extension can't read them directly.
 - **Evidence:** hand-written expected locations, checked per component (`spikes/debug-stack/expected.ts`).
 
-  | Fixture | Rendered at (file:line) | Defined in (file) |
-  |---|---|---|
-  | Vite, React 19 | 14/14 | 14/14 |
-  | Vite, React 18 | 13/14 | 13/14 |
-  | Next 16, React 19 | 6/6 (including the Server Component call site) | 6/6 |
-
+  | Fixture           | Rendered at (file:line)                        | Defined in (file) |
+  | ----------------- | ---------------------------------------------- | ----------------- |
+  | Vite, React 19    | 14/14                                          | 14/14             |
+  | Vite, React 18    | 13/14                                          | 13/14             |
+  | Next 16, React 19 | 6/6 (including the Server Component call site) | 6/6               |
   - **Shapes covered (Vite):** function, arrow, `memo`, `forwardRef`, class, `createElement` without JSX, `.map` list items, a HOC-wrapped component, `lazy` inside `Suspense`, a component from another file, a component nested in that file, and the root rendered from `main.jsx`.
   - **Shapes covered (Next):** a client component created by a Server Component, plus function, `memo`, `forwardRef`, class, and list items in a client file.
   - **Known misses:** only React 18's `NoJsx` (`createElement(NoJsx)`, whose only element is also `createElement`). The cause: `_debugSource` comes from the JSX transform's `__source`, so non-JSX calls carry none. React 19 resolves the same component.
@@ -372,20 +395,21 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test debug-stack`. It starts the dev servers, collects fibers with `page.evaluate` from the root container's `__reactContainer$` key (no extension), resolves frames in Node, and logs each share plus the 10k counts. The shapes pages are `http://localhost:5119/debug-stack.html` (add `?many=<n>` for the limit) and `http://localhost:5120/debug-stack`.
 
 ## DX questions from fiber data (#9)
+
 - **Question:** which candidate DX questions can a page-side hook answer reliably from fiber data, on React 18.3 and 19.x?
 - **Verdict:** go. All 8 candidates are feasible or partial on React 19, and 7 of 8 on React 18; the server/client boundary doesn't apply to 18, which has no Server Components. M6 and M7 can be scoped as planned, with the React 19 gaps below.
 - **Evidence:** `spikes/dx-questions/src/hook.js` (raw fiber code, no bippy) records each commit. `dx.spec.ts` asserts every answer on purpose-built scenarios in `harness/vite-fixture/src/dx.jsx` (5118, 5119) and `harness/next-fixture/app/dx/` (5120).
 
-  | Question | React 18.3 | React 19.x | Fiber fields relied on |
-  |---|---|---|---|
-  | Why it rendered (props, incl. same-value new reference; state; context; parent) | feasible | feasible | `alternate`, `flags & 1` (PerformedWork), `memoizedProps`; hook list `memoizedState` → `.next`, `.queue`, `.memoizedState`; `dependencies.firstContext` → `.next`, `.context`, `.memoizedValue` |
-  | Effect dependency changes | feasible | feasible | `updateQueue.lastEffect` (circular, `.next`), `.tag & 1` (HasEffect), `.deps`, on fiber and `alternate` |
-  | Remounts and cause (key vs ancestor type) | feasible | feasible | `onCommitFiberUnmount(fiber)`, `alternate === null` on an unseen fiber, `type`, `key`, `return` |
-  | setState origin (owning component + call stack) | feasible | partial | 18: `injectProfilingHooks({ markStateUpdateScheduled(fiber) })` from `inject`'s internals. 19: wrapped `console.createTask`, plus the next commit's state diff for the component |
-  | Context consumers | feasible | feasible | `dependencies.firstContext` → `.context` (also covers class `contextType`) |
-  | What Suspense is waiting on | feasible | partial | `tag === 13` with `memoizedState !== null`, `_debugOwner`; thenables from a wrapped `Promise.prototype.then` (listener named `bound resolveRetryWakeable`); 18 also: profiling hook `markComponentSuspended(fiber)` |
-  | Server/client boundary | not applicable (no RSC) | feasible (Next) | `_debugInfo` entries with `name` and `env` on the fiber and its `return` chain |
-  | Per-component history | feasible | feasible | stable id across `fiber`/`alternate`, plus all of the above per commit; state snapshots through the #7 serializer |
+  | Question                                                                        | React 18.3              | React 19.x      | Fiber fields relied on                                                                                                                                                                                              |
+  | ------------------------------------------------------------------------------- | ----------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | Why it rendered (props, incl. same-value new reference; state; context; parent) | feasible                | feasible        | `alternate`, `flags & 1` (PerformedWork), `memoizedProps`; hook list `memoizedState` → `.next`, `.queue`, `.memoizedState`; `dependencies.firstContext` → `.next`, `.context`, `.memoizedValue`                     |
+  | Effect dependency changes                                                       | feasible                | feasible        | `updateQueue.lastEffect` (circular, `.next`), `.tag & 1` (HasEffect), `.deps`, on fiber and `alternate`                                                                                                             |
+  | Remounts and cause (key vs ancestor type)                                       | feasible                | feasible        | `onCommitFiberUnmount(fiber)`, `alternate === null` on an unseen fiber, `type`, `key`, `return`                                                                                                                     |
+  | setState origin (owning component + call stack)                                 | feasible                | partial         | 18: `injectProfilingHooks({ markStateUpdateScheduled(fiber) })` from `inject`'s internals. 19: wrapped `console.createTask`, plus the next commit's state diff for the component                                    |
+  | Context consumers                                                               | feasible                | feasible        | `dependencies.firstContext` → `.context` (also covers class `contextType`)                                                                                                                                          |
+  | What Suspense is waiting on                                                     | feasible                | partial         | `tag === 13` with `memoizedState !== null`, `_debugOwner`; thenables from a wrapped `Promise.prototype.then` (listener named `bound resolveRetryWakeable`); 18 also: profiling hook `markComponentSuspended(fiber)` |
+  | Server/client boundary                                                          | not applicable (no RSC) | feasible (Next) | `_debugInfo` entries with `name` and `env` on the fiber and its `return` chain                                                                                                                                      |
+  | Per-component history                                                           | feasible                | feasible        | stable id across `fiber`/`alternate`, plus all of the above per commit; state snapshots through the #7 serializer                                                                                                   |
 
 - **Why the partials:**
   - **setState origin on 19:** React 19 dropped `injectProfilingHooks` from dev builds. The only hook into a setState call is `console.createTask("setState()")`, which `startUpdateTimerByLane` runs only for the first blocking-lane update of a batch (`react-dom-client.development.js:6020`). Two setState calls in one handler: 2 recorded on 18, 1 on 19. The task carries no fiber, so the component is taken from the next commit's state diff. Not tested: transitions, and Firefox, which has no `console.createTask` (React would pick up a defined one at module load, also untested).

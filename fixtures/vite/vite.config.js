@@ -1,5 +1,5 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import react from "@vitejs/plugin-react"
+import { defineConfig } from "vite"
 
 // --mode 18 or 19 picks the React copy; each mode gets its own prebundle cache.
 export default defineConfig(({ mode }) => ({
@@ -11,4 +11,4 @@ export default defineConfig(({ mode }) => ({
       { find: /^react-dom(\/.*)?$/, replacement: `react-dom-${mode}$1` },
     ],
   },
-}));
+}))

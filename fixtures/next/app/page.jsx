@@ -1,4 +1,4 @@
-import Counter from './Counter';
+import Counter from "./Counter"
 
 export default function Page() {
   return (
@@ -6,5 +6,5 @@ export default function Page() {
       <p data-testid="server">Rendered on the server</p>
       <Counter />
     </main>
-  );
+  )
 }
