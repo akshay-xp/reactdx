@@ -50,7 +50,14 @@ async function openWithRdt(page: Page, port: number) {
   for (let attempt = 1; ; attempt++) {
     await page.goto(`http://localhost:${port}`)
     await page.waitForSelector("[data-testid=counter]")
-    const result = await page.evaluate(status)
+    let result = await page.evaluate(status)
+    // A react-dom copy that hasn't committed yet has no root (Next's dev overlay
+    // mounts after the app; slower on CI), so give roots a moment once RDT is in.
+    for (let wait = 0; result.rdt > 0 && wait < 50; wait++) {
+      if (result.domRoots.every((n) => n > 0)) break
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      result = await page.evaluate(status)
+    }
     if (result.rdt > 0 || attempt === 5) return result
   }
 }
