@@ -1,6 +1,6 @@
 import type { Browser } from "puppeteer"
 import { chromeEval } from "./firefox.ts"
-import { type BrowserName, openPanel } from "./launch.ts"
+import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 
 // The panel's visible text, whitespace-normalized, read the same way in both browsers.
 export type PanelText = () => Promise<string>
@@ -110,4 +110,25 @@ export async function until(
     if (check(text) || Date.now() > deadline) return text
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
+}
+
+export const total = (copies: Copy[]) =>
+  copies.flatMap((c) => c.commits).reduce((a, b) => a + b, 0)
+
+// Launches with ReactDX and opens the panel before or after the page loads.
+// One tab, so DevTools has one window.
+export async function panelFor(
+  name: BrowserName,
+  url: string,
+  order: "before" | "after",
+) {
+  const { browser } = await launchWithExtension(name)
+  const [page] = await browser.pages()
+  if (!page) throw new Error("no page")
+  let panel: PanelText | undefined
+  if (order === "before") panel = await openPanelText(name, browser)
+  await page.goto(url)
+  if (order === "after") panel = await openPanelText(name, browser)
+  if (!panel) throw new Error("no panel")
+  return { browser, page, panel }
 }

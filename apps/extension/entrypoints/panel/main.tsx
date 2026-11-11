@@ -15,14 +15,20 @@ apply(defaultTheme(getTheme()))
 onThemeChanged((kind) => apply(defaultTheme(kind)))
 
 const [renderers, setRenderers] = createSignal<RendererView[]>([])
-const port = browser.runtime.connect({ name: "panel" })
-port.onMessage.addListener((message: TabStateMessage) =>
-  setRenderers(message.renderers),
-)
-port.postMessage({
-  type: "subscribe",
-  tabId: browser.devtools.inspectedWindow.tabId,
-} satisfies SubscribeMessage)
+// The port drops whenever the background stops (an idle service worker); connecting
+// again wakes it, and subscribing asks the page's relay for the current state.
+function connect() {
+  const port = browser.runtime.connect({ name: "panel" })
+  port.onMessage.addListener((message: TabStateMessage) =>
+    setRenderers(message.renderers),
+  )
+  port.onDisconnect.addListener(connect)
+  port.postMessage({
+    type: "subscribe",
+    tabId: browser.devtools.inspectedWindow.tabId,
+  } satisfies SubscribeMessage)
+}
+connect()
 
 render(
   () => <Panel renderers={renderers()} />,

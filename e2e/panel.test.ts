@@ -1,34 +1,12 @@
 import assert from "node:assert/strict"
 import { after, before, describe, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
-import { type BrowserName, launchWithExtension } from "./launch.ts"
-import {
-  type Copy,
-  openPanelText,
-  type PanelText,
-  parseCopies,
-  until,
-} from "./panel-text.ts"
+import type { BrowserName } from "./launch.ts"
+import { type Copy, panelFor, parseCopies, total, until } from "./panel-text.ts"
 import { plainPage } from "./plain.ts"
 
 const name = process.env.E2E_BROWSER as BrowserName
 const plainUrl = plainPage()
-
-const total = (copies: Copy[]) =>
-  copies.flatMap((c) => c.commits).reduce((a, b) => a + b, 0)
-
-// Opens the panel before or after the page loads; with one tab, DevTools has one window.
-async function panelFor(url: string, order: "before" | "after") {
-  const { browser } = await launchWithExtension(name)
-  const [page] = await browser.pages()
-  if (!page) throw new Error("no page")
-  let panel: PanelText | undefined
-  if (order === "before") panel = await openPanelText(name, browser)
-  await page.goto(url)
-  if (order === "after") panel = await openPanelText(name, browser)
-  if (!panel) throw new Error("no panel")
-  return { browser, page, panel }
-}
 
 for (const [script, port, expected] of [
   ["fixture:18", 5218, [/^React 18\.3\.1 development react-dom$/]],
@@ -63,6 +41,7 @@ for (const [script, port, expected] of [
     for (const order of ["after", "before"] as const) {
       test(`lists each React copy and counts commits (DevTools opened ${order} load)`, async () => {
         const { browser, page, panel } = await panelFor(
+          name,
           `http://localhost:${port}`,
           order,
         )
@@ -102,7 +81,7 @@ for (const [script, port, expected] of [
 }
 
 test("a page without React says so", async () => {
-  const { browser, panel } = await panelFor(plainUrl(), "after")
+  const { browser, panel } = await panelFor(name, plainUrl(), "after")
   try {
     const text = await until(panel, (t) => t === "No React on this page")
     assert.equal(text, "No React on this page")
@@ -120,7 +99,11 @@ describe("fixture:prod panel", {
   after(() => stop?.())
 
   test("production React shows the notice", async () => {
-    const { browser, panel } = await panelFor("http://localhost:5222", "after")
+    const { browser, panel } = await panelFor(
+      name,
+      "http://localhost:5222",
+      "after",
+    )
     try {
       const notice =
         "Production build of React 19.3.1. ReactDX inspects development builds."
