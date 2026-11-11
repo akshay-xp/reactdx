@@ -1,5 +1,6 @@
-import { test } from 'node:test';
+import { before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -75,4 +76,14 @@ test('flags a hook script over the budget', () => {
     `content-scripts/hook.js: hook.js is ${MAX_HOOK_BYTES + 1} bytes, over ${MAX_HOOK_BYTES}`,
   ]);
   assert.deepEqual(checkBundle(bundle({ 'content-scripts/hook.js': 'x'.repeat(MAX_HOOK_BYTES) })), []);
+});
+
+describe('the shipped build', () => {
+  before(() => assert.equal(spawnSync('pnpm', ['build'], { cwd: repo }).status, 0));
+
+  test('passes the bundle check', () => {
+    const run = spawnSync('node', ['scripts/check/run.ts'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(run.stdout, '');
+    assert.equal(run.status, 0);
+  });
 });
