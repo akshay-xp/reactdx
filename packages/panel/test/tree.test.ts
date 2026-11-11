@@ -57,3 +57,34 @@ test("removes, reorders, renames and resets apply", () => {
   expect(names(tree.rows(1))).toEqual(["0 Other"])
   expect(tree.rows(2)).toEqual([])
 })
+
+test("a seq gap asks for a resync once, then waits for a reset", () => {
+  const tree = createTreeStore()
+  expect(tree.apply(resync)).toBe(false)
+  const before = tree.rows(1)
+  expect(tree.apply(treeBatch(3, [{ op: "remove", id: 3 }]))).toBe(true)
+  expect(tree.rows(1)).toEqual(before)
+  expect(tree.apply(treeBatch(4, [{ op: "remove", id: 3 }]))).toBe(false)
+  expect(tree.rows(1)).toEqual(before)
+  expect(tree.apply(resync)).toBe(false)
+  expect(tree.apply(treeBatch(2, [{ op: "remove", id: 3 }]))).toBe(false)
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 C"])
+})
+
+test.each<[string, TreeOp]>([
+  ["a remove", { op: "remove", id: 999 }],
+  ["a rename", { op: "rename", id: 999, name: "X" }],
+  ["a reorder", { op: "reorder", rootId: 1, parentId: 999, children: [] }],
+  ["an add", add(10, 999, "X")],
+])("%s of an unknown id asks for a resync", (_, op) => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  expect(tree.apply(treeBatch(2, [op]))).toBe(true)
+})
+
+test("clear empties the store", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.clear()
+  expect(tree.rows(1)).toEqual([])
+})

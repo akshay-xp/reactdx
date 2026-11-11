@@ -1,4 +1,4 @@
-import type { TreeBatchMessage, TreeKind } from "@reactdx/messages"
+import type { TreeBatchMessage, TreeKind, TreeOp } from "@reactdx/messages"
 import { createSignal } from "solid-js"
 
 export type Row = { id: number; name: string; depth: number }
@@ -33,30 +33,50 @@ export function createTreeStore() {
     nodes.delete(id)
   }
 
+  // Applies one op; false when it names a node the mirror doesn't have.
+  const applyOp = (op: TreeOp): boolean => {
+    if (op.op === "reset") {
+      reset()
+      return true
+    }
+    if (op.op === "add") {
+      const { id, rootId, parentId, kind, name, index } = op
+      const list = siblings(rootId, parentId)
+      if (!list) return false
+      nodes.set(id, { rootId, parentId, kind, name, children: [] })
+      list.splice(index, 0, id)
+      return true
+    }
+    if (op.op === "reorder") {
+      const list = siblings(op.rootId, op.parentId)
+      list?.splice(0, list.length, ...op.children)
+      return list !== undefined
+    }
+    const node = nodes.get(op.id)
+    if (!node) return false
+    if (op.op === "rename") node.name = op.name
+    else {
+      const list = siblings(node.rootId, node.parentId) ?? []
+      list.splice(list.indexOf(op.id), 1)
+      forget(op.id)
+    }
+    return true
+  }
+
+  // Next seq expected; once out of step, everything waits for a reset.
+  let expected = 1
+  let stale = false
+
   return {
-    apply(batch: TreeBatchMessage) {
-      for (const op of batch.ops) {
-        if (op.op === "reset") reset()
-        else if (op.op === "add") {
-          const { id, rootId, parentId, kind, name, index } = op
-          nodes.set(id, { rootId, parentId, kind, name, children: [] })
-          siblings(rootId, parentId)?.splice(index, 0, id)
-        } else if (op.op === "remove") {
-          const node = nodes.get(op.id)
-          if (!node) continue
-          const list = siblings(node.rootId, node.parentId)
-          list?.splice(list.indexOf(op.id), 1)
-          forget(op.id)
-        } else if (op.op === "reorder") {
-          const list = siblings(op.rootId, op.parentId)
-          list?.splice(0, list.length, ...op.children)
-        } else {
-          const node = nodes.get(op.id)
-          if (node) node.name = op.name
-        }
-      }
+    // True when the panel must ask the page for a resync.
+    apply(batch: TreeBatchMessage): boolean {
+      if (batch.ops[0]?.op === "reset") stale = false
+      else if (stale) return false
+      else if (batch.seq !== expected) stale = true
+      if (!stale) stale = !batch.ops.every(applyOp)
+      expected = batch.seq + 1
       setVersion(version() + 1)
-      return false
+      return stale
     },
 
     // Host elements are hidden: their children take their place and depth.
