@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { checkBundle } from './bundles.ts';
+import { MAX_HOOK_BYTES, checkBundle } from './bundles.ts';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 
@@ -68,4 +68,11 @@ test('flags network APIs', () => {
     assert.deepEqual(checkBundle(bundle({ 'a.js': code })), [`a.js: network API (${name})`]);
   }
   assert.deepEqual(checkBundle(bundle({ 'a.js': 'prefetchAll(); const fetched = 1' })), []);
+});
+
+test('flags a hook script over the budget', () => {
+  assert.deepEqual(checkBundle(bundle({ 'content-scripts/hook.js': 'x'.repeat(MAX_HOOK_BYTES + 1) })), [
+    `content-scripts/hook.js: hook.js is ${MAX_HOOK_BYTES + 1} bytes, over ${MAX_HOOK_BYTES}`,
+  ]);
+  assert.deepEqual(checkBundle(bundle({ 'content-scripts/hook.js': 'x'.repeat(MAX_HOOK_BYTES) })), []);
 });

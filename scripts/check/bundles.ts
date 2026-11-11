@@ -7,6 +7,7 @@ const REACT_MARKERS = [
   '__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE',
   '__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE',
 ];
+export const MAX_HOOK_BYTES = 2048;
 const SCANNED = new Set(['.js', '.html', '.json', '.css']);
 // Each match becomes `<rule> (<first capture group>)`.
 const PATTERNS: [rule: string, pattern: RegExp][] = [
@@ -23,6 +24,10 @@ export function checkBundle(dir: string): string[] {
   for (const file of readdirSync(dir, { recursive: true, encoding: 'utf8' })) {
     if (!SCANNED.has(path.extname(file))) continue;
     const text = readFileSync(path.join(dir, file), 'utf8');
+    const bytes = Buffer.byteLength(text);
+    if (file === 'content-scripts/hook.js' && bytes > MAX_HOOK_BYTES) {
+      violations.push(`${file}: hook.js is ${bytes} bytes, over ${MAX_HOOK_BYTES}`);
+    }
     const marker = REACT_MARKERS.find((name) => text.includes(name));
     if (marker) violations.push(`${file}: React (${marker})`);
     for (const [rule, pattern] of PATTERNS) {

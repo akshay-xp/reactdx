@@ -1,13 +1,12 @@
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
 const targets = ['chrome-mv3', 'firefox-mv3'] as const;
 const manifest = (target: string) => JSON.parse(readFileSync(path.join(root, '.output', target, 'manifest.json'), 'utf8'));
-const MAX_HOOK_BYTES = 2048;
 
 let output = '';
 before(() => {
@@ -30,12 +29,6 @@ for (const target of targets) {
     assert.deepEqual(m.content_scripts, [
       { matches: ['<all_urls>'], run_at: 'document_start', world: 'MAIN', js: ['content-scripts/hook.js'] },
     ]);
-  });
-
-  test(`${target}: hook script within the ${MAX_HOOK_BYTES}-byte budget`, () => {
-    const { size } = statSync(path.join(root, '.output', target, 'content-scripts/hook.js'));
-    console.log(`${target} hook.js: ${size} bytes`);
-    assert.ok(size <= MAX_HOOK_BYTES, `${size} > ${MAX_HOOK_BYTES}`);
   });
 }
 
