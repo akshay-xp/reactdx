@@ -45,6 +45,8 @@ Per fixture, with the store RDT installed, each case asserts that RDT's backend 
 - Renderers with RDT: 1 on `fixture:18`/`19`, 2 on `multi`, 3 on `next` (Next's Server Components client also registers, because RDT's hook has `supportsFlight`; `docs/page.md`).
 - `e2e/preload.ts` bundles the preload scripts in memory with esbuild (a root devDependency).
 
+- **Reloads (up to 5 loads):** when RDT missed the load, and when React hasn't committed a development root within 20 s. On CI, Next's dev page sometimes never hydrates with RDT installed (no errors, no pending requests; the server-rendered counter shows anyway). A control run on the same runner (PR #23) hydrated 6 of 8 loads with RDT alone and 8 of 8 with ReactDX's hook added, so it's RDT plus `next dev` on a slow machine, not ReactDX. Never seen locally.
+
 ## RDT, locked like a dependency (`e2e/rdt.ts`)
 
 - `e2e/rdt.lock.json`: RDT `version`, Firefox's versioned AMO `url` and `sha256`, Chrome's `sha256`. The Chrome Web Store only serves the latest build, so Chrome is pinned by hash.

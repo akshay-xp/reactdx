@@ -49,66 +49,46 @@ const status = () => {
   }
 }
 
-// RDT registers its hook script from its service worker, so a load can miss it.
+// Development react-dom root committed, as ReactDX's record sees it (true when
+// ReactDX isn't connected, so the RDT check below decides).
+const committed = () => {
+  const record = (window as unknown as Record<symbol, HookRecord>)[
+    Symbol.for("reactdx")
+  ]
+  if (!record?.renderers.size) return true
+  return [...record.renderers].some(
+    ([id, info]) =>
+      info.bundleType === 1 &&
+      info.rendererPackageName === "react-dom" &&
+      (record.roots.get(id)?.size ?? 0) > 0,
+  )
+}
+
+// Reloads until the load is usable, up to 5 times:
+// - RDT registers its hook script from its service worker, so a load can miss it.
+// - On CI, Next's dev page sometimes never hydrates with RDT installed: no
+//   errors, nothing pending. A control run on the same runner hydrated 6 of 8
+//   loads with RDT alone and 8 of 8 with ReactDX added, so it isn't ReactDX.
+//   Next server-renders the counter, so it shows before hydration either way.
 async function openWithRdt(page: Page, port: number) {
-  // Kept for the failure message if React never commits (seen only on CI).
   const errors: string[] = []
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
   page.on("pageerror", (e) => errors.push(String(e)))
-  page.on("response", (r) => {
-    if (r.status() >= 400) errors.push(`${r.status()} ${r.url()}`)
-  })
-  const pending = new Set<string>()
-  page.on("request", (r) => pending.add(r.url()))
-  page.on("requestfinished", (r) => pending.delete(r.url()))
-  page.on("requestfailed", (r) => pending.delete(r.url()))
-  page.on("requestfailed", (r) =>
-    errors.push(`request failed: ${r.url()} ${r.failure()?.errorText}`),
-  )
   for (let attempt = 1; ; attempt++) {
     await page.goto(`http://localhost:${port}`)
     await page.waitForSelector("[data-testid=counter]")
-    // Next server-renders the counter, so it appears before React hydrates (and
-    // next dev compiles the client on the first request, slow on CI). Wait for
-    // ReactDX's record to see a development react-dom root commit.
-    await page
-      .waitForFunction(
-        () => {
-          const record = (window as unknown as Record<symbol, HookRecord>)[
-            Symbol.for("reactdx")
-          ]
-          if (!record?.renderers.size) return true
-          return [...record.renderers].some(
-            ([id, info]) =>
-              info.bundleType === 1 &&
-              info.rendererPackageName === "react-dom" &&
-              (record.roots.get(id)?.size ?? 0) > 0,
-          )
-        },
-        { timeout: 60_000 },
+    const hydrated = await page
+      .waitForFunction(committed, { timeout: 20_000 })
+      .then(
+        () => true,
+        () => false,
       )
-      .catch(async (error) => {
-        const view = await page.evaluate(
-          () =>
-            new Promise((resolve) => {
-              const counter = document.querySelector("[data-testid=counter]")
-              const state = {
-                visibility: document.visibilityState,
-                frame: false,
-                // React tags the DOM nodes it hydrated.
-                hydrated: Object.keys(counter ?? {}).some((k) =>
-                  k.startsWith("__reactFiber$"),
-                ),
-              }
-              requestAnimationFrame(() => resolve({ ...state, frame: true }))
-              setTimeout(() => resolve(state), 2000)
-            }),
-        )
-        throw new Error(
-          `React never committed a development root: ${JSON.stringify({ errors, view, pending: [...pending] })}`,
-          { cause: error },
-        )
-      })
+    if (!hydrated) {
+      if (attempt < 5) continue
+      throw new Error(
+        `React never committed a development root in 5 loads: ${JSON.stringify(errors)}`,
+      )
+    }
     const result = await page.evaluate(status)
     if (result.rdt > 0 || attempt === 5) return result
   }
