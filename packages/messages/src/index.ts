@@ -222,6 +222,10 @@ export type SubscribeMessage = { type: "subscribe"; tabId: number }
 // Content script to agent, through the page: post a fresh snapshot.
 export const GET_SNAPSHOT = { source: "reactdx-relay", type: "get-snapshot" }
 
+// Content script to agent: a panel is watching, so track the tree (and resync), or stop.
+export const WATCH = { source: "reactdx-relay", type: "watch" }
+export const UNWATCH = { source: "reactdx-relay", type: "unwatch" }
+
 // Roots of renderers the relay hasn't seen are dropped.
 export const tabState = (
   renderers: Map<number, RendererInfo>,

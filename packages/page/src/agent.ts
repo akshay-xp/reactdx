@@ -2,8 +2,12 @@ import {
   type PageMessage,
   type RootInfo,
   snapshotMessage,
+  type TreeBatchMessage,
+  type TreeOp,
+  treeBatch,
 } from "@reactdx/messages"
 import type { FiberRoot, HookRecord } from "./hook.ts"
+import { createTree } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
 const THROTTLE_MS = 100
@@ -12,7 +16,7 @@ const THROTTLE_MS = 100
 // Reads the hook's record, so roots that committed before it arrived are kept.
 export function startAgent(
   target: EventTarget,
-  post: (message: PageMessage) => void,
+  post: (message: PageMessage | TreeBatchMessage) => void,
 ) {
   const scope = target as unknown as Record<symbol, unknown>
   const record = scope[Symbol.for("reactdx")] as HookRecord | undefined
@@ -33,6 +37,14 @@ export function startAgent(
     post(snapshotMessage(roots))
   }
 
+  const tree = createTree()
+  const watch = () => {
+    const ops: TreeOp[] = [{ op: "reset" }]
+    for (const set of record.roots.values())
+      for (const root of set) ops.push(...tree.full(root, info(root).id))
+    post(treeBatch(1, ops))
+  }
+
   let pending = false
   record.listeners.add((_, root) => {
     info(root).commits++
@@ -45,8 +57,9 @@ export function startAgent(
   })
   target.addEventListener("message", (event) => {
     const { data } = event as MessageEvent
-    if (data?.source === "reactdx-relay" && data.type === "get-snapshot")
-      snapshot()
+    if (data?.source !== "reactdx-relay") return
+    if (data.type === "get-snapshot") snapshot()
+    else if (data.type === "watch") watch()
   })
   snapshot()
 }
