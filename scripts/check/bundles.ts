@@ -27,6 +27,11 @@ export function checkBundle(dir: string): string[] {
   for (const file of readdirSync(dir, { recursive: true, encoding: "utf8" })) {
     if (!SCANNED.has(path.extname(file))) continue
     const text = readFileSync(path.join(dir, file), "utf8")
+    // CSS comments never load; Tailwind's MIT notice carries a URL.
+    const scanned =
+      path.extname(file) === ".css"
+        ? text.replace(/\/\*[\s\S]*?\*\//g, "")
+        : text
     const bytes = Buffer.byteLength(text)
     if (file === "content-scripts/hook.js" && bytes > MAX_HOOK_BYTES) {
       violations.push(
@@ -37,7 +42,7 @@ export function checkBundle(dir: string): string[] {
     if (marker) violations.push(`${file}: React (${marker})`)
     for (const [rule, pattern] of PATTERNS) {
       const found = new Set(
-        Array.from(text.matchAll(pattern), (match) => match[1]),
+        Array.from(scanned.matchAll(pattern), (match) => match[1]),
       )
       for (const name of found) violations.push(`${file}: ${rule} (${name})`)
     }

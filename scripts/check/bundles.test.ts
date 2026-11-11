@@ -87,6 +87,27 @@ test("flags remote URLs in scripts, pages, the manifest and CSS", () => {
   )
 })
 
+test("ignores URLs in CSS comments, which never load", () => {
+  const banner =
+    "/*! tailwindcss v4.3.5 | MIT License | https://tailwindcss.com */"
+  assert.deepEqual(
+    checkBundle(bundle({ "a.css": `${banner}\n.x{color:red}` })),
+    [],
+  )
+  assert.deepEqual(
+    checkBundle(
+      bundle({
+        "a.css": `${banner}\n.x{background:url(https://example.com/a.png)}`,
+      }),
+    ),
+    ["a.css: remote URL (https://example.com/a.png)"],
+  )
+  assert.deepEqual(
+    checkBundle(bundle({ "a.js": "/* https://example.com/x */ f()" })),
+    ["a.js: remote URL (https://example.com/x)"],
+  )
+})
+
 test("flags network APIs", () => {
   for (const [code, name] of [
     ["fetch(u)", "fetch"],
