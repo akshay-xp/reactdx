@@ -51,27 +51,41 @@ const status = () => {
 
 // RDT registers its hook script from its service worker, so a load can miss it.
 async function openWithRdt(page: Page, port: number) {
+  // Kept for the failure message if React never commits (seen only on CI).
+  const errors: string[] = []
+  page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
+  page.on("pageerror", (e) => errors.push(String(e)))
+  page.on("requestfailed", (r) =>
+    errors.push(`request failed: ${r.url()} ${r.failure()?.errorText}`),
+  )
   for (let attempt = 1; ; attempt++) {
     await page.goto(`http://localhost:${port}`)
     await page.waitForSelector("[data-testid=counter]")
     // Next server-renders the counter, so it appears before React hydrates (and
     // next dev compiles the client on the first request, slow on CI). Wait for
     // ReactDX's record to see a development react-dom root commit.
-    await page.waitForFunction(
-      () => {
-        const record = (window as unknown as Record<symbol, HookRecord>)[
-          Symbol.for("reactdx")
-        ]
-        if (!record?.renderers.size) return true
-        return [...record.renderers].some(
-          ([id, info]) =>
-            info.bundleType === 1 &&
-            info.rendererPackageName === "react-dom" &&
-            (record.roots.get(id)?.size ?? 0) > 0,
+    await page
+      .waitForFunction(
+        () => {
+          const record = (window as unknown as Record<symbol, HookRecord>)[
+            Symbol.for("reactdx")
+          ]
+          if (!record?.renderers.size) return true
+          return [...record.renderers].some(
+            ([id, info]) =>
+              info.bundleType === 1 &&
+              info.rendererPackageName === "react-dom" &&
+              (record.roots.get(id)?.size ?? 0) > 0,
+          )
+        },
+        { timeout: 60_000 },
+      )
+      .catch((error) => {
+        throw new Error(
+          `React never committed a development root: ${JSON.stringify(errors)}`,
+          { cause: error },
         )
-      },
-      { timeout: 60_000 },
-    )
+      })
     const result = await page.evaluate(status)
     if (result.rdt > 0 || attempt === 5) return result
   }
