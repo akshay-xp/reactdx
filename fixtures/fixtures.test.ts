@@ -5,12 +5,29 @@ import { after, before, describe, test } from "node:test"
 import puppeteer, { type Browser, type Page } from "puppeteer"
 import { startFixture } from "./start.ts"
 
+declare global {
+  interface Window {
+    __bench(mode: "all" | "one", iterations: number): number[]
+  }
+}
+
 let browser: Browser
 before(async () => (browser = await puppeteer.launch()))
 after(() => browser.close())
 
 const text = (page: Page, selector: string) =>
   page.$eval(selector, (el) => el.textContent ?? "")
+
+const cells = (page: Page) =>
+  page.$$eval("[data-testid=cell]", (els) => els.map((el) => el.textContent))
+
+async function openBench(page: Page, port: number) {
+  await page.goto(`http://localhost:${port}/bench.html`)
+  await page.waitForFunction(
+    () => document.querySelectorAll("[data-testid=cell]").length === 10000,
+    { timeout: 10_000 },
+  )
+}
 
 async function expectCounter(page: Page, scope: string) {
   const counter = `${scope} [data-testid=counter]`
@@ -38,6 +55,25 @@ for (const [script, port, version] of [
       await page.waitForSelector("[data-testid=react-version]")
       assert.match(await text(page, "[data-testid=react-version]"), version)
       await expectCounter(page, "body")
+      await page.close()
+    })
+
+    test("serves the hook-cost bench page", async () => {
+      const page = await browser.newPage()
+      await openBench(page, port)
+      const one = await page.evaluate(() => window.__bench("one", 3))
+      assert.equal(one.length, 3)
+      assert.ok(
+        one.every((ms) => ms > 0),
+        String(one),
+      )
+      const [first, ...rest] = await cells(page)
+      assert.equal(first, "3")
+      assert.deepEqual(new Set(rest), new Set(["0"]))
+
+      await openBench(page, port)
+      await page.evaluate(() => window.__bench("all", 2))
+      assert.deepEqual(new Set(await cells(page)), new Set(["2"]))
       await page.close()
     })
   })
