@@ -58,7 +58,12 @@ Per fixture, with the store RDT installed, each case asserts that RDT's backend 
 
 - `e2e/run.ts`: flag parsing, per-browser build, test run.
 - `e2e/launch.ts`: `launchWithExtension(name, extensions = [reactdxBuild(name)], { devtoolsTheme })` returns `{ browser, panelCreated() }`. `devtoolsTheme` (Chrome) writes DevTools' `ui-theme` into a temp profile's `Default/Preferences`.
-- `openPanel(browser)` (Chrome): selects the ReactDX tab through DevTools' `InspectorView` and returns the panel frame. The panel needs `browser.devtools`, so it's only tested inside DevTools. Firefox can't reach `moz-extension://` frames over BiDi, so panel rendering is Chrome only.
+- `openPanel(browser)` (Chrome): selects the ReactDX tab through DevTools' `InspectorView` and returns the panel frame. The panel needs `browser.devtools`, so it's only tested inside DevTools.
+- `e2e/panel-text.ts`: `openPanelText(name, browser)` returns a reader for the panel's visible text, whitespace-normalized, in both browsers; `parseCopies(text)` and `until(read, check)`. Chrome walks the panel frame's text nodes. Firefox runs DevTools panels in an extension process Puppeteer can't reach, so chrome scope (`e2e/firefox.ts` `chromeEval`) selects the ReactDX tool through `gDevTools` and reads the panel's accessibility tree, which Firefox mirrors into the parent process.
+- `e2e/panel.test.ts`: per fixture, the panel lists each copy and a commit count that rises after a click, with DevTools opened after and before load; no React and production notices. Each test launches its own browser, so DevTools has one window.
+- `e2e/agent.test.ts`: the agent is injected on development fixtures only.
+- `e2e/forged.test.ts`: forged and malformed page messages (`docs/messages.md`).
+- `e2e/plain.ts`: `plainPage()`, a page without React for the whole file.
 - `e2e/theme.test.ts`: the panel follows DevTools light and dark (Chrome; skipped in Firefox).
 - `e2e/extension.test.ts`: ReactDX alone (hook on the prototype, record, panel).
 - `e2e/toolbar.test.ts`: toolbar title (and icon in Firefox) on a non-React page and every fixture including `prod`; leaving a React page resets it; Chrome checks a non-React page sends the service worker nothing.

@@ -4,7 +4,7 @@ Code that runs in the page's MAIN world. Today: installing the React DevTools gl
 
 ## Rules
 
-- No runtime dependencies: it's bundled into the `document_start` script that runs on every site, which `pnpm check` holds to 2,048 bytes (`docs/check.md`). Measured: 1,703 bytes (M2 #20).
+- The hook (`src/hook.ts`) has no runtime dependencies (only types from `@reactdx/messages`): it's bundled into the `document_start` script that runs on every site, which `pnpm check` holds to 2,048 bytes (`docs/check.md`). Measured: 1,703 bytes (M2 #20).
 - Never imports React; React only reaches it through the hook (`docs/check.md` fails any bundle containing React).
 
 ## Installer (`installHook(target, onRenderer?)`, `src/hook.ts`)
@@ -30,9 +30,17 @@ React connects to whichever `__REACT_DEVTOOLS_GLOBAL_HOOK__` exists when it load
 - `listeners`: `Set<(rendererId, root) => void>`, called after every commit.
 - Next's Server Components client (`react-server-dom-turbopack`) only registers with a hook that has `supportsFlight`. RDT's hook has it, ours doesn't (yet), so with RDT installed the record lists it too, with no roots. Worth adding to ours for M7.
 
+## Agent (`startAgent(target, post)`, `src/agent.ts`)
+
+- Injected after a development renderer connects (`docs/messages.md`), so it isn't bound by the 2,048-byte budget. Does nothing without the hook record or if already started (`Symbol.for("reactdx.agent")` on `target`).
+- Reads `record.roots`, so roots that committed before it arrived are reported. Root ids are its own (a `WeakMap<FiberRoot, { id, commits }>`, counting from 1).
+- Commit counts start when the agent starts: existing roots begin at 0.
+- Posts `snapshotMessage(roots)` at start, at most every 100 ms after commits (one timer per burst, so a page committing every frame can't flood the extension), and on a `get-snapshot` message event on `target`.
+- Unmounted roots drop out of the next snapshot (the record removes them).
+
 ## Types
 
-- `Hook`, `HookRecord`, `RendererInfo`, `FiberRoot`. `declare global { var __REACT_DEVTOOLS_GLOBAL_HOOK__: Hook | undefined }` types `window` and `globalThis`.
+- `Hook`, `HookRecord`, `FiberRoot`; `RendererInfo` comes from `@reactdx/messages` (re-exported), so `page` depends on `messages`, never the reverse. `declare global { var __REACT_DEVTOOLS_GLOBAL_HOOK__: Hook | undefined }` types `window` and `globalThis`.
 - `checkDCE` is a no-op: React prints "Download the React DevTools" when the hook lacks it. e2e checks the message never appears.
 
 ## Tests (`docs/unit-tests.md`)
@@ -44,6 +52,7 @@ One file per React scenario, because react-dom registers with the hook only once
 - `test/rdt-first.test.ts`: an RDT-like hook defined first with a getter.
 - `test/define-later.test.ts`: a hook defined with `defineProperty` after ours.
 - `test/assign-later.test.ts`: a hook set by plain assignment after ours.
+- `test/agent.test.ts`: the agent's first snapshot, 100 ms batching, `get-snapshot`, unmount, a second start (fake timers).
 - `test/window.ts`: `windowLike()` inserts a fresh prototype under `globalThis` to stand in for `Window.prototype`; `mount()` renders a root. `test/fake-hook.ts`: an RDT-like hook.
 
 ## Related

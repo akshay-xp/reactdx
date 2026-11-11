@@ -9,13 +9,14 @@ Vitest 5.1.0 in jsdom 31.0.0. One suite, run once per React version.
 
 ## Projects
 
-| Project    | React  | `process.env.REACT_VERSION` |
-| ---------- | ------ | --------------------------- |
-| `react-18` | 18.3.1 | `18.3.`                     |
-| `react-19` | 19.3.1 | `19.`                       |
+| Project    | Covers                                              | React  | `process.env.REACT_VERSION` |
+| ---------- | --------------------------------------------------- | ------ | --------------------------- |
+| `react-18` | `packages/page/test/**/*.test.ts`                   | 18.3.1 | `18.3.`                     |
+| `react-19` | `packages/page/test/**/*.test.ts`                   | 19.3.1 | `19.`                       |
+| `panel`    | `packages/{panel,messages}/test/**/*.test.{ts,tsx}` | none   |                             |
 
-- Include glob: `packages/*/test/**/*.test.{ts,tsx}`. Every test runs in both projects, React or not.
-- Each project aliases `^(react|react-dom)(/.*)?$` into `test-env/react-<n>/node_modules`.
+- The React projects alias `^(react|react-dom)(/.*)?$` into `test-env/react-<n>/node_modules`. `panel` uses `vite-plugin-solid` 2.11.16 and `@solidjs/testing-library` 0.8.10, and runs once (no React).
+- CI runs each project as its own `unit` job (`docs/ci.md`).
 
 ## Why `test-env/*` packages, not npm aliases
 
@@ -26,10 +27,6 @@ Vitest 5.1.0 in jsdom 31.0.0. One suite, run once per React version.
 - Call `installHook(windowLike())` (`packages/page/test/window.ts`) before `mount()`, which imports `react-dom/client`: react-dom registers with the hook as it loads, and only once per module load, so each React scenario is its own test file. `windowLike()` gives `globalThis` a fresh prototype standing in for `Window.prototype`, where ReactDX's hook lives.
 - Set `globalThis.IS_REACT_ACT_ENVIRONMENT = true` and wrap renders in `React.act` (exported by `react` in 18.3 and 19).
 - Observe commits through the returned record's `listeners` (`docs/page.md`). React calls `onCommitFiberRoot` as `(rendererId, fiberRoot, priorityLevel, didError)`.
-
-## Not covered yet
-
-- `packages/panel/test/themes.test.ts`: theme values, contrast, `applyTheme` (plain TS, runs in both React projects). Rendering Solid components in jsdom (M3) will need `vite-plugin-solid` in `vitest.config.ts`.
 
 ## Key files
 

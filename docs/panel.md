@@ -2,6 +2,14 @@
 
 Solid UI rendered in the DevTools panel. The browser glue (`browser.devtools.*`) lives in `apps/extension/entrypoints/panel/`; `packages/panel` has no `chrome.*`/`browser.*` code.
 
+## Connection list (`src/ConnectionList.tsx`, `src/Panel.tsx`)
+
+- `Panel(props: { renderers: RendererView[] })` renders `ConnectionList` in the themed `<main>`. `apps/extension/entrypoints/panel/main.tsx` connects a `runtime` port named `panel`, subscribes with `browser.devtools.inspectedWindow.tabId`, and sets a signal from each `TabStateMessage` (`docs/messages.md`).
+- States: no renderers: "No React on this page". Only production: "Production build of React <versions>. ReactDX inspects development builds." Otherwise one `[data-testid=renderer]` per copy (`React <version> <development|production> <rendererPackageName>`) with `[data-testid=root]` rows ("Root N", "N commits", `data-commits`). Production copies are listed with their roots (Next's dev overlay) but get no agent.
+- Page data is only ever a Solid text node, never markup (unit test and `e2e/forged.test.ts` check an `<img onerror>` version renders as text).
+- `test/ConnectionList.test.tsx` (Vitest `panel` project): each state, text-only, no Tailwind palette classes.
+- Not yet: resetting on navigation and reconnecting after the service worker sleeps (#22).
+
 ## Themes (`src/themes.ts`, `src/index.css`)
 
 Copied from SnapQL (`~/Code/snapql/apps/extension/src/panel/themes.ts`, `index.css`), so both extensions look the same.
