@@ -58,6 +58,10 @@ async function openWithRdt(page: Page, port: number) {
   page.on("response", (r) => {
     if (r.status() >= 400) errors.push(`${r.status()} ${r.url()}`)
   })
+  const pending = new Set<string>()
+  page.on("request", (r) => pending.add(r.url()))
+  page.on("requestfinished", (r) => pending.delete(r.url()))
+  page.on("requestfailed", (r) => pending.delete(r.url()))
   page.on("requestfailed", (r) =>
     errors.push(`request failed: ${r.url()} ${r.failure()?.errorText}`),
   )
@@ -87,16 +91,21 @@ async function openWithRdt(page: Page, port: number) {
         const view = await page.evaluate(
           () =>
             new Promise((resolve) => {
+              const counter = document.querySelector("[data-testid=counter]")
               const state = {
                 visibility: document.visibilityState,
                 frame: false,
+                // React tags the DOM nodes it hydrated.
+                hydrated: Object.keys(counter ?? {}).some((k) =>
+                  k.startsWith("__reactFiber$"),
+                ),
               }
               requestAnimationFrame(() => resolve({ ...state, frame: true }))
               setTimeout(() => resolve(state), 2000)
             }),
         )
         throw new Error(
-          `React never committed a development root: ${JSON.stringify({ errors, view })}`,
+          `React never committed a development root: ${JSON.stringify({ errors, view, pending: [...pending] })}`,
           { cause: error },
         )
       })
