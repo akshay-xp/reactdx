@@ -87,9 +87,9 @@ export function installHook(target: {
   }
 
   // Another tool (RDT) got there first: React will use its hook, so wrap that one.
-  const existing = Object.getOwnPropertyDescriptor(target, KEY)?.value
-  if (existing) {
-    attachTo(existing)
+  // RDT defines it with a getter, so read it rather than the descriptor's value.
+  if (Object.hasOwn(target, KEY) && target[KEY]) {
+    attachTo(target[KEY])
     return record
   }
 

@@ -7,7 +7,12 @@ import { KEY, mount, windowLike } from "./window.ts"
 test("a hook installed first keeps React, and we still see its commits", async () => {
   const native = Object.defineProperty
   const fake = fakeHook()
-  Object.defineProperty(windowLike(), KEY, { value: fake, configurable: true })
+  // As RDT 8 defines it: a getter, not a value.
+  Object.defineProperty(windowLike(), KEY, {
+    configurable: false,
+    enumerable: false,
+    get: () => fake,
+  })
   const record = installHook(globalThis)
   expect(Object.defineProperty).toBe(native)
   const seen: number[] = []
