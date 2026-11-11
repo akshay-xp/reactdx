@@ -97,14 +97,24 @@ export function installHook(target: {
   // checks don't see ours and can still install theirs.
   const hook = createHook()
   attachTo(hook)
-  Object.defineProperty(Object.getPrototypeOf(target), KEY, {
+  const native = Object.defineProperty
+  native(Object.getPrototypeOf(target), KEY, {
     configurable: true,
     get: () => hook,
+    // A tool assigning its own hook gets it as window's own property, as without us.
+    set(value: Hook) {
+      native(target, KEY, {
+        value,
+        configurable: true,
+        enumerable: true,
+        writable: true,
+      })
+      attachTo(value)
+    },
   })
 
   // A tool installing after us (RDT) defines its hook on window, shadowing ours:
   // attach to it as it lands. The page sees this wrapper only until React connects.
-  const native = Object.defineProperty
   const wrapper = ((object, key, descriptor) => {
     native(object, key, descriptor)
     if (object === target && key === KEY && target[KEY]) attachTo(target[KEY])
