@@ -33,11 +33,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        react: ["18", "19"]
+        project: [react-18, react-19, panel]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
-      - run: pnpm test:unit --project react-${{ matrix.react }}
+      - run: pnpm test:unit --project ${{ matrix.project }}
 
   build:
     runs-on: ubuntu-latest

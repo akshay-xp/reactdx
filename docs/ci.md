@@ -10,7 +10,7 @@ All on `ubuntu-latest`, Node 24, via `.github/actions/setup`.
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------- |
 | `lint`                                                    | `pnpm lint`                                                                                                          | none     |
 | `tsc`                                                     | `pnpm typecheck`                                                                                                     | none     |
-| `unit` × react `18`, `19`                                 | `pnpm test:unit --project react-<n>`                                                                                 | none     |
+| `unit` × `react-18`, `react-19`, `panel`                  | `pnpm test:unit --project <project>`                                                                                 | none     |
 | `build` × `chrome`, `firefox`                             | `pnpm --filter @reactdx/extension build:<browser>`                                                                   | none     |
 | `check`                                                   | `pnpm build`, `pnpm check:bundles`, `pnpm test:check`, `pnpm --filter @reactdx/extension test`, `pnpm test:fixtures` | chrome   |
 | `e2e` × `chrome`, `firefox` × `18`, `19`, `next`, `multi` | `xvfb-run -a pnpm test:e2e --browser=<b> --fixture=<f>`                                                              | that one |

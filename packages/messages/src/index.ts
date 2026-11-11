@@ -19,6 +19,11 @@ const MAX_RENDERERS = 64
 
 export type RootInfo = { rendererId: number; id: number; commits: number }
 
+// One React copy as the panel shows it.
+export type RendererView = { id: number } & RendererInfo & {
+    roots: { id: number; commits: number }[]
+  }
+
 export type SnapshotMessage = {
   source: "reactdx"
   type: "snapshot"
