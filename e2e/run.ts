@@ -28,7 +28,14 @@ if (build.status !== 0) process.exit(build.status ?? 1)
 
 const test = spawnSync(
   "node",
-  ["--test", "--test-concurrency=1", "e2e/*.test.ts"],
+  [
+    "--test",
+    "--test-concurrency=1",
+    // A hung test fails on its own, so the run still prints every failure's details
+    // (CI's job timeout would cancel it with none).
+    "--test-timeout=120000",
+    "e2e/*.test.ts",
+  ],
   {
     stdio: "inherit",
     env: {
