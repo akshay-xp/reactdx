@@ -11,13 +11,21 @@ WXT 0.21 app that builds the MV3 extension for Chrome and Firefox.
 
 ## Entrypoints
 
-- `entrypoints/hook.content.ts`: static content script on `<all_urls>`, `world: "MAIN"`, `run_at: "document_start"`. Calls `installHook(window)` from `@reactdx/page`. WXT's wrapper calls `main()` synchronously, so the hook exists before any page script.
-- `entrypoints/background.ts`: empty for now (service worker on Chrome, background script on Firefox).
+- `entrypoints/hook.content.ts`: static content script on `<all_urls>`, `world: "MAIN"`, `run_at: "document_start"`. Calls `installHook(window, onRenderer)` from `@reactdx/page`, posting each renderer to the relay. WXT's wrapper calls `main()` synchronously, so the hook exists before any page script.
+- `entrypoints/relay.content.ts`: ISOLATED world, `<all_urls>`, `document_start`, top frame only. Validates page messages and sends the tab's renderers to the background (`docs/messages.md`).
+- `entrypoints/background.ts`: sets each tab's toolbar icon and title from the relay's message (service worker on Chrome, background script on Firefox). Holds no state.
+
+## Toolbar icons
+
+- States: `none` (grey `#9aa0a6`, the manifest default, title `ReactDX: no React`), `development` (`#0b57d0`, also the extension icon), `production` (`#188038`). Titles and the mapping: `docs/messages.md`.
+- `apps/extension/icon.svg` (placeholder art, branding is M9) with a `{{color}}` placeholder; `pnpm icons` (`scripts/icons.ts`, `@resvg/resvg-js`) renders `public/icon/<state>-<16|32|48|128>.png`, committed. Rerun after changing the SVG or colors.
+- `test/build.test.ts` checks the manifest's `action` and `icons` and every PNG's size.
+- Per-tab state resets on a new document in both browsers; bfcache restore is #22.
 
 ## Hook script budget
 
 - `content-scripts/hook.js` must be at most 2,048 bytes: it runs on every site (permissions decision in `docs/overview.md`).
-- Measured: 610 bytes in both builds (M1 #14), WXT's content-script wrapper included.
+- Measured: 1,703 bytes in both builds (M2 #20), WXT's content-script wrapper included.
 - Enforced by `pnpm check` (`docs/check.md`).
 
 ## Manifest

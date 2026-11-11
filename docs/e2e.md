@@ -6,7 +6,7 @@ One Puppeteer 25.17.0 suite that loads the built extension into a real browser a
 
 - `pnpm test:e2e --browser=chrome`
 - `pnpm test:e2e --browser=firefox`
-- `--fixture=18|19|next|multi` runs one fixture's suite (plus the panel test); CI uses it per matrix cell.
+- `--fixture=18|19|next|multi|prod` runs one fixture's suite (plus the panel test); CI uses it per matrix cell.
 
 `e2e/run.ts` parses the flags, builds only that browser (`pnpm --filter @reactdx/extension build:<browser>`), then runs `node --test e2e/extension.test.ts` with `E2E_BROWSER` (and `E2E_FIXTURE`) set. The flags can't go to `node --test` directly: Node rejects them as unknown options.
 
@@ -61,6 +61,8 @@ Per fixture, with the store RDT installed, each case asserts that RDT's backend 
 - `openPanel(browser)` (Chrome): selects the ReactDX tab through DevTools' `InspectorView` and returns the panel frame. The panel needs `browser.devtools`, so it's only tested inside DevTools. Firefox can't reach `moz-extension://` frames over BiDi, so panel rendering is Chrome only.
 - `e2e/theme.test.ts`: the panel follows DevTools light and dark (Chrome; skipped in Firefox).
 - `e2e/extension.test.ts`: ReactDX alone (hook on the prototype, record, panel).
+- `e2e/toolbar.test.ts`: toolbar title (and icon in Firefox) on a non-React page and every fixture including `prod`; leaving a React page resets it; Chrome checks a non-React page sends the service worker nothing.
+- `e2e/toolbar.ts`: `toolbar(name, browser, page)`. Chrome evaluates `chrome.action.getTitle` for the active tab in the service worker (`reactdxWorker(browser)`; without the `tabs` permission a URL query matches nothing; Chrome can't read icons back). Firefox launches with `MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1` and sends raw WebDriver BiDi over `browser.connection` in the browser's chrome scope, reading the action's per-tab data (`browserActionFor(extension).action.getContextData(tab)`): MV3 buttons sit in the extensions panel, whose nodes are built lazily.
 - `e2e/coexist.test.ts`, `e2e/preload.ts`, `e2e/rdt.ts`, `e2e/rdt.lock.json`, `e2e/rdt-update.ts`.
 - Test files run one at a time (`--test-concurrency=1`): they share fixture ports.
 - `fixtures/start.ts`: `startFixture(script, port)`, shared with the fixture smoke test.

@@ -4,10 +4,10 @@ Code that runs in the page's MAIN world. Today: installing the React DevTools gl
 
 ## Rules
 
-- No runtime dependencies: it's bundled into the `document_start` script that runs on every site, which `pnpm check` holds to 2,048 bytes (`docs/check.md`). Measured: 1,614 bytes (M2 #18).
+- No runtime dependencies: it's bundled into the `document_start` script that runs on every site, which `pnpm check` holds to 2,048 bytes (`docs/check.md`). Measured: 1,703 bytes (M2 #20).
 - Never imports React; React only reaches it through the hook (`docs/check.md` fails any bundle containing React).
 
-## Installer (`installHook(target)`, `src/hook.ts`)
+## Installer (`installHook(target, onRenderer?)`, `src/hook.ts`)
 
 React connects to whichever `__REACT_DEVTOOLS_GLOBAL_HOOK__` exists when it loads. RDT 8 won't install its hook when one is already `window`'s own property (it checks `hasOwnProperty` twice), so ReactDX never claims that property. Three paths, all tested against the store RDT in both browsers (`docs/e2e.md`):
 
@@ -23,6 +23,7 @@ React connects to whichever `__REACT_DEVTOOLS_GLOBAL_HOOK__` exists when it load
 
 ## Record (`HookRecord`)
 
+- `installHook(target, onRenderer?)` calls `onRenderer(id, { version, bundleType, rendererPackageName })` once per renderer, including those already on a hook installed first. The content script uses it to post to the relay (`docs/messages.md`).
 - `installHook` returns it, and stores it on `target` under `Symbol.for("reactdx")` (non-enumerable), where the injected agent will find it (M2 #21).
 - `renderers`: `Map<id, { version, bundleType, rendererPackageName }>`, copied fields only (no references to React's renderer objects).
 - `roots`: `Map<id, Set<FiberRoot>>`. A root is added on commit and removed when it commits with no element (`root.current.memoizedState?.element == null`, i.e. `root.unmount()`).
