@@ -13,6 +13,8 @@ const PATTERNS: [rule: string, pattern: RegExp][] = [
   ['dynamic code', /\b(eval|Function)\s*\(/g],
   // XML namespace strings (Solid's SVG/MathML) are identifiers, not loads.
   ['remote URL', /\b((?:https?|wss?):\/\/(?!www\.w3\.org\/)[^\s"'`)]+)/g],
+  // Banned outright: a static scan can't tell which origin a call reaches.
+  ['network API', /\b(fetch|importScripts|XMLHttpRequest|WebSocket|EventSource|sendBeacon)\b/g],
 ];
 
 // Returns one `<file>: <rule>` line per invariant the built extension in `dir` breaks.

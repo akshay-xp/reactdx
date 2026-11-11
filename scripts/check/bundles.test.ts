@@ -55,3 +55,17 @@ test('flags remote URLs in scripts, pages, the manifest and CSS', () => {
   assert.deepEqual(checkBundle(bundle({ 'a.css': 'a{background:url(https://x.test/i.png)}' })), ['a.css: remote URL (https://x.test/i.png)']);
   assert.deepEqual(checkBundle(bundle({ 'a.js': 'createElementNS("http://www.w3.org/1998/Math/MathML","math")' })), []);
 });
+
+test('flags network APIs', () => {
+  for (const [code, name] of [
+    ['fetch(u)', 'fetch'],
+    ['importScripts(u)', 'importScripts'],
+    ['new XMLHttpRequest()', 'XMLHttpRequest'],
+    ['new WebSocket(u)', 'WebSocket'],
+    ['new EventSource(u)', 'EventSource'],
+    ['navigator.sendBeacon(u)', 'sendBeacon'],
+  ]) {
+    assert.deepEqual(checkBundle(bundle({ 'a.js': code })), [`a.js: network API (${name})`]);
+  }
+  assert.deepEqual(checkBundle(bundle({ 'a.js': 'prefetchAll(); const fetched = 1' })), []);
+});
