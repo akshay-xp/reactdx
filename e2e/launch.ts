@@ -68,6 +68,8 @@ async function launchFirefox(extensions: string[]) {
     browser: "firefox",
     headless: false,
     args: ["-devtools"],
+    // Lets e2e/toolbar.ts read the toolbar from the browser's own UI.
+    env: { ...process.env, MOZ_REMOTE_ALLOW_SYSTEM_ACCESS: "1" },
     // The devtools page's console is only reachable as Firefox's stdout.
     extraPrefsFirefox: {
       "devtools.console.stdout.chrome": true,

@@ -115,3 +115,33 @@ test("Tailwind's default palette doesn't exist, only theme tokens", () => {
     rmSync(planted, { force: true })
   }
 })
+
+const iconSet = (state: string) =>
+  Object.fromEntries(
+    [16, 32, 48, 128].map((size) => [
+      String(size),
+      `icon/${state}-${size}.png`,
+    ]),
+  )
+
+for (const target of targets) {
+  test(`${target}: toolbar defaults to the grey icon and "no React"`, () => {
+    const m = manifest(target)
+    assert.deepEqual(m.action, {
+      default_title: "ReactDX: no React",
+      default_icon: iconSet("none"),
+    })
+    assert.deepEqual(m.icons, iconSet("development"))
+    for (const state of ["none", "development", "production"]) {
+      for (const [size, file] of Object.entries(iconSet(state))) {
+        const png = readFileSync(path.join(root, ".output", target, file))
+        // PNG IHDR: width and height are big-endian uint32s at bytes 16 and 20.
+        assert.deepEqual(
+          [png.readUInt32BE(16), png.readUInt32BE(20)],
+          [Number(size), Number(size)],
+          file,
+        )
+      }
+    }
+  })
+}

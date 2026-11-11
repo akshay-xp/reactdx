@@ -22,10 +22,12 @@
     "fixture:multi": "node fixtures/multi/serve.ts",
     "test:e2e": "node e2e/run.ts",
     "bench:hook-cost": "pnpm --filter @reactdx/bench-hook-cost bench",
-    "rdt:update": "node e2e/rdt-update.ts"
+    "rdt:update": "node e2e/rdt-update.ts",
+    "icons": "node scripts/icons.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
+    "@resvg/resvg-js": "2.6.2",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
