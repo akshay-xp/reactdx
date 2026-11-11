@@ -95,6 +95,7 @@ for (const [script, port, renderers] of [
     // the browser gives (Chrome 157 under Puppeteer: RDT first; Firefox 159: ReactDX first).
     for (const [name, extensions, preload, first] of [
       ["ReactDX first, then RDT", () => [rdt], "first", "reactdx"],
+      ["RDT first, then ReactDX", () => [rdt], "after-rdt", "rdt"],
       [
         "the shipped build with RDT",
         () => [reactdxBuild(browserName), rdt],
