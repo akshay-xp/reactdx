@@ -1,6 +1,6 @@
 # Hook-cost benchmark (`bench/hook-cost/`)
 
-Per-commit cost of a page-side hook on a 10,000-component tree. Moved from `spikes/hook-cost` (M0 #3); the M8 performance baseline. Playwright Chromium only.
+Per-commit cost of a page-side hook on a 10,000-component tree. Moved from `spikes/hook-cost` at `12bf178` (M0 #3); the M8 performance baseline. Playwright Chromium only.
 
 ## Command (from the repo root)
 

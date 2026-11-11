@@ -35,7 +35,7 @@
 
 - Biome 2.6.6: `biome check --error-on-warnings` (lint, format, import order; warnings fail).
 - `biome.json` copies SnapQL's style: 2-space indent, double quotes, semicolons as needed. Markdown is formatted too.
-- `files.includes` excludes `spikes` until #16 deletes it, and `pnpm-lock.yaml`.
+- `files.includes` excludes `pnpm-lock.yaml`.
 - Fix locally with `pnpm exec biome check --write`.
 
 ## Key files

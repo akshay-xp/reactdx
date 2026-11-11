@@ -29,7 +29,6 @@ All are development builds.
 ## Notes
 
 - `next dev` generates `fixtures/next/AGENTS.md`; it's gitignored.
-- Ports differ from the M0 `spikes/` servers (5118-5129) until #16 deletes `spikes/`.
 
 ## Related
 

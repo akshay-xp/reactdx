@@ -12,7 +12,7 @@ Environment rule: React 18.3 and the latest 19.x, development builds; the latest
 - **Verdict:** go, no-go, or partial.
 - **Evidence:** what was observed, with numbers where relevant.
 - **Versions tested:** React, browser, and OS versions.
-- **Steps to reproduce:** commands, run from `spikes/`.
+- **Steps to reproduce:** commands, run from `spikes/` at commit `12bf178`. M1 removed `spikes/`; `git checkout 12bf178` restores it.
 
 ## Harness (#1)
 
@@ -37,7 +37,7 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Evidence:** on each port, `[reactdx] hook installed` is the first console message, "Download the React DevTools" never appears, and `[reactdx] commit ...` follows. Localhost host access was granted to the temporary add-on with no prompt.
 - **Surprise:** in Next.js dev, the page has two renderers. Renderer 1 renders into `#document` (the app). Renderer 2 renders into `NEXTJS-PORTAL`, the dev overlay, which runs its own React copy. Multiple-copy handling (and #9) has to tell app roots apart from framework tooling roots.
 - **Versions tested:** Firefox 159.0.1, Chrome 156.0.8078.80 (Playwright Chromium 158 for `pnpm test`), macOS 26.5, React 18.3.1 / 19.3.1, Next.js 16.4.6, web-ext 10.8.0.
-- **Steps to reproduce:** start `pnpm dev:18`, `pnpm dev:19`, `pnpm dev:next`, then by hand run `pnpm ext:firefox` and open the console on each port. Without opening a window, this prints page console messages to stdout:
+- **Steps to reproduce (at `12bf178`, from `spikes/`):** start `pnpm dev:18`, `pnpm dev:19`, `pnpm dev:next`, then by hand run `pnpm ext:firefox` and open the console on each port. Without opening a window, this prints page console messages to stdout:
   `pnpm exec web-ext run --source-dir harness/extension --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url http://localhost:5118 --verbose --no-reload --arg=--headless --pref devtools.console.stdout.content=true`
 
 ## bippy (#2)
@@ -59,7 +59,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   - In Next.js, the Server Components (`Page`, `RootLayout`) **don't appear as fibers**. The client tree only has the client components plus about 50 Next.js framework components (`AppRouter`, `LayoutRouter`, the error and redirect boundaries, `SegmentViewNode` ...).
   - The dev overlay renderer's components have minified names (`b`, `l_`, `eY`). The tree view will need filtering for framework internals and tooling roots.
 - **Versions tested:** bippy 0.7.3, React 18.3.1 / 19.3.1, Next.js 16.4.6, Playwright Chromium 158 and Firefox 159.0, Firefox 159.0.1 (web-ext), macOS 26.5.
-- **Steps to reproduce (from `spikes/`):**
+- **Steps to reproduce (at `12bf178`, from `spikes/`):**
   - `pnpm exec playwright test bippy`: the global setup bundles `bippy/src/hook.js` into `bippy/extension/hook.js`.
   - Firefox extension run: the headless `web-ext run` command from the Harness section, with `--source-dir bippy/extension`.
   - Firefox editing: launch Playwright `firefox`, call `page.addInitScript({ path: 'bippy/extension/hook.js' })`, open each port, run `window.__reactdxBippyEdit(5)`, and expect `Count: 5`.
@@ -104,7 +104,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   - Every case runs in a headed window with background throttling disabled, so the DevTools-open case (which needs a window) is comparable to the rest.
   - The runner checks each hook's identity before measuring: React Refresh only, bare, `_isBippyHook`, or RDT (`getFiberRoots`, with `rendererInterfaces` populated for the DevTools-open case). RDT registers its hook from its service worker, so the first load on a fresh profile can miss it; the runner reloads up to 5 times.
 - **Versions tested:** React 18.3.1 / 19.3.1 (development builds), Vite 8.3.7, Playwright Chromium 158.0.8127.18, RDT 8.0.0 (Chrome Web Store), bippy 0.7.3, macOS 26.5, Apple M5 (10 cores).
-- **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm dev:19`, then run `pnpm bench:hook-cost`. The first run downloads RDT into `hook-cost/rdt/` (gitignored). Windows open during the run.
+- **Steps to reproduce (at `12bf178`, from `spikes/`):** start `pnpm dev:18` and `pnpm dev:19`, then run `pnpm bench:hook-cost`. The first run downloads RDT into `hook-cost/rdt/` (gitignored). Windows open during the run. Since M1, `pnpm bench:hook-cost` from the repo root reproduces it without checking out `12bf178` (`docs/bench.md`).
 
 ## Sharing the hook with RDT (#4)
 
@@ -134,7 +134,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   - A hook defined by plain assignment (not `defineProperty`) on `window` won't be noticed. RDT 8 uses `defineProperty`, so this only matters for other tools.
   - If RDT installs after React has connected, for example when it's enabled with the page already open, nothing reaches RDT until a reload. That's RDT's normal behavior anyway.
 - **Versions tested:** RDT 8.0.0 (Chrome Web Store and AMO), bippy 0.7.3, React 18.3.1 / 19.3.1, Next.js 16.4.6, Playwright Chromium 158.0.8127.18, Firefox 159.0.1, macOS 26.5.
-- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test coexist`. The global setup downloads RDT and bundles `coexist/src/first.js` and `coexist/src/late.js`. Firefox: see below.
+- **Steps to reproduce (at `12bf178`, from `spikes/`):** `pnpm exec playwright test coexist`. The global setup downloads RDT and bundles `coexist/src/first.js` and `coexist/src/late.js`. Firefox: see below.
 
 ### Firefox check
 
@@ -153,7 +153,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   `commits >= 1` on the Vite ports means we attached before React's first commit. Next.js has 2 roots (app + dev overlay) and more commits.
 - **Firefox timing differs from Chrome:** RDT's hook script runs after a `setTimeout(0)` scheduled from our `document_start` script, so a single-tick delay still left ours first. The test-only "RDT first" variant (`coexist/src/late.js`) therefore polls until RDT's hook is on `window` (every 10 ms, up to about 2 s) before installing.
 - **Versions tested:** Firefox 159.0.1 (headless), RDT 8.0.0 for Firefox (MV3, `@react-devtools`, from AMO), macOS 26.5.
-- **Steps to reproduce (from `spikes/`):**
+- **Steps to reproduce (at `12bf178`, from `spikes/`):**
   1. Download `https://addons.mozilla.org/firefox/downloads/latest/react-devtools/latest.xpi` to `coexist/rdt-firefox/rdt.xpi` (gitignored).
   2. Make a profile folder with `extensions/@react-devtools.xpi` (a copy of that file) and a `user.js` with `user_pref("extensions.autoDisableScopes", 0);` and `user_pref("extensions.enabledScopes", 15);`.
   3. Bundle the hooks (`pnpm exec playwright test coexist` runs the global setup) and start the three dev servers.
@@ -204,7 +204,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   - `page.goBack()` hangs on a bfcache restore unless it's given `waitUntil: 'commit'`, because no `load` event fires.
   - Firefox MV3 needs `background.scripts`, as it has no `service_worker`.
 - **Versions tested:** React 18.3.1 / 19.3.1 (dev builds), Vite 8.3.7, Playwright Chromium 158.0.8127.18, Firefox 159.0.1, macOS 26.5.
-- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test timing` (starts the dev and preview servers); start `pnpm dev:18`, then run `pnpm timing:race`; Firefox: see below.
+- **Steps to reproduce (at `12bf178`, from `spikes/`):** `pnpm exec playwright test timing` (starts the dev and preview servers); start `pnpm dev:18`, then run `pnpm timing:race`; Firefox: see below.
 
 ### Firefox check
 
@@ -265,7 +265,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   - The registered variant's first load counted as before React here. But web-ext only opens the start URL once the temporary add-on has finished installing, so this isn't the "navigate immediately after install" race that `pnpm timing:race` measures in Chromium.
   - The first load after a Firefox restart wasn't tested, because web-ext removes temporary add-ons on exit.
 - **Versions tested:** Firefox 159.0.1 (headless), macOS 26.5, React 18.3.1 (dev build in preview, dev server).
-- **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm preview:18`, then run `pnpm exec web-ext run --source-dir injection-timing/<static|registered> --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url "http://localhost:<5128|5118>/?sequence" --verbose --no-reload --arg=--headless --pref devtools.console.stdout.content=true`. The global setup (or `copyTimingHook()`) must have copied `hook.js` into both variant folders first.
+- **Steps to reproduce (at `12bf178`, from `spikes/`):** start `pnpm dev:18` and `pnpm preview:18`, then run `pnpm exec web-ext run --source-dir injection-timing/<static|registered> --firefox /Applications/Firefox.app/Contents/MacOS/firefox --start-url "http://localhost:<5128|5118>/?sequence" --verbose --no-reload --arg=--headless --pref devtools.console.stdout.content=true`. The global setup (or `copyTimingHook()`) must have copied `hook.js` into both variant folders first.
 
 ## inspectedWindow.reload injectedScript (#6)
 
@@ -290,7 +290,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   - Our own injected reload fires `onNavigated`, and `inspectedWindow.eval` at that moment reports no hook. Re-checking there reloaded in a loop: about 115 reloads in under 3 s.
   - The fix is to skip the navigation we caused. Any future use of this API needs the same guard.
 - **Versions tested:** Playwright Chromium 158.0.8127.18 (headed, `--auto-open-devtools-for-tabs`), Firefox 159.0.1 (headed), React 18.3.1 / 19.3.1 dev servers, macOS 26.5.
-- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test injected` (opens browser windows); Firefox: see below.
+- **Steps to reproduce (at `12bf178`, from `spikes/`):** `pnpm exec playwright test injected` (opens browser windows); Firefox: see below.
 
 ### Firefox check
 
@@ -309,7 +309,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   - web-ext's `--devtools` opens DevTools for the **add-on**, not the page, so the `devtools_page` never loads. Firefox's own `-devtools` flag (`--arg=-devtools`) opens the page's toolbox.
   - DevTools doesn't open in headless Firefox (`TypeError: can't access property "setDebugTargetData", this.component is undefined`), so this check runs headed.
 - **Versions tested:** Firefox 159.0.1 (headed), React 18.3.1 / 19.3.1 dev servers, macOS 26.5.
-- **Steps to reproduce (from `spikes/`):** start `pnpm dev:18` and `pnpm dev:19`; copy the hook in (the global setup or `copyTimingHook()`); then run `pnpm exec web-ext run --source-dir injected-script/extension --firefox /Applications/Firefox.app/Contents/MacOS/firefox --arg=-devtools --start-url "http://localhost:5118/?go=5119" --verbose --no-reload --pref devtools.console.stdout.content=true`.
+- **Steps to reproduce (at `12bf178`, from `spikes/`):** start `pnpm dev:18` and `pnpm dev:19`; copy the hook in (the global setup or `copyTimingHook()`); then run `pnpm exec web-ext run --source-dir injected-script/extension --firefox /Applications/Firefox.app/Contents/MacOS/firefox --arg=-devtools --start-url "http://localhost:5118/?go=5119" --verbose --no-reload --pref devtools.console.stdout.content=true`.
 
 ## Value format for the panel (#7)
 
@@ -358,7 +358,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   - **Proxies can't be detected.** Reading `$$typeof` and own-property descriptors runs `get`, `ownKeys`, and `getOwnPropertyDescriptor` traps.
   - **Memory:** the id-to-object `Map` holds strong references to everything ever described. It needs a `release()` when the panel moves to another component or commit.
   - **Dropped details:** symbol-keyed properties and extra (non-index) properties on arrays are dropped. Sparse array holes show as `undefined`.
-- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test serialize`. The DOM test bundles `serialize.ts` in memory with esbuild and runs it in Chromium.
+- **Steps to reproduce (at `12bf178`, from `spikes/`):** `pnpm exec playwright test serialize`. The DOM test bundles `serialize.ts` in memory with esbuild and runs it in Chromium.
 
 ## _debugStack source locations (#8)
 
@@ -392,7 +392,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   - These were found by grepping the installed packages and weren't called. Calling them and their exact parameters is for M4 (Inspector), which builds "open in editor".
 - **Not tested:** Firefox formats `Error.stack` as `name@url:line:col`, so `callSite` needs a second parser there. Page-side experiments run in Chrome only. Production builds are out of scope (no `_debugStack`/`_debugSource`).
 - **Versions tested:** Playwright Chromium 158.0.8127.18 (headless), React 18.3.1 / 19.3.1 on Vite 8.3.7 with `@vitejs/plugin-react` 6.3.0, Next 16.4.6 (Turbopack dev) on React 19.3.1, `source-map-js` 1.2.2, macOS 26.5.
-- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test debug-stack`. It starts the dev servers, collects fibers with `page.evaluate` from the root container's `__reactContainer$` key (no extension), resolves frames in Node, and logs each share plus the 10k counts. The shapes pages are `http://localhost:5119/debug-stack.html` (add `?many=<n>` for the limit) and `http://localhost:5120/debug-stack`.
+- **Steps to reproduce (at `12bf178`, from `spikes/`):** `pnpm exec playwright test debug-stack`. It starts the dev servers, collects fibers with `page.evaluate` from the root container's `__reactContainer$` key (no extension), resolves frames in Node, and logs each share plus the 10k counts. The shapes pages are `http://localhost:5119/debug-stack.html` (add `?many=<n>` for the limit) and `http://localhost:5120/debug-stack`.
 
 ## DX questions from fiber data (#9)
 
@@ -424,4 +424,4 @@ Shared setup for every experiment, in `spikes/harness/`.
 - **Not tested:** class component state reasons (`memoizedState` as a whole), `useReducer`, `useSyncExternalStore`, transitions, StrictMode double renders, and any of this in Firefox (page-side experiments run in Chrome only).
 - **Where it goes (no issues created):** M6 gets why it rendered, effect dependency changes, remounts, setState origin, per-component history, and context consumers (as part of the context render reason). M7 gets what Suspense is waiting on and the server/client boundary.
 - **Versions tested:** Playwright Chromium 158.0.8127.18 (headless), React 18.3.1 / 19.3.1 on Vite 8.3.7, Next 16.4.6 (Turbopack dev) on React 19.3.1, macOS 26.5.
-- **Steps to reproduce (from `spikes/`):** `pnpm exec playwright test dx-questions`. Global setup bundles `dx-questions/src/hook.js` into the extension. The logs show the setState counts per version, the suspended boundary on each version, and the Next owner chain.
+- **Steps to reproduce (at `12bf178`, from `spikes/`):** `pnpm exec playwright test dx-questions`. Global setup bundles `dx-questions/src/hook.js` into the extension. The logs show the setState counts per version, the suspended boundary on each version, and the Next owner chain.
