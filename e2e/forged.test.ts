@@ -14,10 +14,11 @@ before(async () => {
 })
 after(() => stop?.())
 
-const XSS = "<img src=x onerror=alert(1)>"
+const xss = (round: number) => `<img src=x onerror=alert(${round})>`
 
-// Any page script can post into the window the relay listens on.
-function forge() {
+// Any page script can post into the window the relay listens on. Each round ends
+// with its own forged renderer, so the panel showing it means the round was processed.
+function forge(round: number) {
   const post = (data: unknown) => window.postMessage(data, "*")
   post(null)
   post("reactdx")
@@ -36,8 +37,8 @@ function forge() {
   post({
     source: "reactdx",
     type: "renderer",
-    id: 60,
-    version: "<img src=x onerror=alert(1)>",
+    id: 59 + round,
+    version: `<img src=x onerror=alert(${round})>`,
     bundleType: 1,
     rendererPackageName: "react-dom",
   })
@@ -50,7 +51,11 @@ test("forged page messages can't break the relay or the panel", {
   try {
     const [page] = await browser.pages()
     if (!page) throw new Error("no page")
-    await page.evaluateOnNewDocument(forge)
+    // The relay's document_start listener can attach after this script runs (always
+    // in Chrome), so repeat round 1 over the first 50 ms, still before React loads.
+    await page.evaluateOnNewDocument(
+      `for (const ms of [0, 5, 20, 50]) setTimeout(() => (${forge})(1), ms)`,
+    )
     await page.goto("http://localhost:5218")
     await page.waitForSelector("[data-testid=counter]")
     const panel = await openPanelText(name, browser)
@@ -58,13 +63,20 @@ test("forged page messages can't break the relay or the panel", {
       parseCopies(text).find((c) => c.heading.startsWith("React 18.3.1"))
     await until(panel, (t) => (real(t)?.commits.length ?? 0) > 0)
 
-    await page.evaluate(forge)
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    const text = await panel()
+    await page.evaluate(forge, 2)
+    // Firefox mirrors the panel's accessibility tree asynchronously, so poll for a whole list.
+    const text = await until(
+      panel,
+      (t) => t.includes(`React ${xss(2)}`) && real(t) !== undefined,
+    )
     // The 1,000-root snapshot was dropped: only the real root is listed.
     assert.deepEqual(real(text)?.commits.length, 1, text)
     // The valid-shaped forged renderer is shown, as text.
-    assert.ok(text.includes(`React ${XSS} development react-dom`), text)
+    for (const round of [1, 2])
+      assert.ok(
+        text.includes(`React ${xss(round)} development react-dom`),
+        text,
+      )
     if (name === "chrome") {
       const frame = await openPanel(browser)
       assert.equal(await frame.$("img"), null)
