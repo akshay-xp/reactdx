@@ -195,7 +195,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   registered first load after restart  before React 5/20, after React 0/20, missed 15/20
   ```
 - **What a miss looks like:** always "no hook at all", never a late hook. A static or registered script either runs before React or doesn't run for that load.
-- **bfcache:** content scripts don't re-run on a restore and don't need to. The cached page keeps the same hook object, still connected, and still receiving commits. Chromium 158 bfcaches even the Vite dev-server page (HMR WebSocket open); Firefox doesn't, and does a full reload instead, which is also before React.
+- **bfcache:** content scripts don't re-run on a restore and don't need to. The cached page keeps the same hook object, still connected, and still receiving commits. Chromium 158 bfcaches even the Vite dev-server page (HMR WebSocket open); Firefox doesn't, and does a full reload instead, which is also before React. **Status after M2 #22:** the hook needs nothing, but both browsers reset the per-tab toolbar on the restore, so the relay re-announces on a persisted `pageshow` (`docs/messages.md`).
 - **What this means for M2 (permissions):**
   - Localhost uses a **static** `content_scripts` entry: reliable everywhere.
   - Per-site opt-in through `registerContentScripts` is fine right after the user enables a site, since the page is reloaded anyway. But **after a browser restart, the first page on that site misses the hook more than half the time in Chromium.** M2 needs to detect "React present but our hook missing" and offer "reload to connect", or else put opted-in sites in static `content_scripts` with Chrome's site-access controls.

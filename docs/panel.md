@@ -8,7 +8,8 @@ Solid UI rendered in the DevTools panel. The browser glue (`browser.devtools.*`)
 - States: no renderers: "No React on this page". Only production: "Production build of React <versions>. ReactDX inspects development builds." Otherwise one `[data-testid=renderer]` per copy (`React <version> <development|production> <rendererPackageName>`) with `[data-testid=root]` rows ("Root N", "N commits", `data-commits`). Production copies are listed with their roots (Next's dev overlay) but get no agent.
 - Page data is only ever a Solid text node, never markup (unit test and `e2e/forged.test.ts` check an `<img onerror>` version renders as text).
 - `test/ConnectionList.test.tsx` (Vitest `panel` project): each state, text-only, no Tailwind palette classes.
-- Not yet: resetting on navigation and reconnecting after the service worker sleeps (#22).
+- Reconnect: `main.tsx` `connect()` opens the `panel` port and subscribes; when the port drops (the background stopped), it connects again, which wakes the background and asks the relay for current state.
+- Reset: `browser.devtools.network.onNavigated` clears the list and subscribes again on the current port, so a new document shows only what it reports ("No React on this page" until its React connects).
 
 ## Themes (`src/themes.ts`, `src/index.css`)
 

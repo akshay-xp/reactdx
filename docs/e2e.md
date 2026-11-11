@@ -64,6 +64,10 @@ Per fixture, with the store RDT installed, each case asserts that RDT's backend 
 - `e2e/agent.test.ts`: the agent is injected on development fixtures only.
 - `e2e/forged.test.ts`: forged and malformed page messages (`docs/messages.md`).
 - `e2e/plain.ts`: `plainPage()`, a page without React for the whole file.
+- `e2e/reconnect.test.ts`: background stopped, navigation away and back, reload (`fixture:18`), and bfcache restore with and without the panel open (`fixture:multi`).
+- `e2e/background.ts`: `stopBackground(name, browser)`. Chrome: CDP `ServiceWorker.stopAllWorkers` from a page session (the domain doesn't exist on the browser session), then waits for ReactDX's worker target to go. Firefox: chrome scope calls the extension's `terminateBackground()` and checks `backgroundState`.
+- bfcache tests prove a real restore with a `pageshow` `persisted` listener. They use `fixture:multi` because Vite's dev pages hold an HMR WebSocket that keeps Firefox from caching them, and `history.back()` because a Firefox restore fires no `load` event for `page.goBack()` to wait on.
+- `panelFor(name, url, order)` (`e2e/panel-text.ts`): launches with ReactDX and opens the panel before or after the page loads.
 - `e2e/theme.test.ts`: the panel follows DevTools light and dark (Chrome; skipped in Firefox).
 - `e2e/extension.test.ts`: ReactDX alone (hook on the prototype, record, panel).
 - `e2e/toolbar.test.ts`: toolbar title (and icon in Firefox) on a non-React page and every fixture including `prod`; leaving a React page resets it; Chrome checks a non-React page sends the service worker nothing.

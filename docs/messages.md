@@ -16,6 +16,16 @@ Message types and validators shared by the hook script, the relay content script
 - The background holds only open panel ports, never page data: the relay owns state per document, so a sleeping service worker loses nothing and nothing stale survives a navigation. `sendMessage` wakes the worker.
 - A page without React sends nothing on its own: the manifest's default icon and title already say "no React", and both browsers reset per-tab action state on a new document (Chrome probed: reset on cross-document navigation, kept on `pushState`/hash changes). It only answers `get-state` when a panel opens. e2e checks the service worker receives no message on a non-React page.
 
+## Reconnects (M2 #22)
+
+Nothing lives in the background, so every scenario is the panel or the relay asking or re-announcing. `e2e/reconnect.test.ts` covers each in both browsers.
+
+| Scenario                                               | What happens                                                                            | Who re-sends                                                                                                                                                                                                                    |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Background stopped (idle service worker or event page) | The panel's port drops. Per-tab toolbar state is the browser's, so it survives.         | The panel reconnects and subscribes; the background's `get-state` reaches the relay, which also asks the agent for a fresh snapshot. The relay's next `sendMessage` wakes the background on its own too.                        |
+| Reload or navigation                                   | New document: new relay, new agent (counts start at 0); the browser resets the toolbar. | The panel's `onNavigated` clears and subscribes; the new relay's first `state` sets the toolbar and fills the panel. A page without React sends nothing, so the panel shows "No React on this page" and the toolbar stays grey. |
+| bfcache restore                                        | Same document, state intact, but no scripts run and the browser reset the toolbar.      | The relay resends its state on `pageshow` with `persisted` (when it has renderers). The panel's `onNavigated` also subscribes again.                                                                                            |
+
 ## Page messages (`parsePageMessage(data)`)
 
 `RendererMessage = { source: "reactdx", type: "renderer", id } & RendererInfo`. Returns a new object with only these fields, or `undefined` when:
