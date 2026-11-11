@@ -54,7 +54,7 @@ async function launchFirefox() {
     },
   })
   let stdout = ""
-  browser.process()!.stdout!.on("data", (chunk) => (stdout += chunk))
+  browser.process()?.stdout?.on("data", (chunk) => (stdout += chunk))
   await browser.installExtension(path.join(output, "firefox-mv3"))
   return {
     browser,

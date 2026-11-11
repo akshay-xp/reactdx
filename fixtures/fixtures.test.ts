@@ -10,7 +10,7 @@ before(async () => (browser = await puppeteer.launch()))
 after(() => browser.close())
 
 const text = (page: Page, selector: string) =>
-  page.$eval(selector, (el) => el.textContent)
+  page.$eval(selector, (el) => el.textContent ?? "")
 
 async function expectCounter(page: Page, scope: string) {
   const counter = `${scope} [data-testid=counter]`
@@ -36,7 +36,7 @@ for (const [script, port, version] of [
       const page = await browser.newPage()
       await page.goto(`http://localhost:${port}`)
       await page.waitForSelector("[data-testid=react-version]")
-      assert.match((await text(page, "[data-testid=react-version]"))!, version)
+      assert.match(await text(page, "[data-testid=react-version]"), version)
       await expectCounter(page, "body")
       await page.close()
     })
@@ -56,7 +56,7 @@ describe("fixture:next", () => {
       await page.$("[data-testid=server]"),
       "Server Component output missing",
     )
-    assert.match((await text(page, "[data-testid=react-version]"))!, /^19\./)
+    assert.match(await text(page, "[data-testid=react-version]"), /^19\./)
     await expectCounter(page, "body")
     await page.close()
   })
@@ -80,11 +80,11 @@ describe("fixture:multi", () => {
       "[data-testid=root-19] [data-testid=react-version]",
     )
     assert.match(
-      (await text(page, "[data-testid=root-18] [data-testid=react-version]"))!,
+      await text(page, "[data-testid=root-18] [data-testid=react-version]"),
       /^18\.3\./,
     )
     assert.match(
-      (await text(page, "[data-testid=root-19] [data-testid=react-version]"))!,
+      await text(page, "[data-testid=root-19] [data-testid=react-version]"),
       /^19\./,
     )
     await expectCounter(page, "[data-testid=root-18]")

@@ -1,17 +1,17 @@
 import { expect, test } from "vitest"
-import { installHook } from "../src/hook.ts"
+import { type Hook, installHook } from "../src/hook.ts"
 
 test("installs a hook React accepts", () => {
-  const target: { __REACT_DEVTOOLS_GLOBAL_HOOK__?: any } = {}
-  installHook(target)
-  const hook = target.__REACT_DEVTOOLS_GLOBAL_HOOK__
+  const target: { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook } = {}
+  const hook = installHook(target)
+  expect(target.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBe(hook)
   expect(hook.supportsFiber).toBe(true)
   for (const name of [
     "checkDCE",
     "onCommitFiberRoot",
     "onCommitFiberUnmount",
     "onPostCommitFiberRoot",
-  ]) {
+  ] as const) {
     expect(typeof hook[name], name).toBe("function")
   }
   const rendererA = {}

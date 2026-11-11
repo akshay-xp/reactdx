@@ -5,7 +5,7 @@ export function startFixture(script: string, port: number) {
   const child = spawn("pnpm", [script], { detached: true, stdio: "ignore" })
   let exited = false
   const stop = () => {
-    if (!exited) process.kill(-child.pid!, "SIGTERM")
+    if (!exited && child.pid) process.kill(-child.pid, "SIGTERM")
   }
   return new Promise<() => void>((resolve, reject) => {
     const deadline = Date.now() + 60_000
@@ -19,11 +19,11 @@ export function startFixture(script: string, port: number) {
         await fetch(`http://localhost:${port}`)
         resolve(stop)
       } catch {
-        if (Date.now() > deadline)
-          return (
-            stop(),
-            reject(new Error(`server for ${script} never answered on ${port}`))
-          )
+        if (Date.now() > deadline) {
+          stop()
+          reject(new Error(`server for ${script} never answered on ${port}`))
+          return
+        }
         setTimeout(poll, 250)
       }
     }

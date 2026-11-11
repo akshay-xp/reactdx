@@ -32,7 +32,7 @@ const files: Record<string, [string, string]> = {
 }
 
 createServer(async (request, response) => {
-  const file = files[new URL(request.url!, "http://localhost").pathname]
+  const file = files[new URL(request.url ?? "/", "http://localhost").pathname]
   if (!file) return response.writeHead(404).end()
   response
     .writeHead(200, { "content-type": file[1] })

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { after, before, describe, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
+import type {} from "../packages/page/src/hook.ts"
 import { type BrowserName, launchWithExtension } from "./launch.ts"
 
 let extension: Awaited<ReturnType<typeof launchWithExtension>>
@@ -31,7 +32,7 @@ for (const [script, port, renderers] of [
       await page.waitForSelector("[data-testid=counter]")
       assert.equal(
         await page.evaluate(
-          () => (window as any).__REACT_DEVTOOLS_GLOBAL_HOOK__.renderers.size,
+          () => window.__REACT_DEVTOOLS_GLOBAL_HOOK__?.renderers.size,
         ),
         renderers,
       )

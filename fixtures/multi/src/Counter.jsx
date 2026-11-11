@@ -5,7 +5,11 @@ export default function Counter() {
   return (
     <>
       <p data-testid="react-version">{React.version}</p>
-      <button data-testid="counter" onClick={() => setCount(count + 1)}>
+      <button
+        type="button"
+        data-testid="counter"
+        onClick={() => setCount(count + 1)}
+      >
         Count: {count}
       </button>
     </>
