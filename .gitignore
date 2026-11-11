@@ -11,3 +11,5 @@ fixtures/multi/dist/
 bench/hook-cost/extension/hook.js
 # RDT builds cached by e2e/rdt.ts.
 e2e/.rdt/
+# Built by pnpm fixture:prod.
+fixtures/vite/dist-prod/

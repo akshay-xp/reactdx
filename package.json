@@ -20,6 +20,7 @@
     "fixture:19": "pnpm -C fixtures/vite exec vite --mode 19 --port 5219 --strictPort",
     "fixture:next": "NEXT_TELEMETRY_DISABLED=1 pnpm -C fixtures/next exec next dev --port 5220",
     "fixture:multi": "node fixtures/multi/serve.ts",
+    "fixture:prod": "pnpm -C fixtures/vite exec vite build --mode 19 --outDir dist-prod --logLevel warn && pnpm -C fixtures/vite exec vite preview --outDir dist-prod --port 5222 --strictPort",
     "test:e2e": "node e2e/run.ts",
     "bench:hook-cost": "pnpm --filter @reactdx/bench-hook-cost bench",
     "rdt:update": "node e2e/rdt-update.ts",

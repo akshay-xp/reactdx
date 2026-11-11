@@ -10,10 +10,11 @@ const browser = flag("browser")
 const fixture = flag("fixture")
 if (
   (browser !== "chrome" && browser !== "firefox") ||
-  (fixture !== undefined && !["18", "19", "next", "multi"].includes(fixture))
+  (fixture !== undefined &&
+    !["18", "19", "next", "multi", "prod"].includes(fixture))
 ) {
   console.error(
-    "usage: pnpm test:e2e --browser=chrome|firefox [--fixture=18|19|next|multi]",
+    "usage: pnpm test:e2e --browser=chrome|firefox [--fixture=18|19|next|multi|prod]",
   )
   process.exit(1)
 }

@@ -153,3 +153,40 @@ test("React is a dependency of fixtures only", () => {
     }
   }
 })
+
+describe("fixture:prod", () => {
+  let stop: (() => void) | undefined
+  before(async () => (stop = await startFixture("fixture:prod", 5222)))
+  after(() => stop?.())
+
+  test("serves a production React 19 build", async () => {
+    const page = await browser.newPage()
+    // A stand-in DevTools hook records the build type React registers with.
+    await page.evaluateOnNewDocument(() => {
+      const scope = window as unknown as Record<string, unknown>
+      scope.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+        renderers: new Map(),
+        supportsFiber: true,
+        inject(renderer: { bundleType: number }) {
+          scope.bundleType = renderer.bundleType
+          return 1
+        },
+        onCommitFiberRoot() {},
+        onCommitFiberUnmount() {},
+        onPostCommitFiberRoot() {},
+        checkDCE() {},
+      }
+    })
+    await page.goto("http://localhost:5222")
+    await page.waitForSelector("[data-testid=react-version]")
+    assert.equal(await text(page, "[data-testid=react-version]"), "19.3.1")
+    await expectCounter(page, "body")
+    assert.equal(
+      await page.evaluate(
+        () => (window as unknown as { bundleType?: number }).bundleType,
+      ),
+      0,
+    )
+    await page.close()
+  })
+})

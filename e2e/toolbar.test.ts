@@ -67,12 +67,23 @@ async function recordMessages() {
     worker.evaluate(() => (globalThis as unknown as { seen: unknown[] }).seen)
 }
 
-for (const [script, port, title] of [
-  ["fixture:18", 5218, "ReactDX: React 18.3.1"],
-  ["fixture:19", 5219, "ReactDX: React 19.3.1"],
+for (const [script, port, title, icon] of [
+  ["fixture:18", 5218, "ReactDX: React 18.3.1", "development"],
+  ["fixture:19", 5219, "ReactDX: React 19.3.1", "development"],
   // The App Router runs the React canary Next bundles, not the app's react-dom.
-  ["fixture:next", 5220, "ReactDX: React 19.3.0-canary-278794d7-20261002"],
-  ["fixture:multi", 5221, "ReactDX: React 18.3.1, 19.3.1"],
+  [
+    "fixture:next",
+    5220,
+    "ReactDX: React 19.3.0-canary-278794d7-20261002",
+    "development",
+  ],
+  ["fixture:multi", 5221, "ReactDX: React 18.3.1, 19.3.1", "development"],
+  [
+    "fixture:prod",
+    5222,
+    "ReactDX: React 19.3.1 (production build)",
+    "production",
+  ],
 ] as const) {
   if (
     process.env.E2E_FIXTURE &&
@@ -84,13 +95,14 @@ for (const [script, port, title] of [
     before(async () => (stop = await startFixture(script, port)))
     after(() => stop?.())
 
-    test("development React lights the icon, and leaving resets it", async () => {
+    test(`${icon} React sets the icon, and leaving resets it`, async () => {
       const page = await extension.browser.newPage()
       await page.goto(`http://localhost:${port}`)
       await page.waitForSelector("[data-testid=counter]")
       const state = await settled(page, title)
       assert.equal(state.title, title)
-      if (name === "firefox") assert.match(state.icon ?? "", /development-/)
+      if (name === "firefox")
+        assert.match(state.icon ?? "", new RegExp(`/${icon}-`))
       await page.goto(plainUrl)
       assert.equal(
         (await settled(page, "ReactDX: no React")).title,
