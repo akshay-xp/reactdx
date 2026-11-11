@@ -1,0 +1,59 @@
+import { type TreeKind, type TreeOp, treeBatch } from "@reactdx/messages"
+import { expect, test } from "vitest"
+import { createTreeStore } from "../src/tree"
+
+const add = (
+  id: number,
+  parentId: number,
+  name: string,
+  index = 0,
+  kind: TreeKind = "function",
+  rootId = 1,
+): TreeOp => ({
+  op: "add",
+  id,
+  parentId,
+  rootId,
+  kind,
+  name,
+  key: null,
+  index,
+})
+
+// Root 1: App > div > [A > span > B, C]; root 2: D.
+const resync = treeBatch(1, [
+  { op: "reset" },
+  add(1, 0, "App"),
+  add(2, 1, "div", 0, "host"),
+  add(3, 2, "A"),
+  add(4, 3, "span", 0, "host"),
+  add(5, 4, "B"),
+  add(6, 2, "C", 1),
+  add(7, 0, "D", 0, "function", 2),
+])
+
+const names = (rows: { name: string; depth: number }[]) =>
+  rows.map(({ name, depth }) => `${depth} ${name}`)
+
+test("rows are depth-first with host nodes hidden", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "2 B", "1 C"])
+  expect(tree.rows(1).map((row) => row.id)).toEqual([1, 3, 5, 6])
+  expect(names(tree.rows(2))).toEqual(["0 D"])
+})
+
+test("removes, reorders, renames and resets apply", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.apply(
+    treeBatch(2, [{ op: "reorder", rootId: 1, parentId: 2, children: [6, 3] }]),
+  )
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 C", "1 A", "2 B"])
+  tree.apply(treeBatch(3, [{ op: "rename", id: 6, name: "Renamed" }]))
+  tree.apply(treeBatch(4, [{ op: "remove", id: 3 }]))
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 Renamed"])
+  tree.apply(treeBatch(1, [{ op: "reset" }, add(9, 0, "Other")]))
+  expect(names(tree.rows(1))).toEqual(["0 Other"])
+  expect(tree.rows(2)).toEqual([])
+})
