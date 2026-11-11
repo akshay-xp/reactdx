@@ -127,7 +127,7 @@ export const treeBatch = (seq: number, ops: TreeOp[]): TreeBatchMessage => ({
 })
 
 export const MAX_OPS = 2000
-const MAX_TREE_STRING = 256
+export const MAX_TREE_STRING = 256
 const MAX_CHILDREN = 10000
 
 const TREE_KINDS = new Set<unknown>([

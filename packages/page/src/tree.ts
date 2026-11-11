@@ -1,4 +1,4 @@
-import type { TreeKind, TreeOp } from "@reactdx/messages"
+import { MAX_TREE_STRING, type TreeKind, type TreeOp } from "@reactdx/messages"
 import type { FiberRoot } from "./hook.ts"
 
 // The fields of React's Fiber that the tree reads (same in React 18 and 19).
@@ -13,18 +13,67 @@ type Fiber = {
   memoizedState: unknown
 }
 
-type Named = { displayName?: string; name?: string }
+type Named = {
+  displayName?: string
+  name?: string
+  render?: Named
+  type?: Named
+  _context?: Named
+}
 
+const KINDS: Record<number, TreeKind> = {
+  0: "function",
+  1: "class",
+  5: "host",
+  9: "consumer",
+  10: "provider",
+  11: "forwardRef",
+  12: "profiler",
+  13: "suspense",
+  14: "memo",
+  15: "memo",
+  26: "host",
+  27: "host",
+  31: "activity",
+}
+
+const FIXED_NAMES: Partial<Record<TreeKind, string>> = {
+  profiler: "Profiler",
+  suspense: "Suspense",
+  activity: "Activity",
+}
+
+const LAZY = Symbol.for("react.lazy")
+
+// Every other tag (root, text, fragment, mode, portal, offscreen...) is skipped.
 function kindOf(fiber: Fiber): TreeKind | undefined {
-  if (fiber.tag === 0) return "function"
-  if (fiber.tag === 5) return "host"
+  const kind = KINDS[fiber.tag]
+  if (kind && (fiber.elementType as { $$typeof?: symbol })?.$$typeof === LAZY)
+    return "lazy"
+  return kind
 }
 
-function nameOf(fiber: Fiber): string {
-  if (fiber.tag === 5) return fiber.type as string
+// A component's own name, looking through forwardRef and memo wrappers.
+const typeName = (type: Named): string =>
+  type.displayName ||
+  (type.render && typeName(type.render)) ||
+  (type.type && typeName(type.type)) ||
+  type.name ||
+  "Anonymous"
+
+function nameOf(fiber: Fiber, kind: TreeKind): string {
   const type = fiber.type as Named
-  return type.displayName || type.name || "Anonymous"
+  const fixed = FIXED_NAMES[kind]
+  if (fixed) return fixed
+  if (kind === "host") return fiber.type as string
+  if (kind === "provider" || kind === "consumer")
+    return (type._context ?? type).displayName || "Context"
+  // A lazy fiber's elementType is the lazy wrapper; its type is what resolved.
+  if (kind === "lazy") return typeName(type)
+  return typeName(fiber.elementType as Named)
 }
+
+const bounded = (value: string) => value.slice(0, MAX_TREE_STRING)
 
 // Ids are stable for a fiber's life: React swaps a fiber with its alternate on
 // every update, so both carry the id.
@@ -60,14 +109,15 @@ export function createTree() {
     ops: TreeOp[],
   ) => {
     const id = idOf(fiber)
+    const kind = kindOf(fiber) as TreeKind
     ops.push({
       op: "add",
       id,
       parentId,
       rootId,
-      kind: kindOf(fiber) as TreeKind,
-      name: nameOf(fiber),
-      key: fiber.key,
+      kind,
+      name: bounded(nameOf(fiber, kind)),
+      key: fiber.key === null ? null : bounded(fiber.key),
       index,
     })
     addChildren(fiber, id, id, rootId, ops)

@@ -81,3 +81,86 @@ test("watch posts a reset and the full tree", async () => {
   expect(nodes.every((n) => n.rootId === snapshot?.roots[0]?.id)).toBe(true)
   expect(nodes[0]?.parentId).toBe(0)
 })
+
+class Klass extends React.Component {
+  render() {
+    return null
+  }
+}
+const Memoized = React.memo(function Memoized() {
+  return null
+})
+const Fwd = React.forwardRef(function Fwd() {
+  return null
+})
+const Named = React.forwardRef(function Inner() {
+  return null
+})
+Named.displayName = "Named"
+const Lazy = React.lazy(async () => ({
+  default: function Lazy() {
+    return null
+  },
+}))
+const Theme = React.createContext(0)
+Theme.displayName = "Theme"
+const Plain = React.createContext(0)
+function Item() {
+  return null
+}
+function Long() {
+  return null
+}
+Long.displayName = "L".repeat(300)
+const { Activity } = React as {
+  Activity?: React.ComponentType<{ mode: string; children?: React.ReactNode }>
+}
+const consume = () => null
+
+function Kinds() {
+  return h(
+    React.Fragment,
+    null,
+    h(Klass),
+    h(Memoized),
+    h(Fwd),
+    h(Named),
+    h(React.Suspense, { fallback: null }, h(Lazy)),
+    h(Theme.Provider, { value: 1 }, h(Theme.Consumer, { children: consume })),
+    h(Plain.Provider, { value: 1 }),
+    h(React.Profiler, { id: "p", onRender() {} }, h(Item)),
+    h(() => null),
+    [h(Item, { key: "a" }), h(Item, { key: "b" })],
+    h(Long),
+    Activity && h(Activity, { mode: "visible" }, h(Item)),
+  )
+}
+
+test("every visible kind gets its kind and name; wrappers emit nothing", async () => {
+  await render(h(React.StrictMode, null, h(Kinds)))
+  // The lazy component resolves on a later tick.
+  await React.act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+  send(WATCH)
+
+  const tree = mirror()
+  tree.apply(batches()[0]?.ops ?? [])
+  expect(tree.outline()).toEqual([
+    "Kinds function",
+    "  Klass class",
+    "  Memoized memo",
+    "  Fwd forwardRef",
+    "  Named forwardRef",
+    "  Suspense suspense",
+    "    Lazy lazy",
+    "  Theme provider",
+    "    Theme consumer",
+    "  Context provider",
+    "  Profiler profiler",
+    "    Item function",
+    "  Anonymous function",
+    "  Item function key=a",
+    "  Item function key=b",
+    `  ${"L".repeat(256)} function`,
+    ...(Activity ? ["  Activity activity", "    Item function"] : []),
+  ])
+})
