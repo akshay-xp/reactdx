@@ -29,7 +29,7 @@ Vitest 5.1.0 in jsdom 31.0.0. One suite, run once per React version.
 
 ## Not covered yet
 
-- `packages/panel`: no unit tests until it has content (M3). Rendering Solid in jsdom will need `vite-plugin-solid` in `vitest.config.ts`.
+- `packages/panel/test/themes.test.ts`: theme values, contrast, `applyTheme` (plain TS, runs in both React projects). Rendering Solid components in jsdom (M3) will need `vite-plugin-solid` in `vitest.config.ts`.
 
 ## Key files
 

@@ -57,7 +57,9 @@ Per fixture, with the store RDT installed, each case asserts that RDT's backend 
 ## Key files
 
 - `e2e/run.ts`: flag parsing, per-browser build, test run.
-- `e2e/launch.ts`: `launchWithExtension(name, extensions = [reactdxBuild(name)])` returns `{ browser, panelCreated(), panelUrl }` (`panelUrl` is `null` in Firefox or without the ReactDX build).
+- `e2e/launch.ts`: `launchWithExtension(name, extensions = [reactdxBuild(name)], { devtoolsTheme })` returns `{ browser, panelCreated() }`. `devtoolsTheme` (Chrome) writes DevTools' `ui-theme` into a temp profile's `Default/Preferences`.
+- `openPanel(browser)` (Chrome): selects the ReactDX tab through DevTools' `InspectorView` and returns the panel frame. The panel needs `browser.devtools`, so it's only tested inside DevTools. Firefox can't reach `moz-extension://` frames over BiDi, so panel rendering is Chrome only.
+- `e2e/theme.test.ts`: the panel follows DevTools light and dark (Chrome; skipped in Firefox).
 - `e2e/extension.test.ts`: ReactDX alone (hook on the prototype, record, panel).
 - `e2e/coexist.test.ts`, `e2e/preload.ts`, `e2e/rdt.ts`, `e2e/rdt.lock.json`, `e2e/rdt-update.ts`.
 - Test files run one at a time (`--test-concurrency=1`): they share fixture ports.
