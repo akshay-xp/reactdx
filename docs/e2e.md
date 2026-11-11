@@ -6,8 +6,9 @@ One Puppeteer 25.17.0 suite that loads the built extension into a real browser a
 
 - `pnpm test:e2e --browser=chrome`
 - `pnpm test:e2e --browser=firefox`
+- `--fixture=18|19|next|multi` runs one fixture's suite (plus the panel test); CI uses it per matrix cell.
 
-`e2e/run.ts` parses `--browser`, runs `pnpm build`, then `node --test e2e/extension.test.ts` with `E2E_BROWSER` set. The flag can't go to `node --test` directly: Node rejects it as an unknown option.
+`e2e/run.ts` parses the flags, builds only that browser (`pnpm --filter @reactdx/extension build:<browser>`), then runs `node --test e2e/extension.test.ts` with `E2E_BROWSER` (and `E2E_FIXTURE`) set. The flags can't go to `node --test` directly: Node rejects them as unknown options.
 
 Both browsers run **headed** (DevTools, and so the devtools page, doesn't exist headless). Local runs open windows; CI needs a virtual display.
 
@@ -31,7 +32,7 @@ Both browsers run **headed** (DevTools, and so the devtools page, doesn't exist 
 
 ## Key files
 
-- `e2e/run.ts`: `--browser` parsing, build, test run.
+- `e2e/run.ts`: flag parsing, per-browser build, test run.
 - `e2e/launch.ts`: `launchWithExtension(name)` returns `{ browser, panelCreated(), panelUrl }` (`panelUrl` is `null` in Firefox).
 - `e2e/extension.test.ts`: the suite.
 - `fixtures/start.ts`: `startFixture(script, port)`, shared with the fixture smoke test.
@@ -41,3 +42,4 @@ Both browsers run **headed** (DevTools, and so the devtools page, doesn't exist 
 - `docs/extension.md`: the build under test.
 - `docs/fixtures.md`: ports and test ids.
 - `docs/unit-tests.md`: Vitest unit tests on React 18 and 19.
+- `docs/ci.md`: the e2e matrix in CI.
