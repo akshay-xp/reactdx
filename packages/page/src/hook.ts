@@ -68,6 +68,7 @@ export function installHook(target: {
   // Our listener runs after the hook's own onCommitFiberRoot.
   const attachTo = (hook: Hook) => {
     const { inject, onCommitFiberRoot } = hook
+    for (const [id, renderer] of hook.renderers ?? []) addRenderer(id, renderer)
     hook.inject = function (renderer) {
       const id = inject.call(this, renderer)
       addRenderer(id, renderer)
@@ -81,6 +82,13 @@ export function installHook(target: {
       else roots.add(root)
       for (const listener of record.listeners) listener(id, root)
     }
+  }
+
+  // Another tool (RDT) got there first: React will use its hook, so wrap that one.
+  const existing = Object.getOwnPropertyDescriptor(target, KEY)?.value
+  if (existing) {
+    attachTo(existing)
+    return record
   }
 
   // On the prototype (Window.prototype in a browser), so other tools' own-property
