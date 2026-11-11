@@ -24,7 +24,7 @@ All on `ubuntu-latest`, Node 24, via `.github/actions/setup`.
 Input `browsers`: `none` (default), `chrome`, or `firefox`.
 
 - pnpm (`pnpm/action-setup`, version from `packageManager`), Node 24 with the pnpm store cache, `pnpm install --frozen-lockfile`.
-- Puppeteer downloads only what the job drives: `PUPPETEER_SKIP_DOWNLOAD` for `none`, `PUPPETEER_FIREFOX_SKIP_DOWNLOAD` for `chrome`, `PUPPETEER_CHROME_SKIP_DOWNLOAD` for `firefox`; `PUPPETEER_CHROME_HEADLESS_SHELL_SKIP_DOWNLOAD` always (default headless uses full Chrome). These env vars override `.puppeteerrc.cjs`.
+- `pnpm install` runs with `PUPPETEER_SKIP_DOWNLOAD=true`, then `pnpm exec puppeteer browsers install <browser>` installs the job's browser at Puppeteer's pinned version. Not postinstall: a restored pnpm store can skip Puppeteer's postinstall, which left `e2e (chrome, next)` with no Chrome (run 42975206720).
 - With browsers: `~/.cache/puppeteer` cached on `puppeteer-<os>-<browsers>-<hash of pnpm-lock.yaml, .puppeteerrc.cjs>`, restored before install.
 - With browsers: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. Ubuntu 24.04's AppArmor blocks the user namespaces Chrome's sandbox needs; this is Puppeteer's documented fix and keeps `--no-sandbox` out of the code.
 - e2e runs headed under `xvfb-run -a` (DevTools only exists headed; `docs/e2e.md`).

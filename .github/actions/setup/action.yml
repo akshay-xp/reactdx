@@ -24,15 +24,14 @@ runs:
     - if: inputs.browsers != 'none'
       shell: bash
       run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+    # Postinstall downloads are skipped and the job's browser installed explicitly:
+    # a restored pnpm store can skip Puppeteer's postinstall, leaving no browser.
     - shell: bash
       env:
-        BROWSERS: ${{ inputs.browsers }}
-      run: |
-        case "$BROWSERS" in
-          none) export PUPPETEER_SKIP_DOWNLOAD=true ;;
-          chrome) export PUPPETEER_FIREFOX_SKIP_DOWNLOAD=true ;;
-          firefox) export PUPPETEER_CHROME_SKIP_DOWNLOAD=true ;;
-          *) echo "unknown browsers: $BROWSERS"; exit 1 ;;
-        esac
-        export PUPPETEER_CHROME_HEADLESS_SHELL_SKIP_DOWNLOAD=true
-        pnpm install --frozen-lockfile
+        PUPPETEER_SKIP_DOWNLOAD: "true"
+      run: pnpm install --frozen-lockfile
+    - if: inputs.browsers != 'none'
+      shell: bash
+      env:
+        BROWSER: ${{ inputs.browsers }}
+      run: pnpm exec puppeteer browsers install "$BROWSER"
