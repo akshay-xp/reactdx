@@ -5,6 +5,7 @@ import type {
 } from "@reactdx/messages"
 import { Panel } from "@reactdx/panel"
 import { applyTheme, defaultTheme, type Theme } from "@reactdx/panel/themes"
+import { createTreeStore } from "@reactdx/panel/tree"
 import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import type { Browser } from "wxt/browser"
@@ -16,6 +17,7 @@ apply(defaultTheme(getTheme()))
 onThemeChanged((kind) => apply(defaultTheme(kind)))
 
 const [renderers, setRenderers] = createSignal<RendererView[]>([])
+const tree = createTreeStore()
 const subscribe = (port: Browser.runtime.Port) =>
   port.postMessage({
     type: "subscribe",
@@ -44,6 +46,6 @@ browser.devtools.network.onNavigated.addListener(() => {
 })
 
 render(
-  () => <Panel renderers={renderers()} />,
+  () => <Panel renderers={renderers()} tree={tree} />,
   document.getElementById("app") as HTMLElement,
 )

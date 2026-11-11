@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/Panel.tsx",
+    "./tree": "./src/tree.ts",
     "./themes": "./src/themes.ts",
     "./index.css": "./src/index.css"
   },
