@@ -9,7 +9,11 @@ const REACT_MARKERS = [
 ];
 const SCANNED = new Set(['.js', '.html', '.json', '.css']);
 // Each match becomes `<rule> (<first capture group>)`.
-const PATTERNS: [rule: string, pattern: RegExp][] = [['dynamic code', /\b(eval|Function)\s*\(/g]];
+const PATTERNS: [rule: string, pattern: RegExp][] = [
+  ['dynamic code', /\b(eval|Function)\s*\(/g],
+  // XML namespace strings (Solid's SVG/MathML) are identifiers, not loads.
+  ['remote URL', /\b((?:https?|wss?):\/\/(?!www\.w3\.org\/)[^\s"'`)]+)/g],
+];
 
 // Returns one `<file>: <rule>` line per invariant the built extension in `dir` breaks.
 export function checkBundle(dir: string): string[] {

@@ -28,8 +28,10 @@ for (const file of [
 ]) {
   test(`flags React: ${file}`, () => {
     const violations = checkBundle(bundle({ 'chunks/x.js': readFileSync(path.join(repo, file), 'utf8') }));
-    assert.equal(violations.length, 1, String(violations));
-    assert.ok(violations[0]?.startsWith('chunks/x.js: React ('), violations[0]);
+    assert.ok(
+      violations.some((v) => v.startsWith('chunks/x.js: React (')),
+      String(violations),
+    );
   });
 }
 
@@ -37,4 +39,19 @@ test('flags eval and the Function constructor', () => {
   assert.deepEqual(checkBundle(bundle({ 'a.js': 'eval("1")' })), ['a.js: dynamic code (eval)']);
   assert.deepEqual(checkBundle(bundle({ 'a.js': 'new Function("return 1")' })), ['a.js: dynamic code (Function)']);
   assert.deepEqual(checkBundle(bundle({ 'a.js': 'page.evaluate(f); x.medieval(1)' })), []);
+});
+
+test('flags remote URLs in scripts, pages, the manifest and CSS', () => {
+  assert.deepEqual(checkBundle(bundle({ 'panel.html': '<script src="https://cdn.example.com/x.js"></script>' })), [
+    'panel.html: remote URL (https://cdn.example.com/x.js)',
+  ]);
+  assert.deepEqual(
+    checkBundle(
+      bundle({ 'manifest.json': `{"content_security_policy":{"extension_pages":"script-src 'self' https://cdn.example.com"}}` }),
+    ),
+    ['manifest.json: remote URL (https://cdn.example.com)'],
+  );
+  assert.deepEqual(checkBundle(bundle({ 'a.js': 'import("http://evil.test/m.js")' })), ['a.js: remote URL (http://evil.test/m.js)']);
+  assert.deepEqual(checkBundle(bundle({ 'a.css': 'a{background:url(https://x.test/i.png)}' })), ['a.css: remote URL (https://x.test/i.png)']);
+  assert.deepEqual(checkBundle(bundle({ 'a.js': 'createElementNS("http://www.w3.org/1998/Math/MathML","math")' })), []);
 });
