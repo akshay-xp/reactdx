@@ -64,7 +64,10 @@ async function commitsAfterClick(page: Page) {
       window.__commits = (window.__commits ?? 0) + 1
     })
   })
-  await page.click("[data-testid=counter]")
+  // A DOM click, not page.click: Puppeteer's click first waits for an IntersectionObserver
+  // frame, and a page hidden behind the DevTools window sometimes renders none (about 1 in 60
+  // launches, with or without extensions), which hung the test until the protocol timeout.
+  await page.$eval("[data-testid=counter]", (el) => (el as HTMLElement).click())
   await page.waitForFunction(() => (window.__commits ?? 0) > 0, {
     timeout: 5000,
   })
