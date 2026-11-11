@@ -46,7 +46,8 @@ async function launchChrome(
     return { browser, panelCreated: async () => false }
   const devtools = await browser.waitForTarget(
     (target) => target.url().endsWith("/devtools.html"),
-    { timeout: 10_000 },
+    // Slow CI runners take longer than 10 s to open DevTools.
+    { timeout: 30_000 },
   )
   return {
     browser,
