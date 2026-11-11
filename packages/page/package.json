@@ -5,5 +5,8 @@
   "exports": {
     ".": "./src/hook.ts",
     "./agent": "./src/agent.ts"
+  },
+  "dependencies": {
+    "@reactdx/messages": "workspace:*"
   }
 }

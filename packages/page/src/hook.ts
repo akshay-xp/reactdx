@@ -1,3 +1,5 @@
+import type { RendererInfo } from "@reactdx/messages"
+
 export type FiberRoot = {
   current: { tag: number; memoizedState: { element: unknown } | null }
 }
@@ -12,11 +14,7 @@ export type Hook = {
   checkDCE(): void
 }
 
-export type RendererInfo = {
-  version: string
-  bundleType: number
-  rendererPackageName: string
-}
+export type { RendererInfo }
 
 // What ReactDX knows about the page's React, whichever hook React connected to.
 export type HookRecord = {

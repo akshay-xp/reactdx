@@ -1,4 +1,8 @@
-import type { RendererInfo } from "@reactdx/page"
+export type RendererInfo = {
+  version: string
+  bundleType: number
+  rendererPackageName: string
+}
 
 export type RendererMessage = {
   source: "reactdx"
