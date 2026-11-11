@@ -6,22 +6,33 @@ export type BrowserName = "chrome" | "firefox"
 const PANEL_CREATED = "[reactdx] panel created"
 const output = path.resolve(import.meta.dirname, "../apps/extension/.output")
 
+export const reactdxBuild = (name: BrowserName) =>
+  path.join(output, `${name}-mv3`)
+
 // DevTools pages only exist in a headed browser, so both launch headed with DevTools open.
-export function launchWithExtension(name: BrowserName): Promise<{
+// The panel helpers need the ReactDX build among the extensions (the default).
+export function launchWithExtension(
+  name: BrowserName,
+  extensions = [reactdxBuild(name)],
+): Promise<{
   browser: Browser
   panelCreated(): Promise<boolean>
   panelUrl: string | null
 }> {
-  return name === "chrome" ? launchChrome() : launchFirefox()
+  return name === "chrome"
+    ? launchChrome(extensions)
+    : launchFirefox(extensions)
 }
 
-async function launchChrome() {
+async function launchChrome(extensions: string[]) {
   const browser = await puppeteer.launch({
     headless: false,
     devtools: true,
     pipe: true,
-    enableExtensions: [path.join(output, "chrome-mv3")],
+    enableExtensions: extensions,
   })
+  if (!extensions.includes(reactdxBuild("chrome")))
+    return { browser, panelCreated: async () => false, panelUrl: null }
   const devtools = await browser.waitForTarget(
     (target) => target.url().endsWith("/devtools.html"),
     { timeout: 10_000 },
@@ -42,7 +53,7 @@ async function launchChrome() {
   }
 }
 
-async function launchFirefox() {
+async function launchFirefox(extensions: string[]) {
   const browser = await puppeteer.launch({
     browser: "firefox",
     headless: false,
@@ -55,7 +66,7 @@ async function launchFirefox() {
   })
   let stdout = ""
   browser.process()?.stdout?.on("data", (chunk) => (stdout += chunk))
-  await browser.installExtension(path.join(output, "firefox-mv3"))
+  for (const extension of extensions) await browser.installExtension(extension)
   return {
     browser,
     panelCreated: () => poll(() => stdout.includes(PANEL_CREATED), 10_000),

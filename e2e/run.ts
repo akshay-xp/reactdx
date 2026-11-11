@@ -25,12 +25,16 @@ const build = spawnSync(
 )
 if (build.status !== 0) process.exit(build.status ?? 1)
 
-const test = spawnSync("node", ["--test", "e2e/extension.test.ts"], {
-  stdio: "inherit",
-  env: {
-    ...process.env,
-    E2E_BROWSER: browser,
-    ...(fixture && { E2E_FIXTURE: fixture }),
+const test = spawnSync(
+  "node",
+  ["--test", "--test-concurrency=1", "e2e/*.test.ts"],
+  {
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      E2E_BROWSER: browser,
+      ...(fixture && { E2E_FIXTURE: fixture }),
+    },
   },
-})
+)
 process.exit(test.status ?? 1)

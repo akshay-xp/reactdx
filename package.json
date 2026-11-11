@@ -21,13 +21,15 @@
     "fixture:next": "NEXT_TELEMETRY_DISABLED=1 pnpm -C fixtures/next exec next dev --port 5220",
     "fixture:multi": "node fixtures/multi/serve.ts",
     "test:e2e": "node e2e/run.ts",
-    "bench:hook-cost": "pnpm --filter @reactdx/bench-hook-cost bench"
+    "bench:hook-cost": "pnpm --filter @reactdx/bench-hook-cost bench",
+    "rdt:update": "node e2e/rdt-update.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.6",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "esbuild": "0.28.2",
     "jsdom": "31.0.0",
     "puppeteer": "25.17.0",
     "typescript": "7.0.2",

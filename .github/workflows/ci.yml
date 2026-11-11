@@ -78,5 +78,10 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           browsers: ${{ matrix.browser }}
+      # RDT is locked in e2e/rdt.lock.json; download only when the lock changes.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: e2e/.rdt
+          key: rdt-${{ hashFiles('e2e/rdt.lock.json') }}
       # DevTools pages only exist in a headed browser.
       - run: xvfb-run -a pnpm test:e2e --browser=${{ matrix.browser }} --fixture=${{ matrix.fixture }}
