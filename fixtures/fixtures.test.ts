@@ -63,7 +63,7 @@ describe('fixture:multi', () => {
     const page = await browser.newPage();
     const errors: string[] = [];
     page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
-    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('pageerror', (error) => errors.push(String(error)));
     await page.goto('http://localhost:5221');
     await page.waitForSelector('[data-testid=root-19] [data-testid=react-version]');
     assert.match((await text(page, '[data-testid=root-18] [data-testid=react-version]'))!, /^18\.3\./);
