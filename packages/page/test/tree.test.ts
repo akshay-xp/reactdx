@@ -4,6 +4,7 @@ import {
   type SnapshotMessage,
   type TreeBatchMessage,
   type TreeOp,
+  UNWATCH,
   WATCH,
 } from "@reactdx/messages"
 import React from "react"
@@ -404,5 +405,33 @@ test("suspended content is hidden from the tree until it shows", async () => {
       "      i host",
       "    Waits function",
     ])
+  })
+})
+
+test("unwatch stops tree work; watching again resyncs with the same ids", async () => {
+  let setShow = (_: boolean) => {}
+  function Toggle() {
+    const [show, set] = React.useState(false)
+    setShow = set
+    return show && h(Child)
+  }
+  send(UNWATCH)
+  await render(h(Toggle))
+  await new Promise((resolve) => setTimeout(resolve, 150))
+  expect(batches()).toEqual([])
+
+  await watching(async (flush, resync) => {
+    const toggle = adds(resync).find((op) => op.name === "Toggle")
+    send(UNWATCH)
+    await React.act(() => setShow(true))
+    expect(flush()).toEqual([])
+
+    send(WATCH)
+    const [batch] = batches()
+    expect(batch?.seq).toBe(1)
+    expect(batch?.ops[0]).toEqual({ op: "reset" })
+    const again = adds(batch?.ops ?? [])
+    expect(again.find((op) => op.name === "Toggle")?.id).toBe(toggle?.id)
+    expect(again.map((op) => op.name)).toEqual(["Toggle", "Child", "span"])
   })
 })

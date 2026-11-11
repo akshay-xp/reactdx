@@ -201,6 +201,11 @@ export function createTree() {
       const host = root.current as unknown as Fiber
       addChildren(host, idOf(host), 0, rootId, ops)
     },
+    // Ids stay: the same component keeps its id across watches.
+    clear() {
+      children.clear()
+      names.clear()
+    },
     commit(root: FiberRoot, rootId: number, ops: TreeOp[]) {
       const host = root.current as unknown as Fiber
       update(host, idOf(host), 0, rootId, ops)

@@ -76,6 +76,11 @@ export function startAgent(
     if (data?.source !== "reactdx-relay") return
     if (data.type === "get-snapshot") snapshot()
     else if (data.type === "watch") watch()
+    else if (data.type === "unwatch") {
+      watching = false
+      buffer.length = 0
+      tree.clear()
+    }
   })
   snapshot()
 }
