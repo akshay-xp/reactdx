@@ -11,7 +11,7 @@ import React from "react"
 import type { Root } from "react-dom/client"
 import { afterEach, beforeAll, expect, test, vi } from "vitest"
 import { startAgent } from "../src/agent.ts"
-import { installHook } from "../src/hook.ts"
+import { type HookRecord, installHook } from "../src/hook.ts"
 import { mirror } from "./tree-mirror.ts"
 import { windowLike } from "./window.ts"
 
@@ -434,4 +434,35 @@ test("unwatch stops tree work; watching again resyncs with the same ids", async 
     expect(again.find((op) => op.name === "Toggle")?.id).toBe(toggle?.id)
     expect(again.map((op) => op.name)).toEqual(["Toggle", "Child", "span"])
   })
+})
+
+test("production renderers' roots stay out of the tree", async () => {
+  const record = (globalThis as Record<symbol, HookRecord>)[
+    Symbol.for("reactdx")
+  ] as HookRecord
+  const info = record.renderers.get(1)
+  if (!info) throw new Error("no renderer")
+  let setShow = (_: boolean) => {}
+  function Toggle() {
+    const [show, set] = React.useState(false)
+    setShow = set
+    return show && h(Child)
+  }
+  await render(h(Toggle))
+  info.bundleType = 0
+  try {
+    await watching(async (flush, resync) => {
+      expect(resync).toEqual([{ op: "reset" }])
+      await React.act(() => setShow(true))
+      expect(flush()).toEqual([])
+    })
+  } finally {
+    info.bundleType = 1
+  }
+  send(WATCH)
+  expect(adds(batches()[0]?.ops ?? []).map((op) => op.name)).toEqual([
+    "Toggle",
+    "Child",
+    "span",
+  ])
 })

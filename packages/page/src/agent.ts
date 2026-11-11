@@ -39,6 +39,9 @@ export function startAgent(
   }
 
   const tree = createTree()
+  // Production builds have minified names and aren't inspected.
+  const inspectable = (rendererId: number) =>
+    record.renderers.get(rendererId)?.bundleType === 1
   let seq = 1
   let watching = false
   // Diffed on every commit (the bail-out check only holds against the previous
@@ -53,16 +56,17 @@ export function startAgent(
     buffer.length = 0
     seq = 1
     const ops: TreeOp[] = [{ op: "reset" }]
-    for (const set of record.roots.values())
-      for (const root of set) tree.full(root, info(root).id, ops)
+    for (const [rendererId, set] of record.roots)
+      if (inspectable(rendererId))
+        for (const root of set) tree.full(root, info(root).id, ops)
     send(ops)
   }
 
   let pending = false
-  record.listeners.add((_, root) => {
+  record.listeners.add((rendererId, root) => {
     const entry = info(root)
     entry.commits++
-    if (watching) tree.commit(root, entry.id, buffer)
+    if (watching && inspectable(rendererId)) tree.commit(root, entry.id, buffer)
     if (pending) return
     pending = true
     setTimeout(() => {
