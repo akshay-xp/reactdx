@@ -83,9 +83,20 @@ async function openWithRdt(page: Page, port: number) {
         },
         { timeout: 60_000 },
       )
-      .catch((error) => {
+      .catch(async (error) => {
+        const view = await page.evaluate(
+          () =>
+            new Promise((resolve) => {
+              const state = {
+                visibility: document.visibilityState,
+                frame: false,
+              }
+              requestAnimationFrame(() => resolve({ ...state, frame: true }))
+              setTimeout(() => resolve(state), 2000)
+            }),
+        )
         throw new Error(
-          `React never committed a development root: ${JSON.stringify(errors)}`,
+          `React never committed a development root: ${JSON.stringify({ errors, view })}`,
           { cause: error },
         )
       })
