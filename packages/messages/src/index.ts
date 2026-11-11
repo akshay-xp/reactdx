@@ -13,25 +13,68 @@ export const rendererMessage = (
 
 const MAX_RENDERERS = 64
 
+export type RootInfo = { rendererId: number; id: number; commits: number }
+
+export type SnapshotMessage = {
+  source: "reactdx"
+  type: "snapshot"
+  roots: RootInfo[]
+}
+
+export const snapshotMessage = (roots: RootInfo[]): SnapshotMessage => ({
+  source: "reactdx",
+  type: "snapshot",
+  roots,
+})
+
+export type PageMessage = RendererMessage | SnapshotMessage
+
+const MAX_ROOTS = 256
+
 const isString = (value: unknown, max: number): value is string =>
   typeof value === "string" && value.length <= max
 
+const isCount = (value: unknown): value is number =>
+  Number.isSafeInteger(value) && (value as number) >= 0
+
+const isRendererId = (value: unknown): value is number =>
+  isCount(value) && value >= 1 && value <= MAX_RENDERERS
+
 // The page shares the MAIN world with the hook, so a message can be forged:
 // this guarantees shape and size, not origin.
-export function parsePageMessage(data: unknown): RendererMessage | undefined {
+export function parsePageMessage(data: unknown): PageMessage | undefined {
   if (typeof data !== "object" || data === null) return
-  const { source, type, id, version, bundleType, rendererPackageName } =
-    data as Record<string, unknown>
-  if (source !== "reactdx" || type !== "renderer") return
-  if (typeof id !== "number" || !Number.isInteger(id)) return
-  if (id < 1 || id > MAX_RENDERERS) return
+  const message = data as Record<string, unknown>
+  if (message.source !== "reactdx") return
+  if (message.type === "renderer") return parseRenderer(message)
+  if (message.type === "snapshot") return parseSnapshot(message)
+}
+
+function parseRenderer(message: Record<string, unknown>) {
+  const { id, version, bundleType, rendererPackageName } = message
+  if (!isRendererId(id)) return
   if (!isString(version, 64) || !isString(rendererPackageName, 128)) return
   if (bundleType !== 0 && bundleType !== 1) return
-  return rendererMessage(id, {
-    version,
-    bundleType,
-    rendererPackageName,
-  })
+  return rendererMessage(id, { version, bundleType, rendererPackageName })
+}
+
+function parseSnapshot(message: Record<string, unknown>) {
+  const { roots } = message
+  if (!Array.isArray(roots) || roots.length > MAX_ROOTS) return
+  const parsed: RootInfo[] = []
+  for (const root of roots) {
+    if (typeof root !== "object" || root === null) return
+    const { rendererId, id, commits } = root as Record<string, unknown>
+    if (
+      !isRendererId(rendererId) ||
+      !isCount(id) ||
+      id < 1 ||
+      !isCount(commits)
+    )
+      return
+    parsed.push({ rendererId, id, commits })
+  }
+  return snapshotMessage(parsed)
 }
 
 export type ToolbarIcon = "none" | "development" | "production"

@@ -1,5 +1,10 @@
 import { expect, test } from "vitest"
-import { parsePageMessage, rendererMessage, toolbarState } from "../src/index"
+import {
+  parsePageMessage,
+  rendererMessage,
+  snapshotMessage,
+  toolbarState,
+} from "../src/index"
 
 const info = {
   version: "19.3.1",
@@ -81,4 +86,45 @@ test.each([
   ],
 ] as const)("toolbar for %s", (_, renderers, icon, title) => {
   expect(toolbarState([...renderers])).toEqual({ icon, title })
+})
+
+const root = { rendererId: 1, id: 1, commits: 3 }
+const snapshot = snapshotMessage([root, { rendererId: 2, id: 2, commits: 0 }])
+
+test("a snapshot round-trips as a new object, with clean roots", () => {
+  expect(snapshot).toEqual({
+    source: "reactdx",
+    type: "snapshot",
+    roots: [root, { rendererId: 2, id: 2, commits: 0 }],
+  })
+  const parsed = parsePageMessage(snapshot)
+  expect(parsed).toEqual(snapshot)
+  expect(parsed).not.toBe(snapshot)
+  expect(
+    parsePageMessage({ ...snapshot, roots: [{ ...root, extra: "x" }] }),
+  ).toEqual(snapshotMessage([root]))
+})
+
+test.each<[string, unknown]>([
+  ["roots that aren't an array", { ...snapshot, roots: {} }],
+  [
+    "257 roots",
+    {
+      ...snapshot,
+      roots: Array.from({ length: 257 }, (_, i) => ({ ...root, id: i + 1 })),
+    },
+  ],
+  ["commits -1", { ...snapshot, roots: [{ ...root, commits: -1 }] }],
+  ["commits 1.5", { ...snapshot, roots: [{ ...root, commits: 1.5 }] }],
+  ["commits as a string", { ...snapshot, roots: [{ ...root, commits: "1" }] }],
+  ["rendererId 0", { ...snapshot, roots: [{ ...root, rendererId: 0 }] }],
+  ["rendererId 65", { ...snapshot, roots: [{ ...root, rendererId: 65 }] }],
+  ["root id 0", { ...snapshot, roots: [{ ...root, id: 0 }] }],
+  [
+    "a root id past safe integers",
+    { ...snapshot, roots: [{ ...root, id: 2 ** 53 }] },
+  ],
+  ["a null root", { ...snapshot, roots: [null] }],
+])("drops a snapshot with %s", (_, data) => {
+  expect(parsePageMessage(data)).toBeUndefined()
 })

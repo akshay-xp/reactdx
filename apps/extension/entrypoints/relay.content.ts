@@ -15,7 +15,7 @@ export default defineContentScript({
     window.addEventListener("message", (event) => {
       if (event.source !== window) return
       const message = parsePageMessage(event.data)
-      if (!message) return
+      if (message?.type !== "renderer") return
       const { id, version, bundleType, rendererPackageName } = message
       renderers.set(id, { version, bundleType, rendererPackageName })
       browser.runtime.sendMessage({
