@@ -8,6 +8,8 @@ const REACT_MARKERS = [
   '__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE',
 ];
 const SCANNED = new Set(['.js', '.html', '.json', '.css']);
+// Each match becomes `<rule> (<first capture group>)`.
+const PATTERNS: [rule: string, pattern: RegExp][] = [['dynamic code', /\b(eval|Function)\s*\(/g]];
 
 // Returns one `<file>: <rule>` line per invariant the built extension in `dir` breaks.
 export function checkBundle(dir: string): string[] {
@@ -17,6 +19,10 @@ export function checkBundle(dir: string): string[] {
     const text = readFileSync(path.join(dir, file), 'utf8');
     const marker = REACT_MARKERS.find((name) => text.includes(name));
     if (marker) violations.push(`${file}: React (${marker})`);
+    for (const [rule, pattern] of PATTERNS) {
+      const found = new Set(Array.from(text.matchAll(pattern), (match) => match[1]));
+      for (const name of found) violations.push(`${file}: ${rule} (${name})`);
+    }
   }
   return violations;
 }

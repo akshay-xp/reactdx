@@ -32,3 +32,9 @@ for (const file of [
     assert.ok(violations[0]?.startsWith('chunks/x.js: React ('), violations[0]);
   });
 }
+
+test('flags eval and the Function constructor', () => {
+  assert.deepEqual(checkBundle(bundle({ 'a.js': 'eval("1")' })), ['a.js: dynamic code (eval)']);
+  assert.deepEqual(checkBundle(bundle({ 'a.js': 'new Function("return 1")' })), ['a.js: dynamic code (Function)']);
+  assert.deepEqual(checkBundle(bundle({ 'a.js': 'page.evaluate(f); x.medieval(1)' })), []);
+});
