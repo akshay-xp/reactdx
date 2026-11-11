@@ -8,8 +8,9 @@
   },
   "scripts": {
     "build": "pnpm --filter @reactdx/extension build",
-    "test": "pnpm test:unit && pnpm -r test",
+    "test": "pnpm test:unit && pnpm test:check && pnpm -r test",
     "test:unit": "vitest run",
+    "test:check": "node --test \"scripts/check/*.test.ts\"",
     "test:fixtures": "node --test fixtures/fixtures.test.ts",
     "fixture:18": "pnpm -C fixtures/vite exec vite --mode 18 --port 5218 --strictPort",
     "fixture:19": "pnpm -C fixtures/vite exec vite --mode 19 --port 5219 --strictPort",
