@@ -2,9 +2,12 @@ import { expect, test } from "vitest"
 import { type Hook, installHook } from "../src/hook.ts"
 
 test("installs a hook React accepts", () => {
-  const target: { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook } = {}
-  const hook = installHook(target)
-  expect(target.__REACT_DEVTOOLS_GLOBAL_HOOK__).toBe(hook)
+  const target: { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook } = Object.create(
+    Object.create(null),
+  )
+  installHook(target)
+  const hook = target.__REACT_DEVTOOLS_GLOBAL_HOOK__
+  if (!hook) throw new Error("no hook")
   expect(hook.supportsFiber).toBe(true)
   for (const name of [
     "checkDCE",

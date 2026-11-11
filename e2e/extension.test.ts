@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { after, before, describe, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
-import type {} from "../packages/page/src/hook.ts"
+import type { HookRecord } from "../packages/page/src/hook.ts"
 import { type BrowserName, launchWithExtension } from "./launch.ts"
 
 let extension: Awaited<ReturnType<typeof launchWithExtension>>
@@ -35,11 +35,14 @@ for (const [script, port, renderers] of [
       page.on("console", (message) => messages.push(message.text()))
       await page.goto(`http://localhost:${port}`)
       await page.waitForSelector("[data-testid=counter]")
-      assert.equal(
-        await page.evaluate(
-          () => window.__REACT_DEVTOOLS_GLOBAL_HOOK__?.renderers.size,
-        ),
-        renderers,
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          own: Object.hasOwn(window, "__REACT_DEVTOOLS_GLOBAL_HOOK__"),
+          renderers: (window as unknown as Record<symbol, HookRecord>)[
+            Symbol.for("reactdx")
+          ]?.renderers.size,
+        })),
+        { own: false, renderers },
       )
       assert.deepEqual(
         messages.filter((text) => text.includes("Download the React DevTools")),
