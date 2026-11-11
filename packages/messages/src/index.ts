@@ -46,6 +46,8 @@ const isString = (value: unknown, max: number): value is string =>
 const isCount = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) >= 0
 
+const isId = (value: unknown): value is number => isCount(value) && value >= 1
+
 const isRendererId = (value: unknown): value is number =>
   isCount(value) && value >= 1 && value <= MAX_RENDERERS
 
@@ -74,13 +76,7 @@ function parseSnapshot(message: Record<string, unknown>) {
   for (const root of roots) {
     if (typeof root !== "object" || root === null) return
     const { rendererId, id, commits } = root as Record<string, unknown>
-    if (
-      !isRendererId(rendererId) ||
-      !isCount(id) ||
-      id < 1 ||
-      !isCount(commits)
-    )
-      return
+    if (!isRendererId(rendererId) || !isId(id) || !isCount(commits)) return
     parsed.push({ rendererId, id, commits })
   }
   return snapshotMessage(parsed)
@@ -130,48 +126,76 @@ export const treeBatch = (seq: number, ops: TreeOp[]): TreeBatchMessage => ({
   ops,
 })
 
+export const MAX_OPS = 2000
+const MAX_TREE_STRING = 256
+const MAX_CHILDREN = 10000
+
+const TREE_KINDS = new Set<unknown>([
+  "function",
+  "class",
+  "forwardRef",
+  "memo",
+  "lazy",
+  "suspense",
+  "provider",
+  "consumer",
+  "profiler",
+  "activity",
+  "host",
+] satisfies TreeKind[])
+
+// Any invalid op drops the whole batch: a partial batch would desync the panel's mirror.
 export function parseTreeBatch(data: unknown): TreeBatchMessage | undefined {
   if (typeof data !== "object" || data === null) return
   const { source, type, seq, ops } = data as Record<string, unknown>
-  if (source !== "reactdx" || type !== "tree" || !Array.isArray(ops)) return
+  if (source !== "reactdx" || type !== "tree" || !isId(seq)) return
+  if (!Array.isArray(ops) || ops.length < 1 || ops.length > MAX_OPS) return
   const parsed: TreeOp[] = []
   for (const op of ops) {
     const result = parseTreeOp(op)
     if (!result) return
     parsed.push(result)
   }
-  return treeBatch(seq as number, parsed)
+  return treeBatch(seq, parsed)
 }
 
 function parseTreeOp(data: unknown): TreeOp | undefined {
+  if (typeof data !== "object" || data === null) return
   const o = data as Record<string, unknown>
   switch (o.op) {
     case "reset":
       return { op: "reset" }
     case "add": {
       const { id, parentId, rootId, kind, name, key, index } = o
+      if (!isId(id) || !isCount(parentId) || !isId(rootId)) return
+      if (!isCount(index) || !TREE_KINDS.has(kind)) return
+      if (!isString(name, MAX_TREE_STRING)) return
+      if (key !== null && !isString(key, MAX_TREE_STRING)) return
       return {
         op: "add",
         id,
         parentId,
         rootId,
-        kind,
+        kind: kind as TreeKind,
         name,
         key,
         index,
-      } as TreeOp
+      }
     }
     case "remove":
-      return { op: "remove", id: o.id as number }
-    case "reorder":
-      return {
-        op: "reorder",
-        rootId: o.rootId as number,
-        parentId: o.parentId as number,
-        children: o.children as number[],
-      }
-    case "rename":
-      return { op: "rename", id: o.id as number, name: o.name as string }
+      return isId(o.id) ? { op: "remove", id: o.id } : undefined
+    case "reorder": {
+      const { rootId, parentId, children } = o
+      if (!isId(rootId) || !isCount(parentId)) return
+      if (!Array.isArray(children) || children.length > MAX_CHILDREN) return
+      if (!children.every(isId)) return
+      return { op: "reorder", rootId, parentId, children: [...children] }
+    }
+    case "rename": {
+      const { id, name } = o
+      if (!isId(id) || !isString(name, MAX_TREE_STRING)) return
+      return { op: "rename", id, name }
+    }
   }
 }
 
