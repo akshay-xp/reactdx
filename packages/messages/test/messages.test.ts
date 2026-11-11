@@ -3,6 +3,7 @@ import {
   parsePageMessage,
   rendererMessage,
   snapshotMessage,
+  tabState,
   toolbarState,
 } from "../src/index"
 
@@ -127,4 +128,21 @@ test.each<[string, unknown]>([
   ["a null root", { ...snapshot, roots: [null] }],
 ])("drops a snapshot with %s", (_, data) => {
   expect(parsePageMessage(data)).toBeUndefined()
+})
+
+test("tab state joins each renderer with its roots, in renderer order", () => {
+  const renderers = new Map([
+    [1, dev("18.3.1")],
+    [2, prod("19.0.0")],
+  ])
+  expect(
+    tabState(renderers, [
+      { rendererId: 2, id: 2, commits: 0 },
+      { rendererId: 1, id: 1, commits: 4 },
+      { rendererId: 9, id: 3, commits: 1 },
+    ]),
+  ).toEqual([
+    { id: 1, ...dev("18.3.1"), roots: [{ id: 1, commits: 4 }] },
+    { id: 2, ...prod("19.0.0"), roots: [{ id: 2, commits: 0 }] },
+  ])
 })

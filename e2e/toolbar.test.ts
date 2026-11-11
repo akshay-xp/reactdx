@@ -1,29 +1,20 @@
 import assert from "node:assert/strict"
-import { createServer } from "node:http"
-import type { AddressInfo } from "node:net"
 import { after, before, describe, test } from "node:test"
 import type { Page } from "puppeteer"
 import { startFixture } from "../fixtures/start.ts"
 import { type BrowserName, launchWithExtension } from "./launch.ts"
+import { plainPage } from "./plain.ts"
 import { reactdxWorker, type Toolbar, toolbar } from "./toolbar.ts"
 
 const name = process.env.E2E_BROWSER as BrowserName
 let extension: Awaited<ReturnType<typeof launchWithExtension>>
-const plain = createServer((_, response) =>
-  response
-    .writeHead(200, { "content-type": "text/html" })
-    .end("<p>No React here</p>"),
-)
-let plainUrl = ""
+const plainUrl = plainPage()
 
 before(async () => {
-  await new Promise<void>((resolve) => plain.listen(0, resolve))
-  plainUrl = `http://localhost:${(plain.address() as AddressInfo).port}/`
   extension = await launchWithExtension(name)
 })
 after(async () => {
   await extension?.browser.close()
-  plain.close()
 })
 
 // The background updates the toolbar asynchronously after React connects.
@@ -39,7 +30,7 @@ async function settled(page: Page, expected: string): Promise<Toolbar> {
 test("a page without React shows the grey icon and sends nothing", async () => {
   const page = await extension.browser.newPage()
   const seen = name === "chrome" && (await recordMessages())
-  await page.goto(plainUrl)
+  await page.goto(plainUrl())
   const state = await settled(page, "ReactDX: no React")
   assert.equal(state.title, "ReactDX: no React")
   if (name === "firefox") assert.match(state.icon ?? "", /none-/)
@@ -103,7 +94,7 @@ for (const [script, port, title, icon] of [
       assert.equal(state.title, title)
       if (name === "firefox")
         assert.match(state.icon ?? "", new RegExp(`/${icon}-`))
-      await page.goto(plainUrl)
+      await page.goto(plainUrl())
       assert.equal(
         (await settled(page, "ReactDX: no React")).title,
         "ReactDX: no React",

@@ -1,28 +1,19 @@
 import assert from "node:assert/strict"
-import { createServer } from "node:http"
-import type { AddressInfo } from "node:net"
 import { after, before, describe, test } from "node:test"
 import type { Page } from "puppeteer"
 import { startFixture } from "../fixtures/start.ts"
 import { type BrowserName, launchWithExtension } from "./launch.ts"
+import { plainPage } from "./plain.ts"
 
 const name = process.env.E2E_BROWSER as BrowserName
 let extension: Awaited<ReturnType<typeof launchWithExtension>>
-const plain = createServer((_, response) =>
-  response
-    .writeHead(200, { "content-type": "text/html" })
-    .end("<p>No React here</p>"),
-)
-let plainUrl = ""
+const plainUrl = plainPage()
 
 before(async () => {
-  await new Promise<void>((resolve) => plain.listen(0, resolve))
-  plainUrl = `http://localhost:${(plain.address() as AddressInfo).port}/`
   extension = await launchWithExtension(name)
 })
 after(async () => {
   await extension?.browser.close()
-  plain.close()
 })
 
 const agentFlag = (page: Page) =>
@@ -35,7 +26,7 @@ const agentFlag = (page: Page) =>
 
 test("no agent on a page without React", async () => {
   const page = await extension.browser.newPage()
-  await page.goto(plainUrl)
+  await page.goto(plainUrl())
   await new Promise((resolve) => setTimeout(resolve, 1000))
   assert.equal(await agentFlag(page), undefined)
   await page.close()

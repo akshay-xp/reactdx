@@ -96,9 +96,31 @@ export const toolbarIcons = (icon: ToolbarIcon) =>
     [16, 32, 48, 128].map((size) => [size, `icon/${icon}-${size}.png`]),
   )
 
-// Content script to background: every renderer the tab's document has, so the
-// background needs no state of its own.
-export type RenderersMessage = { type: "renderers"; renderers: RendererInfo[] }
+// Content script to background, and background to panel: everything the tab's
+// document has, so the background needs no state of its own.
+export type TabStateMessage = { type: "state"; renderers: RendererView[] }
+
+// Background to content script: answer with the current TabStateMessage.
+export type GetStateMessage = { type: "get-state" }
+
+// Panel to background, over its port: send me this tab's state.
+export type SubscribeMessage = { type: "subscribe"; tabId: number }
+
+// Content script to agent, through the page: post a fresh snapshot.
+export const GET_SNAPSHOT = { source: "reactdx-relay", type: "get-snapshot" }
+
+// Roots of renderers the relay hasn't seen are dropped.
+export const tabState = (
+  renderers: Map<number, RendererInfo>,
+  roots: RootInfo[],
+): RendererView[] =>
+  [...renderers].map(([id, info]) => ({
+    id,
+    ...info,
+    roots: roots
+      .filter((root) => root.rendererId === id)
+      .map(({ id, commits }) => ({ id, commits })),
+  }))
 
 // Content script to background, once per document: the first development renderer connected.
 export type InjectAgentMessage = { type: "inject-agent" }
