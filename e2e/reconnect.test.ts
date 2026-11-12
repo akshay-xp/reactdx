@@ -40,10 +40,16 @@ const clicked = (heading: string, text: string) =>
   copy(heading, text)?.names.includes("Clicked") ?? false
 
 // The panel lists the copy with a root and its tree; a click raises the commit
-// count and adds or removes Counter's Clicked child.
+// count and adds or removes Counter's Clicked child. The baseline waits for the
+// panel to match the page's count (Clicked shows on odd counts): just after a
+// reload the panel can still show the previous document.
 async function expectLive(page: Page, panel: PanelText, heading = HEADING) {
-  const listed = listing(heading)
   await page.waitForSelector("[data-testid=counter]")
+  const count = await page.$eval("[data-testid=counter]", (el) =>
+    Number(el.textContent?.match(/\d+/)?.[0]),
+  )
+  const listed = (text: string) =>
+    listing(heading)(text) && clicked(heading, text) === (count % 2 === 1)
   const text = await until(panel, listed)
   assert.ok(listed(text), text)
   const before = total(parseCopies(text))

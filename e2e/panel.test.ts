@@ -80,6 +80,11 @@ for (const [script, port, expected, tree, clicked] of [
         )
         try {
           await page.waitForSelector("[data-testid=counter]")
+          // Next's tree is taller than the panel; its app components are last.
+          const read = async () => {
+            await panel.end()
+            return panel()
+          }
           // Roots arrive with the agent's next snapshot, after hydration on Next.
           const development = (copies: Copy[]) =>
             copies.filter((c) => c.heading.includes("development"))
@@ -89,7 +94,7 @@ for (const [script, port, expected, tree, clicked] of [
               (c) => c.heading.includes("production") || c.commits.length > 0,
             ) &&
             tree(development(copies))
-          const text = await until(panel, (t) => ready(parseCopies(t)))
+          const text = await until(read, (t) => ready(parseCopies(t)))
           const copies = parseCopies(text)
           assert.equal(copies.length, expected.length, text)
           for (const [i, pattern] of expected.entries())
@@ -108,7 +113,7 @@ for (const [script, port, expected, tree, clicked] of [
           const done = (t: string) =>
             total(parseCopies(t)) > before &&
             clicked(development(parseCopies(t)))
-          const after = await until(panel, done, 2000)
+          const after = await until(read, done, 2000)
           assert.ok(done(after), after)
         } finally {
           await browser.close()

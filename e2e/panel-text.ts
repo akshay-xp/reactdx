@@ -3,7 +3,9 @@ import { chromeEval } from "./firefox.ts"
 import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 
 // The panel's visible text, whitespace-normalized, read the same way in both browsers.
-export type PanelText = () => Promise<string>
+// end() presses End on each tree: a tree only renders the rows in view, so a big
+// one (Next's) shows its last rows, where the app's components are, only then.
+export type PanelText = (() => Promise<string>) & { end(): Promise<void> }
 
 // Text pieces are joined with spaces (the accessibility tree splits text differently
 // from the DOM), so drop the space that lands before punctuation.
@@ -20,7 +22,7 @@ export async function openPanelText(
 ): Promise<PanelText> {
   if (name === "chrome") {
     const frame = await openPanel(browser)
-    return async () =>
+    const read = async () =>
       normalize(
         await frame.evaluate(() => {
           const texts: string[] = []
@@ -33,6 +35,13 @@ export async function openPanelText(
           return texts.join(" ")
         }),
       )
+    const end = async () => {
+      for (const tree of await frame.$$("[data-testid=tree]")) {
+        await tree.focus()
+        await frame.page().keyboard.press("End")
+      }
+    }
+    return Object.assign(read, { end })
   }
   // Firefox runs the panel in an extension process Puppeteer can't reach, but its
   // accessibility tree is mirrored into the parent process, where chrome scope can read it.
@@ -57,18 +66,48 @@ export async function openPanelText(
     })()`,
   )
   if (!selected) throw new Error("no ReactDX tab in Firefox DevTools")
-  return async () =>
+  // The panel's <browser> and the accessibility service, in chrome scope.
+  const panelBrowser = `
+    const { require } = ChromeUtils.importESModule("resource://devtools/shared/loader/Loader.sys.mjs")
+    const { gDevTools } = require("devtools/client/framework/devtools")
+    const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab)
+    const iframe = toolbox?.doc.getElementById(${JSON.stringify(`toolbox-panel-iframe-${selected}`)})
+    const panel = iframe?.contentDocument?.querySelector("browser")
+    const service = Cc["@mozilla.org/accessibilityService;1"].getService(Ci.nsIAccessibilityService)`
+  // Focus goes through each tree's accessible (the panel's DOM is in another
+  // process); the key is a trusted one, from the parent's TextInputProcessor.
+  const end = async () => {
+    await chromeEval(
+      browser,
+      `(async () => {
+        ${panelBrowser}
+        if (!panel) return
+        const trees = []
+        const walk = (node) => {
+          if (!node) return
+          if (node.role === Ci.nsIAccessibleRole.ROLE_OUTLINE) trees.push(node)
+          for (let i = 0; i < node.childCount; i++) walk(node.getChildAt(i))
+        }
+        walk(service.getAccessibleFor(panel))
+        const tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor)
+        tip.beginInputTransactionForTests(window)
+        const key = new KeyboardEvent("", { key: "End", code: "End", keyCode: KeyboardEvent.DOM_VK_END })
+        for (const tree of trees) {
+          tree.takeFocus()
+          await new Promise((r) => setTimeout(r, 50))
+          tip.keydown(key)
+          tip.keyup(key)
+        }
+      })()`,
+    )
+  }
+  const read = async () =>
     normalize(
       (await chromeEval(
         browser,
         `(() => {
-          const { require } = ChromeUtils.importESModule("resource://devtools/shared/loader/Loader.sys.mjs")
-          const { gDevTools } = require("devtools/client/framework/devtools")
-          const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab)
-          const iframe = toolbox?.doc.getElementById(${JSON.stringify(`toolbox-panel-iframe-${selected}`)})
-          const panel = iframe?.contentDocument?.querySelector("browser")
+          ${panelBrowser}
           if (!panel) return "[no panel browser]"
-          const service = Cc["@mozilla.org/accessibilityService;1"].getService(Ci.nsIAccessibilityService)
           const texts = []
           const walk = (node) => {
             if (!node) return
@@ -84,6 +123,7 @@ export async function openPanelText(
         })()`,
       )) ?? "",
     )
+  return Object.assign(read, { end })
 }
 
 export type Copy = { heading: string; commits: number[]; names: string[] }
@@ -112,7 +152,7 @@ export function parseCopies(text: string): Copy[] {
 
 // Polls the panel until the check passes; returns the last text read.
 export async function until(
-  read: PanelText,
+  read: () => Promise<string>,
   check: (text: string) => boolean,
   timeout = 5000,
 ) {
