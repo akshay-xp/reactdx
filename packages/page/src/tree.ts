@@ -2,7 +2,7 @@ import { MAX_TREE_STRING, type TreeKind, type TreeOp } from "@reactdx/messages"
 import type { FiberRoot } from "./hook.ts"
 
 // The fields of React's Fiber that the tree reads (same in React 18 and 19).
-type Fiber = {
+export type Fiber = {
   tag: number
   key: string | null
   type: unknown

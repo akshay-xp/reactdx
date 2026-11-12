@@ -1,6 +1,7 @@
 import {
   type ExpandedMessage,
   expanded,
+  type HookValue,
   type InspectedData,
   type InspectedMessage,
   inspected,
@@ -16,10 +17,16 @@ import {
   treeBatch,
   type Value,
 } from "@reactdx/messages"
-import type { FiberRoot, HookRecord } from "./hook.ts"
+import type { FiberRoot, Hook, HookRecord } from "./hook.ts"
+import {
+  type DispatcherRef,
+  type HooksFiber,
+  inspectHooks,
+  type RawHook,
+} from "./hooks.ts"
 import { createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
-import { createTree } from "./tree.ts"
+import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
 const THROTTLE_MS = 100
@@ -132,17 +139,45 @@ export function startAgent(
         sent?: { props: unknown; state: unknown }
       }
     | undefined
+  // The dispatcher of the renderer that owns the fiber's root (HostRoot, tag 3),
+  // from the global hook, which holds the renderer objects React injected.
+  const dispatcherOf = (fiber: Fiber) => {
+    let at: Fiber | null = fiber
+    while (at && at.tag !== 3) at = at.return
+    const root = at?.stateNode as FiberRoot | undefined
+    for (const [rendererId, set] of record.roots)
+      if (root && set.has(root)) {
+        const hook = (scope as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook })
+          .__REACT_DEVTOOLS_GLOBAL_HOOK__
+        const renderer = hook?.renderers.get(rendererId) as
+          | { currentDispatcherRef?: DispatcherRef }
+          | undefined
+        return renderer?.currentDispatcherRef
+      }
+  }
   const describe = (id: number): InspectedData | null => {
     const fiber = tree.fiber(id)
     if (!fiber || !selected) return null
     selected.sent = { props: fiber.memoizedProps, state: fiber.memoizedState }
     const { serialize } = selected.values
-    const props = serialize(fiber.memoizedProps) as Value
+    const data: InspectedData = {
+      props: serialize(fiber.memoizedProps) as Value,
+    }
     const state = (fiber.stateNode as { state?: unknown } | null)?.state
     // Class components (tag 1) keep their state on the instance.
-    return fiber.tag === 1 && state != null
-      ? { props, state: serialize(state) as Value }
-      : { props }
+    if (fiber.tag === 1 && state != null) data.state = serialize(state) as Value
+    const ref = dispatcherOf(fiber)
+    const read = ref && inspectHooks(fiber as unknown as HooksFiber, ref)
+    if (read) {
+      const describeHook = (hook: RawHook): HookValue => ({
+        name: hook.name,
+        ...("value" in hook && { value: serialize(hook.value) as Value }),
+        ...(hook.hooks && { hooks: hook.hooks.map(describeHook) }),
+      })
+      data.hooks = read.hooks.map(describeHook)
+      if (read.error !== undefined) data.hooksError = read.error
+    }
+    return data
   }
   const inspect = (id: number | null) => {
     selected?.values.release()
