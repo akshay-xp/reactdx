@@ -387,9 +387,11 @@ export async function panelFor(
 // Selects a component once the tree lists it (a new page's tree fills in; End
 // shows a tall tree's last rows, where Next's components are). After
 // a navigation the new document's first watch can reset the tree just after the
-// click, dropping the selection, so it's made again until the inspector has it.
+// click, dropping the selection, so it's made again until the inspector has it (up to 15 s).
 export async function selectListed(panel: PanelText, component: string) {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // Slow runners (Firefox on CI) can take seconds to settle after a navigation.
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
     await until(
       async () => {
         await panel.end()
@@ -405,4 +407,7 @@ export async function selectListed(panel: PanelText, component: string) {
     )
     if (header.startsWith(`${component} `)) return
   }
+  throw new Error(
+    `${component} never stayed selected: ${await panel.inspector()}`,
+  )
 }
