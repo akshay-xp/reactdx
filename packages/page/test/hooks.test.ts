@@ -6,7 +6,7 @@ import {
 } from "@reactdx/messages"
 import React from "react"
 import type { Root } from "react-dom/client"
-import { afterAll, beforeAll, beforeEach, expect, test } from "vitest"
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import { startAgent } from "../src/agent.ts"
 import { installHook } from "../src/hook.ts"
 import { windowLike } from "./window.ts"
@@ -244,4 +244,118 @@ test.skipIf(!react19)("React 19 hooks", async () => {
     expect.objectContaining({ type: "function" }),
     "last",
   ])
+})
+
+let effects = 0
+let shadowSetter = (_: number) => {}
+let inShadow = false
+function Effectful() {
+  const [n, set] = React.useState(0)
+  if (inShadow) shadowSetter = set
+  console.log("rendering Effectful")
+  React.useEffect(() => {
+    effects++
+  })
+  return h("u", null, n)
+}
+
+const snapshots = () =>
+  posted.filter((m) => (m as { type?: string }).type === "snapshot").length
+// Inspects again what's mounted, with `flag` on only for the shadow render.
+const reinspect = (name: string, flag: (on: boolean) => void) => {
+  flag(true)
+  try {
+    send({ source: "reactdx-relay", type: "inspect", id: idOf(name) })
+  } finally {
+    flag(false)
+  }
+  return last()
+}
+
+test("inspecting runs no effects, commits nothing and logs nothing", async () => {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {})
+  try {
+    await inspect(h(Effectful), "Effectful")
+    await flushed()
+    const [calls, ran, commits] = [log.mock.calls.length, effects, snapshots()]
+    const data = reinspect("Effectful", (on) => {
+      inShadow = on
+    })
+    expect(names(data?.hooks)).toEqual(["State", "Effect"])
+    expect(log.mock.calls.length).toBe(calls)
+    shadowSetter(5)
+    await flushed()
+    expect(effects).toBe(ran)
+    expect(snapshots()).toBe(commits)
+  } finally {
+    log.mockRestore()
+  }
+})
+
+let explode = false
+function Fragile(_: { label: string }) {
+  if (explode) throw new Error("boom")
+  React.useState(1)
+  return null
+}
+
+test("a component that throws in the shadow render keeps its props", async () => {
+  await inspect(h(Fragile, { label: "x" }), "Fragile")
+  const data = reinspect("Fragile", (on) => {
+    explode = on
+  })
+  expect(data?.hooksError).toBe("Error: boom")
+  expect(data?.hooks).toEqual([])
+  expect(data?.props).toMatchObject({ props: { label: "x" } })
+})
+
+let suspend = false
+const pending = new Promise(() => {})
+function Waiting() {
+  React.useState("before")
+  const R = React as unknown as { use: (v: unknown) => unknown }
+  R.use(fulfilled)
+  // Past the thenables React recorded, so the stub sees this one as passed.
+  if (suspend) R.use(pending)
+  React.useState("after")
+  return null
+}
+
+test.skipIf(!react19)(
+  "a suspending use() keeps the hooks before it",
+  async () => {
+    await inspect(h(Waiting), "Waiting")
+    const data = reinspect("Waiting", (on) => {
+      suspend = on
+    })
+    expect(data?.hooksError).toBeUndefined()
+    expect(data?.hooks).toEqual([
+      { name: "State", value: "before" },
+      { name: "Use", value: 5 },
+    ])
+  },
+)
+
+const Fwd = React.forwardRef(function Fwd(_, __) {
+  React.useState("f")
+  return null
+})
+const Memo = React.memo(function Memo() {
+  React.useState("m")
+  return null
+})
+class Klass extends React.Component {
+  render() {
+    return null
+  }
+}
+
+test("forwardRef and memo components have hooks; classes have none", async () => {
+  expect((await inspect(h(Fwd), "Fwd"))?.hooks).toEqual([
+    { name: "State", value: "f" },
+  ])
+  expect((await inspect(h(Memo), "Memo"))?.hooks).toEqual([
+    { name: "State", value: "m" },
+  ])
+  expect((await inspect(h(Klass), "Klass"))?.hooks).toBeUndefined()
 })

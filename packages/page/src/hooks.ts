@@ -114,6 +114,31 @@ function renderOf(fiber: HooksFiber) {
     return (props: unknown) => type.render?.(props, fiber.ref)
 }
 
+// Every console method made a no-op; the returned function puts them back.
+function silenceConsole() {
+  const saved: [string, unknown][] = []
+  const methods = console as unknown as Record<string, unknown>
+  for (const name of Object.keys(methods))
+    if (typeof methods[name] === "function") {
+      saved.push([name, methods[name]])
+      methods[name] = noop
+    }
+  return () => {
+    for (const [name, method] of saved) methods[name] = method
+  }
+}
+
+// A lazy or memo-wrapped component's defaultProps apply on top of its props.
+function propsOf(fiber: HooksFiber) {
+  const defaults = (fiber.type as { defaultProps?: Record<string, unknown> })
+    ?.defaultProps
+  if (fiber.type === fiber.elementType || !defaults) return fiber.memoizedProps
+  const props = { ...(fiber.memoizedProps as Record<string, unknown>) }
+  for (const [name, value] of Object.entries(defaults))
+    if (props[name] === undefined) props[name] = value
+  return props
+}
+
 export function inspectHooks(
   fiber: HooksFiber,
   ref: DispatcherRef,
@@ -299,16 +324,20 @@ export function inspectHooks(
   // V8 keeps 10 frames by default: a deep custom hook chain needs them all.
   const limit = Error.stackTraceLimit
   Error.stackTraceLimit = Number.POSITIVE_INFINITY
+  // The render's own logging (and React's dev warnings) would look like the app's.
+  const quiet = silenceConsole()
   let error: string | undefined
   let depth = 0
   try {
     depth = parseStack(new Error().stack ?? "").length
-    render(fiber.memoizedProps)
+    render(propsOf(fiber))
   } catch (thrown) {
-    error = String(thrown)
+    // Suspending ends the render where React's would: the hooks so far stand.
+    if (thrown !== SUSPENDED) error = String(thrown)
   } finally {
     ref[key] = previous
     Error.stackTraceLimit = limit
+    quiet()
   }
   return {
     hooks: group(calls, depth),
