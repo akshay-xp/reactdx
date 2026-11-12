@@ -227,6 +227,11 @@ export function createTreeStore() {
       if (id !== null && nodes.has(id)) reveal(id)
     },
     hover: (id: number | undefined) => hover(id),
+    // Selects a node from outside the tree (the inspector's owners) and makes
+    // its row visible; unknown ids do nothing.
+    reveal(id: number) {
+      if (nodes.has(id)) reveal(id)
+    },
     select: (id: number) => select(id),
 
     toggle,
