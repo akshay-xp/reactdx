@@ -1,5 +1,6 @@
 import type { RendererView } from "@reactdx/messages"
 import { For, Match, Show, Switch } from "solid-js"
+import { Toolbar } from "./Toolbar"
 import { TreeView } from "./TreeView"
 import type { TreeStore } from "./tree"
 
@@ -25,6 +26,7 @@ export function ConnectionList(props: {
         </p>
       </Match>
       <Match when={development()}>
+        <Toolbar tree={props.tree} />
         <ul>
           <For each={props.renderers}>
             {(renderer) => (

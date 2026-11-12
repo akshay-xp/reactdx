@@ -131,3 +131,13 @@ test("development roots list their components; production roots don't", () => {
   expect(indent(nodes[1])).toBeGreaterThan(indent(nodes[0]))
   expect(container.querySelector("img")).toBeNull()
 })
+
+test("the tree toolbar shows only above development copies", () => {
+  const search = (renderers: RendererView[]) =>
+    render(() => (
+      <ConnectionList tree={createTreeStore()} renderers={renderers} />
+    )).container.querySelector("[data-testid=search]")
+  expect(search([])).toBeNull()
+  expect(search([copy(1, "19.3.1", 0)])).toBeNull()
+  expect(search([copy(1, "18.3.1", 1, [{ id: 1, commits: 0 }])])).not.toBeNull()
+})
