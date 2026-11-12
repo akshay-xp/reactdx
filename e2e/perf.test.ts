@@ -184,3 +184,42 @@ test("End and Home select the last and first rows and scroll to them", {
     await browser.close()
   }
 })
+
+// Selects a Cell by clicking its row in the panel; resolves with the ms until the
+// inspector shows `shows`.
+const selectCell = (panel: Awaited<ReturnType<typeof benchPanel>>["panel"]) =>
+  panel.evaluate(
+    (shows) =>
+      new Promise<number>((resolve) => {
+        const row = [...document.querySelectorAll("[data-testid=node]")].find(
+          (n) => n.textContent === 'Cell key="0"',
+        )
+        const inspector = () =>
+          document.querySelector("[data-testid=inspector]")?.textContent ?? ""
+        const start = performance.now()
+        new MutationObserver((_, observer) => {
+          if (!inspector().includes(shows)) return
+          observer.disconnect()
+          resolve(performance.now() - start)
+        }).observe(document.body, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        })
+        ;(
+          row?.querySelector("[data-testid=name]") as HTMLElement | null
+        )?.click()
+      }),
+    "State: 0",
+  )
+
+test("a selected Cell's hooks show within 100 ms", { skip }, async (t) => {
+  const { browser, panel } = await benchPanel()
+  try {
+    const elapsed = await selectCell(panel)
+    t.diagnostic(`${elapsed.toFixed(0)} ms`)
+    assert.ok(elapsed < 100, `${elapsed} ms`)
+  } finally {
+    await browser.close()
+  }
+})
