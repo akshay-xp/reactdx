@@ -8,6 +8,7 @@
     "./inspection": "./src/inspection.ts",
     "./source": "./src/source.ts",
     "./editor": "./src/editor.ts",
+    "./names": "./src/names.ts",
     "./themes": "./src/themes.ts",
     "./index.css": "./src/index.css"
   },

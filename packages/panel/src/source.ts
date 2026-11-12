@@ -22,7 +22,7 @@ export const locationText = ({ file, line, column }: SourceLocation) =>
 export const label = ({ file, line }: SourceLocation) =>
   `${file.slice(file.lastIndexOf("/") + 1)}:${line}`
 
-const WEB = /^https?:/
+export const WEB = /^https?:/
 // The last map comment in a script (a bundle can quote others before it).
 const MAP_COMMENT = /\/\/[#@] sourceMappingURL=(\S+)\s*$/
 
