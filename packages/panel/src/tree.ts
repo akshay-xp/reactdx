@@ -28,6 +28,7 @@ export function createTreeStore() {
   const tops = new Map<number, number[]>()
   const collapsed = new Set<number>()
   const [version, setVersion] = createSignal(0)
+  const [selected, select] = createSignal<number>()
 
   const siblings = (rootId: number, parentId: number) => {
     if (parentId) return nodes.get(parentId)?.children
@@ -96,6 +97,7 @@ export function createTreeStore() {
       else if (batch.seq !== expected) stale = true
       if (!stale) stale = !batch.ops.every(applyOp)
       expected = batch.seq + 1
+      if (!nodes.has(selected() as number)) select(undefined)
       setVersion(version() + 1)
       return stale
     },
@@ -123,6 +125,9 @@ export function createTreeStore() {
       return rows
     },
 
+    selected,
+    select: (id: number) => select(id),
+
     toggle(id: number) {
       if (!collapsed.delete(id)) collapsed.add(id)
       setVersion(version() + 1)
@@ -131,6 +136,7 @@ export function createTreeStore() {
     clear() {
       reset()
       collapsed.clear()
+      select(undefined)
       setVersion(version() + 1)
     },
   }

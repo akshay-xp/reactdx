@@ -108,6 +108,25 @@ test("collapsing hides descendants; expanding restores them", () => {
   expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "1 C"])
 })
 
+test("selection survives commits that keep the node, clears when it's gone", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.select(5)
+  tree.apply(treeBatch(2, [{ op: "rename", id: 6, name: "Renamed" }]))
+  tree.apply(
+    treeBatch(3, [{ op: "reorder", rootId: 1, parentId: 2, children: [6, 3] }]),
+  )
+  expect(tree.selected()).toBe(5)
+  tree.apply(treeBatch(4, [{ op: "remove", id: 3 }]))
+  expect(tree.selected()).toBeUndefined()
+
+  tree.select(6)
+  tree.apply(resync)
+  expect(tree.selected()).toBe(6)
+  tree.clear()
+  expect(tree.selected()).toBeUndefined()
+})
+
 test("clear empties the store", () => {
   const tree = createTreeStore()
   tree.apply(resync)
