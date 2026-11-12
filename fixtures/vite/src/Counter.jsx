@@ -5,7 +5,8 @@ function Clicked() {
   return null
 }
 
-export default function Counter() {
+// `label` is a prop for the inspector to show (e2e/inspector.test.ts).
+export default function Counter({ label }) {
   const [count, setCount] = useState(0)
   return (
     <>
@@ -14,7 +15,7 @@ export default function Counter() {
         data-testid="counter"
         onClick={() => setCount(count + 1)}
       >
-        Count: {count}
+        {label}: {count}
       </button>
       {count % 2 === 1 && <Clicked />}
     </>

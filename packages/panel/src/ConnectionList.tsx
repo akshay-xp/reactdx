@@ -90,6 +90,7 @@ export function ConnectionList(props: {
           </div>
           <aside
             data-testid="inspector"
+            aria-label="Inspector"
             class="flex min-h-0 min-w-0 flex-1 flex-col border-border border-t sm:border-t-0 sm:border-l"
           >
             <Inspector tree={props.tree} inspector={props.inspector} />

@@ -9,8 +9,11 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // the tree row with that name; leave() moves it off the trees. close() closes DevTools.
 // press(name) clicks the button with that name (its text or aria-label), pressed(name)
 // reads its aria-pressed,
-// selected() is the selected row's name.
+// selected() is the selected row's name, select(name) clicks the row with that name.
+// The text leaves out the inspector pane; inspector() reads only that.
 export type PanelText = (() => Promise<string>) & {
+  inspector(): Promise<string>
+  select(name: string): Promise<void>
   end(): Promise<void>
   hover(name: string): Promise<void>
   leave(): Promise<void>
@@ -35,32 +38,35 @@ export async function openPanelText(
 ): Promise<PanelText> {
   if (name === "chrome") {
     const frame = await openPanel(browser)
-    const read = async () =>
+    const text = async (inspector: boolean) =>
       normalize(
-        await frame.evaluate(() => {
+        await frame.evaluate((inspector) => {
+          const pane = document.querySelector("[data-testid=inspector]")
+          const root = inspector ? pane : document.body
+          if (!root) return ""
           const texts: string[] = []
-          const walker = document.createTreeWalker(
-            document.body,
-            NodeFilter.SHOW_TEXT,
-          )
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
           while (walker.nextNode())
-            texts.push(walker.currentNode.textContent ?? "")
+            if (inspector || !pane?.contains(walker.currentNode))
+              texts.push(walker.currentNode.textContent ?? "")
           return texts.join(" ")
-        }),
+        }, inspector),
       )
+    const read = () => text(false)
+    const inspector = () => text(true)
     const end = async () => {
       for (const tree of await frame.$$("[data-testid=tree]")) {
         await tree.focus()
         await frame.page().keyboard.press("End")
       }
     }
-    const hover = async (name: string) => {
-      const rows = await frame.$$("[data-testid=name]")
-      for (const row of rows)
-        if ((await row.evaluate((el) => el.textContent)) === name)
-          return row.hover()
+    const row = async (name: string) => {
+      for (const row of await frame.$$("[data-testid=name]"))
+        if ((await row.evaluate((el) => el.textContent)) === name) return row
       throw new Error(`no row named ${name}`)
     }
+    const hover = async (name: string) => (await row(name)).hover()
+    const select = async (name: string) => (await row(name)).click()
     // Onto the toolbar above the trees: CDP's synthetic moves out of the panel
     // frame fire no leave events inside it.
     const leave = async () => {
@@ -84,6 +90,8 @@ export async function openPanelText(
           )?.textContent ?? undefined,
       )
     return Object.assign(read, {
+      inspector,
+      select,
       end,
       hover,
       leave,
@@ -151,7 +159,8 @@ export async function openPanelText(
       })()`,
     )
   }
-  const read = async () =>
+  // The inspector pane is the landmark named "Inspector".
+  const text = async (inspector: boolean) =>
     normalize(
       (await chromeEval(
         browser,
@@ -159,13 +168,17 @@ export async function openPanelText(
           ${panelBrowser}
           if (!panel) return "[no panel browser]"
           const texts = []
-          const walk = (node) => {
+          const isPane = (node) =>
+            node.role === Ci.nsIAccessibleRole.ROLE_LANDMARK && node.name === "Inspector"
+          const walk = (node, inside) => {
             if (!node) return
-            if (node.childCount === 0 && node.name) texts.push(node.name)
-            for (let i = 0; i < node.childCount; i++) walk(node.getChildAt(i))
+            const here = inside || isPane(node)
+            if (node.childCount === 0 && node.name && here === ${inspector}) texts.push(node.name)
+            for (let i = 0; i < node.childCount; i++) walk(node.getChildAt(i), here)
           }
           const root = service.getAccessibleFor(panel)
-          walk(root)
+          walk(root, false)
+          if (${inspector}) return texts.join(" ")
           // No text: say what was there, so a failure explains itself.
           return texts.length
             ? texts.join(" ")
@@ -173,6 +186,8 @@ export async function openPanelText(
         })()`,
       )) ?? "",
     )
+  const read = () => text(false)
+  const inspector = () => text(true)
   // Runs `action` (JS returning a string) on the first accessible `match` (a JS
   // expression over `node`) accepts. Throws when none matches, unless `required`
   // is false, which returns null instead.
@@ -225,10 +240,17 @@ export async function openPanelText(
     )
   }
   // A row's name is a text leaf inside a tree item.
-  const hover = (name: string) =>
-    pointAt(
-      `node.role === Ci.nsIAccessibleRole.ROLE_TEXT_LEAF && node.name === ${json(name)} && node.parent?.parent?.role === Ci.nsIAccessibleRole.ROLE_OUTLINEITEM`,
+  const rowName = (name: string) =>
+    `node.role === Ci.nsIAccessibleRole.ROLE_TEXT_LEAF && node.name === ${json(name)} && node.parent?.parent?.role === Ci.nsIAccessibleRole.ROLE_OUTLINEITEM`
+  const hover = (name: string) => pointAt(rowName(name))
+  // The row's own click action: native clicks land by screen position, which can
+  // lag behind a tree that just scrolled.
+  const select = async (name: string) => {
+    await onAccessible(
+      rowName(name),
+      `node.parent.parent.doAction(0); return "ok"`,
     )
+  }
   const leave = () =>
     pointAt(
       `node.name === "Search components" && node.role !== Ci.nsIAccessibleRole.ROLE_TEXT_LEAF`,
@@ -276,6 +298,8 @@ export async function openPanelText(
       false,
     )) ?? undefined
   return Object.assign(read, {
+    inspector,
+    select,
     end,
     hover,
     leave,

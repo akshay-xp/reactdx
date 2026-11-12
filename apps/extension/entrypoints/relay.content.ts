@@ -1,11 +1,9 @@
 import {
-  CLEAR_HIGHLIGHT,
   GET_SNAPSHOT,
   type GetStateMessage,
-  highlight,
   type InjectAgentMessage,
-  PICK_START,
-  PICK_STOP,
+  parseExpanded,
+  parseInspected,
   parsePageMessage,
   parsePicked,
   parseTreeBatch,
@@ -52,15 +50,11 @@ export default defineContentScript({
       tree = browser.runtime.connect({ name: "tree" })
       tree.onDisconnect.addListener(stop)
       tree.onMessage.addListener((message: unknown) => {
+        // A resync is a new watch; every other command goes to the agent as is.
         const command = parseTreeCommand(message)
         if (command?.type === "resync") window.postMessage(WATCH, "*")
-        else if (command?.type === "highlight")
-          window.postMessage(highlight(command.id), "*")
-        else if (command?.type === "clear-highlight")
-          window.postMessage(CLEAR_HIGHLIGHT, "*")
-        else if (command?.type === "pick-start")
-          window.postMessage(PICK_START, "*")
-        else if (command) window.postMessage(PICK_STOP, "*")
+        else if (command)
+          window.postMessage({ source: "reactdx-relay", ...command }, "*")
       })
       window.postMessage(WATCH, "*")
     }
@@ -81,8 +75,12 @@ export default defineContentScript({
 
     window.addEventListener("message", (event) => {
       if (event.source !== window) return
-      // Batches and picks go to the panel over the tree port, unstored.
-      const forward = parseTreeBatch(event.data) ?? parsePicked(event.data)
+      // Batches, picks and inspections go to the panel over the tree port, unstored.
+      const forward =
+        parseTreeBatch(event.data) ??
+        parsePicked(event.data) ??
+        parseInspected(event.data) ??
+        parseExpanded(event.data)
       if (forward) {
         tree?.postMessage(forward)
         return

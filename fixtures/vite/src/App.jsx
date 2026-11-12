@@ -5,7 +5,7 @@ export default function App() {
   return (
     <>
       <p data-testid="react-version">{React.version}</p>
-      <Counter />
+      <Counter label="Count" />
     </>
   )
 }
