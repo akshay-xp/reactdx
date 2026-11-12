@@ -30,6 +30,7 @@ export function createTreeStore() {
   const [version, setVersion] = createSignal(0)
   const [selected, select] = createSignal<number>()
   const [showHosts, showHostsSignal] = createSignal(false)
+  const [query, querySignal] = createSignal("")
   // Host (DOM element) nodes are rows only while "Show DOM elements" is on.
   const visible = (node: Node | undefined) =>
     node !== undefined && (node.kind !== "host" || showHosts())
@@ -128,6 +129,38 @@ export function createTreeStore() {
     return parent || undefined
   }
 
+  // Case-insensitive substring on the names of nodes that have rows.
+  const isMatch = (node: Node | undefined) => {
+    const q = query().toLowerCase()
+    return (
+      q !== "" &&
+      node !== undefined &&
+      visible(node) &&
+      node.name.toLowerCase().includes(q)
+    )
+  }
+
+  // Every root's matches depth-first, collapsed subtrees included.
+  const matches = () => {
+    version()
+    const out: number[] = []
+    const visit = (id: number) => {
+      const node = nodes.get(id)
+      if (isMatch(node)) out.push(id)
+      for (const child of node?.children ?? []) visit(child)
+    }
+    for (const ids of tops.values()) for (const id of ids) visit(id)
+    return out
+  }
+
+  // Selects a node and expands its ancestors, so its row exists.
+  const reveal = (id: number) => {
+    for (let at = nodes.get(id)?.parentId; at; at = nodes.get(at)?.parentId)
+      collapsed.delete(at)
+    select(id)
+    setVersion(version() + 1)
+  }
+
   // Moves the selection within one root's rows; false for keys it doesn't handle.
   const key = (rootId: number, name: string): boolean => {
     const list = rows(rootId)
@@ -176,6 +209,13 @@ export function createTreeStore() {
     select: (id: number) => select(id),
 
     toggle,
+    query,
+    matches,
+    setQuery(value: string) {
+      querySignal(value)
+      const [first] = matches()
+      if (first !== undefined) reveal(first)
+    },
     showHosts,
     setShowHosts(on: boolean) {
       showHostsSignal(on)

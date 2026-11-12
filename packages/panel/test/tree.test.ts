@@ -201,6 +201,38 @@ test("DOM elements show as rows on request", () => {
   expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "2 B", "1 C"])
 })
 
+test("a query matches names case-insensitively and selects the first", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.setQuery("a")
+  expect(tree.query()).toBe("a")
+  expect(tree.matches()).toEqual([1, 3])
+  expect(tree.selected()).toBe(1)
+  tree.setQuery("A")
+  expect(tree.matches()).toEqual([1, 3])
+
+  tree.toggle(1)
+  tree.setQuery("b")
+  expect(tree.matches()).toEqual([5])
+  expect(tree.selected()).toBe(5)
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "2 B", "1 C"])
+
+  tree.setQuery("a")
+  tree.apply(treeBatch(2, [{ op: "remove", id: 3 }]))
+  expect(tree.matches()).toEqual([1])
+
+  tree.setQuery("zzz")
+  expect(tree.matches()).toEqual([])
+  expect(tree.selected()).toBe(1)
+  tree.setShowHosts(true)
+  tree.setQuery("span")
+  expect(tree.matches()).toEqual([])
+  tree.setQuery("div")
+  expect(tree.matches()).toEqual([2])
+  tree.setQuery("")
+  expect(tree.matches()).toEqual([])
+})
+
 test("clear empties the store", () => {
   const tree = createTreeStore()
   tree.apply(resync)
