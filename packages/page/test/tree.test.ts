@@ -31,7 +31,10 @@ beforeAll(async () => {
   startAgent(globalThis, (message) => posted.push(message))
 })
 
+// Unwatching drops any ops a test left buffered, so a flush pending from it can't
+// post a batch into the next test.
 afterEach(async () => {
+  send(UNWATCH)
   for (const root of roots.splice(0)) await React.act(() => root.unmount())
   posted.length = 0
 })
