@@ -1,5 +1,6 @@
 import {
   type ExpandedMessage,
+  expanded,
   type InspectedData,
   type InspectedMessage,
   inspected,
@@ -122,13 +123,19 @@ export function startAgent(
     overlay?.hide()
   }
 
-  // The node the panel inspects, and the inspector holding what was sent for it.
+  // The node the panel inspects, the inspector holding what was sent for it, and
+  // the fiber values sent: React gives a rendered fiber new props and state objects.
   let selected:
-    | { id: number; values: ReturnType<typeof createInspector> }
+    | {
+        id: number
+        values: ReturnType<typeof createInspector>
+        sent?: { props: unknown; state: unknown }
+      }
     | undefined
   const describe = (id: number): InspectedData | null => {
     const fiber = tree.fiber(id)
     if (!fiber || !selected) return null
+    selected.sent = { props: fiber.memoizedProps, state: fiber.memoizedState }
     const { serialize } = selected.values
     const props = serialize(fiber.memoizedProps) as Value
     const state = (fiber.stateNode as { state?: unknown } | null)?.state
@@ -142,6 +149,20 @@ export function startAgent(
     selected = id === null ? undefined : { id, values: createInspector() }
     if (id !== null) post(inspected(id, describe(id)))
   }
+  // On the flush: send again only if the node rendered (or unmounted) since.
+  const refresh = () => {
+    if (!selected) return
+    const { id, sent } = selected
+    const fiber = tree.fiber(id)
+    if (
+      fiber &&
+      fiber.memoizedProps === sent?.props &&
+      fiber.memoizedState === sent?.state
+    )
+      return
+    post(inspected(id, describe(id)))
+    if (!fiber) inspect(null)
+  }
 
   let pending = false
   record.listeners.add((rendererId, root) => {
@@ -154,6 +175,7 @@ export function startAgent(
       pending = false
       snapshot()
       if (buffer.length) send(buffer.splice(0))
+      refresh()
     }, THROTTLE_MS)
   })
   target.addEventListener("message", (event) => {
@@ -165,11 +187,18 @@ export function startAgent(
     else if (data.type === "clear-highlight") overlay?.hide()
     else if (data.type === "pick-start") startPicking()
     else if (data.type === "pick-stop") stopPicking()
-    else if (data.type === "inspect") {
+    else if (data.type === "inspect" || data.type === "expand") {
       const command = parseTreeCommand(data)
       if (command?.type === "inspect") inspect(command.id)
+      if (command?.type === "expand") {
+        const { objectId, offset } = command
+        const value = selected?.values.expand(objectId, offset)
+        if (value !== undefined)
+          post(expanded(objectId, offset, value as Value))
+      }
     } else if (data.type === "unwatch") {
       stopPicking()
+      inspect(null)
       watching = false
       buffer.length = 0
       tree.clear()
