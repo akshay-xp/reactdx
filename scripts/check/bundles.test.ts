@@ -127,6 +127,38 @@ test("flags network APIs", () => {
   )
 })
 
+// The panel reads the inspected page's scripts and source maps and asks its dev
+// server to open the editor (fetch), and reads its origin with
+// devtools.inspectedWindow.eval, which runs in the page.
+test("the panel may fetch and call inspectedWindow.eval, and nothing more", () => {
+  const panel = "chunks/panel-C5_28NHz.js"
+  assert.deepEqual(
+    checkBundle(bundle({ [panel]: "fetch(u); t.eval(`location.origin`)" })),
+    [],
+  )
+  // @jridgewell/resolve-uri parses relative paths against a placeholder base.
+  assert.deepEqual(
+    checkBundle(
+      bundle({ [panel]: "p(`http://foo.com`+e); p(`http://foo.com/`+e)" }),
+    ),
+    [],
+  )
+  assert.deepEqual(checkBundle(bundle({ [panel]: "p(`http://foo.org`)" })), [
+    `${panel}: remote URL (http://foo.org)`,
+  ])
+  assert.deepEqual(
+    checkBundle(bundle({ [panel]: 'eval("1"); new Function("x")' })),
+    [`${panel}: dynamic code (eval)`, `${panel}: dynamic code (Function)`],
+  )
+  assert.deepEqual(
+    checkBundle(bundle({ "chunks/relay.js": "fetch(u); t.eval(x)" })),
+    [
+      "chunks/relay.js: dynamic code (.eval)",
+      "chunks/relay.js: network API (fetch)",
+    ],
+  )
+})
+
 test("flags a hook script over the budget", () => {
   assert.deepEqual(
     checkBundle(

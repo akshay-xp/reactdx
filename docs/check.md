@@ -14,14 +14,16 @@
 | Rule         | Match                                                                                                |
 | ------------ | ---------------------------------------------------------------------------------------------------- |
 | React        | any React internals key (below)                                                                      |
-| dynamic code | `eval(`, `Function(` (covers `new Function(`)                                                        |
+| dynamic code | `eval(`, `Function(` (covers `new Function(`); a method call `.eval(` reports as `.eval`             |
 | remote URL   | `http(s)://` or `ws(s)://`, except `http://www.w3.org/` (XML namespaces: Solid ships the MathML one) |
 | network API  | `fetch`, `importScripts`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`                 |
 | hook size    | `content-scripts/hook.js` over `MAX_HOOK_BYTES` (2,048); the only home of the budget                 |
 
 - **CSS comments are stripped before the scan:** Tailwind's built CSS starts with `/*! tailwindcss v4.3.5 | MIT License | https://tailwindcss.com */`, which must stay; a comment never loads. `url(...)` in CSS and URLs in JS comments are still flagged.
 - **React markers:** `__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED` (react/react-dom 18), `__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE` (react 19), `__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE` (react-dom 19). Property keys, so minifiers keep them; present in dev and production builds. They are React internals (MIT) and may be renamed: the tests plant real React files from `test-env/*`, so a rename fails `pnpm test:check` when `test-env` is upgraded.
-- **Network APIs are banned outright**, not just to non-extension origins: a static scan can't tell where a call goes, and nothing ships one. A feature that needs one (e.g. open-in-editor against the dev server) adds an explicit allowlist here and documents it.
+- **Network APIs are banned outright**, not just to non-extension origins: a static scan can't tell where a call goes. A feature that needs one adds an explicit allowlist here and documents it.
+- **Panel allowlist (M4 #36, `ALLOWED` in `bundles.ts`), for `chunks/panel-*.js` only:** `network API (fetch)` (the inspected page's scripts and source maps, and its dev server's open-in-editor endpoints; docs/panel.md), `dynamic code (.eval)` (`devtools.inspectedWindow.eval("location.origin")`, which runs in the page; a bare `eval(` or `Function(` is still flagged there), and `remote URL (http://foo.com)` / `(http://foo.com/)` (`@jridgewell/resolve-uri`'s placeholder base for parsing relative paths, never requested). Every other file keeps the full ban.
+- **Source maps without dynamic code:** `source-map-js` builds its sort with `new Function` (`lib/quick-sort.js`), which the extension CSP refuses and the check flags; the panel uses `@jridgewell/trace-mapping` (`source-map-js` is a test-only devDependency for building maps).
 - **modulepreload polyfill:** WXT's polyfill chunk called `fetch` on preload links. `apps/extension/wxt.config.ts` sets `build.modulePreload.polyfill: false`; Chrome and Firefox 128+ preload natively (e2e passes in both without it).
 
 ## TypeScript (`pnpm typecheck`)
