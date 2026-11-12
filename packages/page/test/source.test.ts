@@ -1,11 +1,13 @@
 import React from "react"
 import { expect, test } from "vitest"
 import { stackSource } from "../src/source.ts"
+import { parseStack } from "../src/stack.ts"
 import { inspecting } from "./inspecting.ts"
 
 const h = React.createElement
 const { inspect } = inspecting()
 const react18 = React.version.startsWith("18.")
+const react19 = React.version.startsWith("19.")
 
 const at = { url: "http://h/src/Counter.jsx?t=1", line: 14, column: 47 }
 
@@ -80,3 +82,37 @@ test.skipIf(!react18)("React 18: no location written", async () => {
   expect(data).toBeDefined()
   expect(data && "source" in data).toBe(false)
 })
+
+// Where an Error made on the element's line was made: React 19 records that line.
+let marker: Error | undefined
+const markedAt = () => {
+  const [, url, line] =
+    /\(?([^ (]+):(\d+):\d+\)?$/.exec(
+      parseStack(marker?.stack ?? "")[0]?.source ?? "",
+    ) ?? []
+  return { url, line: Number(line) }
+}
+
+function Located() {
+  const [element, here] = [h("p"), new Error()]
+  marker = here
+  return element
+}
+function Wrapper() {
+  const [element, here] = [h(Pass, null, h("p")), new Error()]
+  marker = here
+  return element
+}
+
+test.skipIf(!react19)("React 19: the first element it renders", async () => {
+  const data = await inspect(h(Located), "Located")
+  expect(data?.source).toEqual({ ...markedAt(), column: expect.any(Number) })
+})
+
+test.skipIf(!react19)(
+  "React 19: rendering only its children, where it was rendered",
+  async () => {
+    const data = await inspect(h(Wrapper), "Pass")
+    expect(data?.source).toEqual({ ...markedAt(), column: expect.any(Number) })
+  },
+)

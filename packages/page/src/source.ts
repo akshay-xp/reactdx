@@ -8,6 +8,7 @@ type DebugFiber = Fiber & {
     lineNumber?: unknown
     columnNumber?: unknown
   } | null
+  _debugStack?: { stack?: unknown } | null
 }
 
 // "url:line:column" at the end of a frame, after V8's "at name (" or Firefox's "name@".
@@ -19,11 +20,14 @@ export function stackSource(stack: string) {
   const [top, caller] = parseStack(stack)
   if (!caller || top?.functionName === "UnknownOwner") return null
   const match = LOCATION.exec(caller.source)
-  if (!match) return null
+  if (!match?.[1]) return null
   return { url: match[1], line: Number(match[2]), column: Number(match[3]) }
 }
 
+// React 18 keeps the JSX transform's location; React 19 the element's Error.
 function written(fiber: DebugFiber): SourceRef | undefined {
+  const stack = fiber._debugStack?.stack
+  if (typeof stack === "string") return stackSource(stack) ?? undefined
   const at = fiber._debugSource
   if (
     typeof at?.fileName === "string" &&
