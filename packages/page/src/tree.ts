@@ -10,6 +10,7 @@ type Fiber = {
   child: Fiber | null
   sibling: Fiber | null
   alternate: Fiber | null
+  return: Fiber | null
   memoizedState: unknown
   stateNode: unknown
 }
@@ -212,6 +213,25 @@ export function createTree() {
       children.clear()
       names.clear()
       fibers.clear()
+    },
+    // The nearest mounted component (never a host) owning a DOM element, found
+    // through the fiber React keeps on each of its elements.
+    owner(element: Element) {
+      for (let el: Element | null = element; el; el = el.parentElement) {
+        const key = Object.keys(el).find((k) => k.startsWith("__reactFiber$"))
+        if (!key) continue
+        for (
+          let fiber: Fiber | null =
+            (el as unknown as Record<string, Fiber>)[key] ?? null;
+          fiber;
+          fiber = fiber.return
+        ) {
+          const id = ids.get(fiber)
+          const kind = kindOf(fiber)
+          if (id && kind && kind !== "host" && fibers.has(id)) return id
+        }
+        return
+      }
     },
     // A node's name and its top-level DOM elements (itself, for a host node).
     find(id: number) {

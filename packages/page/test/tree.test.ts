@@ -478,7 +478,7 @@ function Counter() {
   return h(
     React.Fragment,
     null,
-    h("button", null, "Count"),
+    h("button", null, h("span", null, "Count")),
     count % 2 === 1 && h(Clicked),
   )
 }
@@ -486,7 +486,8 @@ function Page() {
   return h(React.Fragment, null, h("p", null, "v"), h(Counter))
 }
 
-test("find gives a node's name and top-level DOM elements", async () => {
+// Page rendered (Clicked mounted), walked by a fresh tree.
+async function mountPage() {
   const container = document.createElement("div")
   const root = createRoot(container)
   roots.push(root)
@@ -503,12 +504,16 @@ test("find gives a node's name and top-level DOM elements", async () => {
         container,
     )
   if (!fiberRoot) throw new Error("no fiber root")
-
   const tree = createTree()
   const ops: TreeOp[] = []
   tree.full(fiberRoot, 1, ops)
   const id = (name: string) =>
     adds(ops).find((op) => op.name === name)?.id as number
+  return { container, root, fiberRoot, tree, id }
+}
+
+test("find gives a node's name and top-level DOM elements", async () => {
+  const { container, fiberRoot, tree, id } = await mountPage()
   const button = container.querySelector("button")
   const p = container.querySelector("p")
   expect(tree.find(id("Counter"))).toEqual({
@@ -524,4 +529,19 @@ test("find gives a node's name and top-level DOM elements", async () => {
   tree.commit(fiberRoot, 1, [])
   expect(tree.find(id("Clicked"))).toBeUndefined()
   expect(tree.find(id("Counter"))?.elements).toEqual([button])
+})
+
+test("owner gives the component that owns a DOM element", async () => {
+  const { container, root, fiberRoot, tree, id } = await mountPage()
+  const button = container.querySelector("button") as Element
+  expect(tree.owner(button)).toBe(id("Counter"))
+  expect(tree.owner(container.querySelector("span") as Element)).toBe(
+    id("Counter"),
+  )
+  expect(tree.owner(container.querySelector("p") as Element)).toBe(id("Page"))
+  expect(tree.owner(document.createElement("div"))).toBeUndefined()
+  await React.act(() => root.unmount())
+  roots.splice(roots.indexOf(root), 1)
+  tree.commit(fiberRoot, 1, [])
+  expect(tree.owner(button)).toBeUndefined()
 })
