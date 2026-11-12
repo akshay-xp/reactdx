@@ -3,6 +3,7 @@ import { after, before, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
 import type { BrowserName } from "./launch.ts"
 import { type PanelText, panelFor, parseCopies, until } from "./panel-text.ts"
+import { overlayPage, waitForOverlays } from "./shadows.ts"
 
 const name = process.env.E2E_BROWSER as BrowserName
 const skip =
@@ -56,6 +57,27 @@ test("a pick selects the clicked component and doesn't click the page", {
       ),
       false,
     )
+  } finally {
+    await browser.close()
+  }
+})
+
+test("Escape cancels the picker and its highlight", { skip }, async () => {
+  const { browser, page, panel } = await overlayPage(name, URL_18)
+  try {
+    await pickerOn(panel)
+    await page.hover("[data-testid=counter]")
+    await waitForOverlays(page, 1)
+    await page.keyboard.press("Escape")
+    await waitForOverlays(page, 0)
+    assert.equal(
+      await poll(
+        () => panel.pressed(PICK),
+        (p) => !p,
+      ),
+      false,
+    )
+    assert.equal(await panel.selected(), undefined)
   } finally {
     await browser.close()
   }
