@@ -1,4 +1,4 @@
-import type { Container, Value } from "@reactdx/messages"
+import type { Container, HookValue, Value } from "@reactdx/messages"
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import type { InspectorStore } from "./inspection"
 import { BADGES, TRIANGLE } from "./TreeView"
@@ -142,6 +142,30 @@ export function Inspector(props: {
             <div class="overflow-y-auto">
               {section("Props", props.inspector.data()?.props)}
               {section("State", props.inspector.data()?.state)}
+              <Show
+                when={
+                  props.inspector.data()?.hooks?.length ||
+                  props.inspector.data()?.hooksError
+                }
+              >
+                <Section
+                  name="Hooks"
+                  open={!collapsed().has("Hooks")}
+                  onToggle={() => toggle("Hooks")}
+                >
+                  <Show when={props.inspector.data()?.hooksError}>
+                    {(error) => (
+                      <p class="pl-6 text-error">{`Couldn't read hooks: ${error()}`}</p>
+                    )}
+                  </Show>
+                  <HookRows
+                    inspector={props.inspector}
+                    hooks={props.inspector.data()?.hooks ?? []}
+                    path="Hooks"
+                    depth={0}
+                  />
+                </Section>
+              </Show>
             </div>
           </div>
         )}
@@ -220,6 +244,100 @@ function Children(props: {
   )
 }
 
+// Hooks in call order. A custom hook opens to the hooks it called; a hook with
+// nothing to show (an effect without deps) is just its name.
+function HookRows(props: {
+  inspector: InspectorStore
+  hooks: HookValue[]
+  path: string
+  depth: number
+}) {
+  return (
+    <For each={props.hooks}>
+      {(hook, index) => {
+        const path = () => `${props.path}.${index()}`
+        const open = () => props.inspector.isOpen(path())
+        return (
+          <Switch>
+            <Match when={hook.hooks}>
+              {(hooks) => (
+                <>
+                  <div
+                    data-testid="value"
+                    class="flex items-center whitespace-nowrap pr-2"
+                    style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
+                  >
+                    <Toggle
+                      open={open()}
+                      onClick={() =>
+                        open()
+                          ? props.inspector.close(path())
+                          : props.inspector.open(path())
+                      }
+                    />
+                    <span class="text-syntax-key">
+                      {hook.value === undefined ? hook.name : `${hook.name}:`}
+                    </span>
+                    <Show when={hook.value !== undefined}>
+                      {" "}
+                      <span class={`truncate ${tone(hook.value as Value)}`}>
+                        {previewText(hook.value as Value)}
+                      </span>
+                    </Show>
+                  </div>
+                  <Show when={open()}>
+                    <HookRows
+                      inspector={props.inspector}
+                      hooks={hooks()}
+                      path={path()}
+                      depth={props.depth + 1}
+                    />
+                  </Show>
+                </>
+              )}
+            </Match>
+            <Match when={hook.value !== undefined}>
+              <ValueRow
+                inspector={props.inspector}
+                entry={{ name: hook.name, value: hook.value as Value }}
+                path={path()}
+                depth={props.depth}
+              />
+            </Match>
+            <Match when={hook.value === undefined}>
+              <div
+                data-testid="value"
+                class="whitespace-nowrap pr-2 text-syntax-key"
+                style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
+              >
+                {hook.name}
+              </div>
+            </Match>
+          </Switch>
+        )
+      }}
+    </For>
+  )
+}
+
+// Opens or closes a value or custom hook in place (the tree's triangle).
+function Toggle(props: { open: boolean; onClick: () => void }) {
+  return (
+    <span class="flex w-3 shrink-0 justify-center">
+      <button
+        type="button"
+        data-testid="value-toggle"
+        aria-label={props.open ? "Collapse" : "Expand"}
+        aria-expanded={props.open}
+        class="flex h-3 w-3 items-center justify-center text-muted"
+        onClick={() => props.onClick()}
+      >
+        <span style={TRIANGLE} classList={{ "rotate-90": props.open }} />
+      </button>
+    </span>
+  )
+}
+
 function ValueRow(props: {
   inspector: InspectorStore
   entry: Entry
@@ -259,20 +377,9 @@ function ValueRow(props: {
         class="flex items-center whitespace-nowrap pr-2"
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
       >
-        <span class="flex w-3 shrink-0 justify-center">
-          <Show when={openable()}>
-            <button
-              type="button"
-              data-testid="value-toggle"
-              aria-label={open() ? "Collapse" : "Expand"}
-              aria-expanded={open()}
-              class="flex h-3 w-3 items-center justify-center text-muted"
-              onClick={toggle}
-            >
-              <span style={TRIANGLE} classList={{ "rotate-90": open() }} />
-            </button>
-          </Show>
-        </span>
+        <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>
+          <Toggle open={open()} onClick={toggle} />
+        </Show>
         <span class="text-syntax-key">
           {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
         </span>

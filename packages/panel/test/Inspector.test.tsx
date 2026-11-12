@@ -204,3 +204,49 @@ test("an open value stays open across a re-send", () => {
   send("Grace")
   expect(rows(container)).toEqual(['user: {name: "Grace"}', 'name: "Grace"'])
 })
+
+const hooks = [
+  { name: "State", value: 0 },
+  { name: "useCart", value: "2 items", hooks: [{ name: "State", value: 2 }] },
+  { name: "Effect" },
+]
+
+test("Hooks list each hook; custom hooks open to theirs", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({}), hooks }))
+  expect(sections(container)).toEqual(["Hooks"])
+  expect(rows(container)).toEqual(["State: 0", 'useCart: "2 items"', "Effect"])
+  fireEvent.click(toggle(container, "useCart") as Element)
+  expect(rows(container)).toEqual([
+    "State: 0",
+    'useCart: "2 items"',
+    "State: 2",
+    "Effect",
+  ])
+  inspector.receive(inspected(3, { props: object({}), hooks }))
+  expect(rows(container)).toContain("State: 2")
+})
+
+test("a hook's object value opens like a prop", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      hooks: [{ name: "Ref", value: object({ a: 1 }, { id: 4 }) }],
+    }),
+  )
+  fireEvent.click(toggle(container, "Ref") as Element)
+  expect(rows(container)).toEqual(["Ref: {a: 1}", "a: 1"])
+})
+
+test("hooks that couldn't be read say why", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, { props: object({}), hooks: [], hooksError: "boom" }),
+  )
+  expect(sections(container)).toEqual(["Hooks"])
+  expect(container.textContent).toContain("Couldn't read hooks: boom")
+})
