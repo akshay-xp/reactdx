@@ -1,6 +1,7 @@
 // Describes page values for the panel (docs/page.md, Values): JSON-safe, lazy past
 // MAX_DEPTH, paged past PAGE, and without running app code (getters aren't called).
 const MAX_STRING = 1000
+const MAX_NAME = 256
 const MAX_DEPTH = 2
 const PAGE = 100
 
@@ -14,8 +15,15 @@ function number(value: number) {
   return value
 }
 
-const className = (value: object): string | null =>
-  Object.getPrototypeOf(value)?.constructor?.name ?? null
+const bounded = (value: string, max = MAX_STRING) => value.slice(0, max)
+const name = (value: string) => bounded(value, MAX_NAME)
+const keyName = (key: unknown) =>
+  typeof key === "string" ? name(key) : (key ?? null)
+
+const className = (value: object): string | null => {
+  const found = Object.getPrototypeOf(value)?.constructor?.name
+  return typeof found === "string" ? name(found) : null
+}
 
 // One page, taken by iterating, so a 10k Map isn't copied to send 100 entries.
 function pageOf<T>(iterable: Iterable<T>, offset: number) {
@@ -36,9 +44,11 @@ const REACT_ELEMENT = new Set([
 
 type Named = { displayName?: string; name?: string }
 const elementName = (type: unknown) =>
-  typeof type === "string"
-    ? type
-    : ((type as Named)?.displayName ?? (type as Named)?.name ?? "Anonymous")
+  name(
+    typeof type === "string"
+      ? type
+      : ((type as Named)?.displayName ?? (type as Named)?.name ?? "Anonymous"),
+  )
 
 // Values better summarized than walked: nothing to expand, so no id.
 function leaf(value: object) {
@@ -46,24 +56,28 @@ function leaf(value: object) {
     return value instanceof Element
       ? {
           type: "element",
-          tag: value.tagName.toLowerCase(),
-          id: value.id,
+          tag: name(value.tagName.toLowerCase()),
+          id: bounded(value.id),
           // An SVG element's className is an SVGAnimatedString.
-          className: value.getAttribute("class") ?? "",
+          className: bounded(value.getAttribute("class") ?? ""),
         }
-      : { type: "node", nodeName: value.nodeName }
+      : { type: "node", nodeName: name(value.nodeName) }
   const element = value as { $$typeof?: unknown; type?: unknown; key?: unknown }
   if (REACT_ELEMENT.has(element.$$typeof as symbol))
     return {
       type: "react-element",
       name: elementName(element.type),
-      key: element.key,
+      key: keyName(element.key),
     }
   if (value instanceof Date) return { type: "date", iso: value.toISOString() }
   if (value instanceof RegExp)
-    return { type: "regexp", source: value.source, flags: value.flags }
+    return { type: "regexp", source: bounded(value.source), flags: value.flags }
   if (value instanceof Error)
-    return { type: "error", name: value.name, message: value.message }
+    return {
+      type: "error",
+      name: name(String(value.name)),
+      message: bounded(String(value.message)),
+    }
   if (value instanceof Promise) return { type: "promise" }
   if (value instanceof ArrayBuffer)
     return { type: "array-buffer", byteLength: value.byteLength }
@@ -121,6 +135,9 @@ function preview(value: object) {
     size: keysOf(value).length,
   }
 }
+
+const messageOf = (error: unknown) =>
+  String(error instanceof Error ? error.message : error)
 
 export function createInspector() {
   const ids = new WeakMap<object, number>()
@@ -211,11 +228,17 @@ export function createInspector() {
             }
           : value
       case "function":
-        return { type: "function", name: value.name }
+        return { type: "function", name: name(value.name) }
       case "symbol":
-        return { type: "symbol", description: value.description }
+        return { type: "symbol", description: keyName(value.description) }
       case "object":
-        return value === null ? null : object(value, depth, offset)
+        if (value === null) return null
+        // A Proxy can't be detected, so its traps run, and may throw.
+        try {
+          return object(value, depth, offset)
+        } catch (error) {
+          return { type: "unreadable", message: bounded(messageOf(error)) }
+        }
       default:
         return value
     }

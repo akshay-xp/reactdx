@@ -268,3 +268,30 @@ test("typed arrays are paged, buffers and weak collections summarized", () => {
   expect(serialize(new WeakMap())).toEqual({ type: "weak-map" })
   expect(serialize(new WeakSet())).toEqual({ type: "weak-set" })
 })
+
+test("a value that throws while read is unreadable, not fatal", () => {
+  const { serialize } = createInspector()
+  const trap = () => {
+    throw new Error("trap")
+  }
+  const result = serialize({
+    ok: 1,
+    bad: new Proxy({}, { get: trap }),
+    keys: new Proxy({}, { ownKeys: trap }),
+  })
+  expect(at(result, "props")).toEqual({
+    ok: 1,
+    bad: { type: "unreadable", message: "trap" },
+    keys: { type: "unreadable", message: "trap" },
+  })
+})
+
+test("names and messages are bounded", () => {
+  const { serialize } = createInspector()
+  const named = { [`f${"x".repeat(299)}`]: () => {} }
+  const fn = Object.values(named)[0]
+  expect(at(serialize(fn), "name")).toHaveLength(256)
+  expect(at(serialize(new Error("m".repeat(2000))), "message")).toHaveLength(
+    1000,
+  )
+})
