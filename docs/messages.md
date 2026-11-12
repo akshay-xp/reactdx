@@ -13,6 +13,24 @@ Message types and validators shared by the hook script, the relay content script
 4. The relay answers `get-state` with its current state and, if it asked for the agent, posts `GET_SNAPSHOT` (`{ source: "reactdx-relay", type: "get-snapshot" }`) so the agent sends fresh counts.
 5. The agent (`docs/page.md`) posts `snapshotMessage(roots)` at start, at most every 100 ms after commits, and on `get-snapshot`.
 
+## Tree flow (M3 #25)
+
+The tree streams only while a panel watches the tab. Closing the relay's `tree` port is the only unwatch signal, so the background still keeps no tree state.
+
+1. **Start.** A panel's `subscribe` reaches the relay as `get-state`; if the relay asked for the agent, it opens a `runtime.connect({ name: "tree" })` port and posts `WATCH` to the agent. If it already watches, it posts `WATCH` again: a subscribing panel starts empty and needs the whole tree.
+2. **A document that loads under an open panel** (DevTools opened before load, navigation, reload, bfcache restore): the background replies to each `state` with `StateReply` `{ watch: panels.has(tabId) }`; `watch: true` starts a watch (a no-op if already watching, since `state` arrives on every snapshot).
+3. **Agent injected after the watch:** the relay re-posts `WATCH` on the first snapshot it sees.
+4. **Batches:** the relay forwards whatever passes `parseTreeBatch` to its tree port, without storing it (checked before `parsePageMessage`, which doesn't dispatch `tree`). The background keeps `trees: Map<tabId, Port>` (top frame only; a new port replaces the old) and forwards each batch to the tab's panel ports; with no panel left it disconnects the tree port.
+5. **Resync:** the panel's store (`docs/panel.md`) reports a seq gap or an unknown id; the panel sends `ResyncMessage` `{ type: "resync", tabId }` over its port, the background posts `{ type: "resync" }` to the tree port, and the relay re-posts `WATCH`.
+6. **Stop:** when the tab's last panel port closes, the background disconnects the tree port. The relay posts `UNWATCH` whenever its port disconnects (that, the background stopping, or bfcache), so the agent stops diffing.
+
+7. **Highlight** (M3 #28): when the panel's hovered row changes (`docs/panel.md`), it sends `HighlightMessage` `{ type: "highlight", tabId, id }` or `ClearHighlightMessage` `{ type: "clear-highlight", tabId }` over its port. The background strips `tabId` and posts the command to the tab's tree port without reading it. The relay keeps only what `parseTreeCommand` accepts and posts `highlight(id)` or `CLEAR_HIGHLIGHT` to the agent (`docs/page.md`, "Highlight"). Closing the panel needs no command: the unwatch that follows hides the overlay.
+
+8. **Picker** (M3 #29): the panel's toggle sends `PickMessage` `{ type: "pick-start" | "pick-stop", tabId }`, forwarded like highlight. The agent's result, `PickedMessage` `{ source: "reactdx", type: "picked", id }` (`id` null: Escape, or a click on nothing React owns), passes the relay's `parsePicked` (checked before `parsePageMessage`, with `parseTreeBatch`) and goes over the tree port; the background forwards tree-port messages to the tab's panels as for batches. The panel applies it with `tree.picked(id)`.
+
+- **bfcache:** Chrome closes the port when the page enters bfcache but delivers the disconnect only after the restore, after `pageshow` already tried to watch. So the relay closes its own port on a persisted `pagehide`.
+- **Forged commands:** a page can post `UNWATCH` itself and stop its own tree updates (it shares the world with the hook, as in M2). Forged `WATCH` only causes a resync. `e2e/forged.test.ts` leaves `UNWATCH` out.
+
 - The background holds only open panel ports, never page data: the relay owns state per document, so a sleeping service worker loses nothing and nothing stale survives a navigation. `sendMessage` wakes the worker.
 - A page without React sends nothing on its own: the manifest's default icon and title already say "no React", and both browsers reset per-tab action state on a new document (Chrome probed: reset on cross-document navigation, kept on `pushState`/hash changes). It only answers `get-state` when a panel opens. e2e checks the service worker receives no message on a non-React page.
 
@@ -25,6 +43,8 @@ Nothing lives in the background, so every scenario is the panel or the relay ask
 | Background stopped (idle service worker or event page) | The panel's port drops. Per-tab toolbar state is the browser's, so it survives.         | The panel reconnects and subscribes; the background's `get-state` reaches the relay, which also asks the agent for a fresh snapshot. The relay's next `sendMessage` wakes the background on its own too.                        |
 | Reload or navigation                                   | New document: new relay, new agent (counts start at 0); the browser resets the toolbar. | The panel's `onNavigated` clears and subscribes; the new relay's first `state` sets the toolbar and fills the panel. A page without React sends nothing, so the panel shows "No React on this page" and the toolbar stays grey. |
 | bfcache restore                                        | Same document, state intact, but no scripts run and the browser reset the toolbar.      | The relay resends its state on `pageshow` with `persisted` (when it has renderers). The panel's `onNavigated` also subscribes again.                                                                                            |
+
+The tree follows the same paths (Tree flow above): the background stopping or bfcache closes the relay's tree port, so the agent unwatches; the panel's subscribe (or the state reply, for a new or restored document) starts a new watch, whose first batch is a full resync. `e2e/reconnect.test.ts` checks the tree and a click's change in every scenario.
 
 ## Page messages (`parsePageMessage(data)`)
 
@@ -44,6 +64,48 @@ Nothing lives in the background, so every scenario is the panel or the relay ask
 
 **Trust:** the page shares the MAIN world with the hook, so any page script can post a message that passes. Validation guarantees shape and size, not origin. A forged message can at worst change that tab's icon, title and panel list (or ask for the agent, which does nothing without a hook record); the panel renders page data as text only. `e2e/forged.test.ts` posts malformed, oversized (1,000 roots) and forged messages before and after React loads, in both browsers.
 
+## Tree batches (`parseTreeBatch(data)`; M3 #24)
+
+The agent's component tree (`docs/page.md`, "Tree"), posted only while watched ("Tree flow" above). The relay checks `parseTreeBatch` first; `parsePageMessage` doesn't dispatch `tree`.
+
+- `WATCH` / `UNWATCH` (`{ source: "reactdx-relay", type: "watch" | "unwatch" }`): content script to agent, through the page.
+- `TreeBatchMessage = { source: "reactdx", type: "tree", seq, ops: TreeOp[] }`, built with `treeBatch(seq, ops)`. `seq` restarts at 1 on every watch, whose first batch starts with `reset`.
+- `TreeOp`:
+  - `{ op: "reset" }`
+  - `{ op: "add", id, parentId, rootId, kind, name, key, index }`: `parentId` 0 is the root's top level; `index` is the position among the parent's children once earlier ops apply.
+  - `{ op: "remove", id }`: removes descendants too.
+  - `{ op: "reorder", rootId, parentId, children }`: the parent's full child id list.
+  - `{ op: "rename", id, name }`
+
+Any invalid op drops the whole batch (a partial batch would desync the mirror). Extra keys are stripped.
+
+| Field               | Accepted                                      |
+| ------------------- | --------------------------------------------- |
+| `seq`               | positive safe integer                         |
+| `ops`               | array of 1 to 2,000 (`MAX_OPS`)               |
+| `id`, `rootId`      | positive safe integer                         |
+| `parentId`, `index` | non-negative safe integer                     |
+| `kind`              | a `TreeKind` (`docs/page.md`)                 |
+| `name`              | string, at most 256 chars (`MAX_TREE_STRING`) |
+| `key`               | `null` or string, at most 256 chars           |
+| `children`          | array of at most 10,000 positive ids          |
+
+## Tree port commands (`parseTreeCommand(data)`; M3 #28)
+
+Background to the relay's tree port. Everything the relay acts on passes through it, so a malformed command never reaches the page.
+
+| Command                       | Relay posts to the agent                                              |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `{ type: "resync" }`          | `WATCH`                                                               |
+| `{ type: "highlight", id }`   | `highlight(id)`: `{ source: "reactdx-relay", type: "highlight", id }` |
+| `{ type: "clear-highlight" }` | `CLEAR_HIGHLIGHT`                                                     |
+| `{ type: "pick-start" }`      | `PICK_START`                                                          |
+| `{ type: "pick-stop" }`       | `PICK_STOP`                                                           |
+
+- `id`: positive safe integer. Anything else (no id, a string, 0, a fraction, an unsafe integer, an unknown type, a non-object) is dropped. Extra keys are stripped.
+- `parsePicked(data)`: `source: "reactdx"`, `type: "picked"`, `id` a positive safe integer or `null`; anything else dropped, extra keys stripped. Built with `picked(id)`.
+- `packages/messages/test/commands.test.ts`.
+
 ## Toolbar (`toolbarState(renderers)`, `toolbarIcons(icon)`)
 
 | Renderers                        | Icon          | Title                                                                         |
@@ -57,7 +119,7 @@ Nothing lives in the background, so every scenario is the panel or the relay ask
 
 ## Key files
 
-- `packages/messages/src/index.ts`, `packages/messages/test/messages.test.ts`.
+- `packages/messages/src/index.ts`, `packages/messages/test/messages.test.ts`, `packages/messages/test/tree.test.ts`, `packages/messages/test/commands.test.ts`.
 - `apps/extension/entrypoints/hook.content.ts`, `relay.content.ts`, `background.ts`.
 - `e2e/toolbar.test.ts`, `e2e/toolbar.ts` (`docs/e2e.md`).
 

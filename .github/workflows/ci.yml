@@ -84,4 +84,6 @@ jobs:
           path: e2e/.rdt
           key: rdt-${{ hashFiles('e2e/rdt.lock.json') }}
       # DevTools pages only exist in a headed browser.
-      - run: xvfb-run -a pnpm test:e2e --browser=${{ matrix.browser }} --fixture=${{ matrix.fixture }}
+      # xvfb-run's default screen is 640x480: too short for the panel's virtual tree
+      # to render a whole fixture's rows.
+      - run: xvfb-run -a -s "-screen 0 1280x1024x24" pnpm test:e2e --browser=${{ matrix.browser }} --fixture=${{ matrix.fixture }}

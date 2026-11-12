@@ -1,11 +1,17 @@
 import type { RendererView } from "@reactdx/messages"
-import { For, Match, Switch } from "solid-js"
+import { For, Match, Show, Switch } from "solid-js"
+import { Toolbar } from "./Toolbar"
+import { TreeView } from "./TreeView"
+import type { TreeStore } from "./tree"
 
 const build = (bundleType: number) =>
   bundleType === 1 ? "development" : "production"
 
 // Page data is only ever a text node: never markup.
-export function ConnectionList(props: { renderers: RendererView[] }) {
+export function ConnectionList(props: {
+  renderers: RendererView[]
+  tree: TreeStore
+}) {
   const development = () => props.renderers.some((r) => r.bundleType === 1)
   return (
     <Switch>
@@ -20,6 +26,7 @@ export function ConnectionList(props: { renderers: RendererView[] }) {
         </p>
       </Match>
       <Match when={development()}>
+        <Toolbar tree={props.tree} />
         <ul>
           <For each={props.renderers}>
             {(renderer) => (
@@ -39,6 +46,9 @@ export function ConnectionList(props: { renderers: RendererView[] }) {
                         <span class="pl-2 text-muted">
                           {root.commits} commits
                         </span>
+                        <Show when={renderer.bundleType === 1}>
+                          <TreeView tree={props.tree} rootId={root.id} />
+                        </Show>
                       </li>
                     )}
                   </For>

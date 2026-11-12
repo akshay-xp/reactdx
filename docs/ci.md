@@ -13,7 +13,7 @@ All on `ubuntu-latest`, Node 24, via `.github/actions/setup`.
 | `unit` × `react-18`, `react-19`, `panel`                  | `pnpm test:unit --project <project>`                                                                                 | none     |
 | `build` × `chrome`, `firefox`                             | `pnpm --filter @reactdx/extension build:<browser>`                                                                   | none     |
 | `check`                                                   | `pnpm build`, `pnpm check:bundles`, `pnpm test:check`, `pnpm --filter @reactdx/extension test`, `pnpm test:fixtures` | chrome   |
-| `e2e` × `chrome`, `firefox` × `18`, `19`, `next`, `multi` | `xvfb-run -a pnpm test:e2e --browser=<b> --fixture=<f>`                                                              | that one |
+| `e2e` × `chrome`, `firefox` × `18`, `19`, `next`, `multi` | `xvfb-run -a -s "-screen 0 1280x1024x24" pnpm test:e2e --browser=<b> --fixture=<f>`                                  | that one |
 
 - `check` carries the planted-violation tests (`docs/check.md`), the build test (`docs/extension.md`) and the fixture smoke test, whose React-only-in-fixtures guard must run in CI too. `lint` and `tsc` are separate jobs rather than `pnpm check`, so they don't run twice.
 - `multi` is a fourth e2e column beyond the spec's {18, 19, Next}: the two-React-copies page is an M1 fixture and would otherwise never run in CI.
@@ -28,7 +28,7 @@ Input `browsers`: `none` (default), `chrome`, or `firefox`.
 - With browsers: `~/.cache/puppeteer` cached on `puppeteer-<os>-<browsers>-<hash of pnpm-lock.yaml, .puppeteerrc.cjs>`, restored before install.
 - With browsers: `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`. Ubuntu 24.04's AppArmor blocks the user namespaces Chrome's sandbox needs; this is Puppeteer's documented fix and keeps `--no-sandbox` out of the code.
 - `e2e` caches `e2e/.rdt` keyed `rdt-<hash of e2e/rdt.lock.json>`, so RDT downloads only when the lock changes. If the cache is evicted (7 days unused) after the Chrome Web Store moved past the locked build, the job fails with the `pnpm rdt:update` message.
-- e2e runs headed under `xvfb-run -a` (DevTools only exists headed; `docs/e2e.md`).
+- e2e runs headed under `xvfb-run -a` (DevTools only exists headed; `docs/e2e.md`), on a 1280x1024 screen: the default 640x480 left Firefox's docked panel so short that the virtual tree rendered only the first 14 rows of the tree page.
 
 ## Conventions (from SnapQL)
 

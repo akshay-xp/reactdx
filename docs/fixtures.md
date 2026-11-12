@@ -23,9 +23,19 @@ All but `fixture:prod` are development builds. `fixture:prod` builds into `fixtu
 - `fixtures/next` also renders `data-testid="server"` from the Server Component (`app/page.jsx`); the counter and version come from the client component (`app/Counter.jsx`).
 - `fixtures/multi` puts each root in `data-testid="root-18"` or `data-testid="root-19"`.
 
+## Clicked
+
+Every fixture's `Counter` renders a `Clicked` component (which renders nothing) on odd counts, so a click adds or removes one tree row without changing the page's text. The panel and reconnect e2e use it to prove the tree is live.
+
+## Tree page
+
+`fixtures/vite` also serves `/tree.html` (`src/tree.jsx`): one of each component kind (class, memo, forwardRef, lazy in Suspense, context provider and consumer, Profiler, an anonymous component, keyed items, Activity on React 19) inside StrictMode, plus wrappers the tree hides (fragments, text, DOM elements). It mirrors the unit `Kinds` app in `packages/page/test/tree.test.ts`; `e2e/panel.test.ts` checks the panel's names on `fixture:19`.
+
 ## Bench page
 
-`fixtures/vite` also serves `/bench.html` (`src/bench.jsx`): 10,000 `Cell` components (`data-testid="cell"`) and `window.__bench(mode, iterations)`, which times `flushSync` commits (`all` updates every cell, `one` the first) and returns the durations in ms. Used by `pnpm bench:hook-cost` (`docs/bench.md`); checked by `pnpm test:fixtures`.
+`fixtures/vite` also serves `/bench.html` (`src/bench.jsx`): a `Bench` component over 10,000 `Cell` components (`data-testid="cell"`) and `window.__bench(mode, iterations)`, which times `flushSync` commits (`all` updates every cell, `one` the first) and returns the durations in ms. Used by `pnpm bench:hook-cost` (`docs/bench.md`) and `e2e/perf.test.ts`; checked by `pnpm test:fixtures`.
+
+- `[data-testid=extra]` button: mounts or unmounts `Extra` (renders `[data-testid=extra-on]`) before the cells, for the panel's commit-latency test. The cells are built once at module level, so the toggle doesn't re-render them.
 
 ## How each fixture picks its React
 

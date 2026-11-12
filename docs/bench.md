@@ -8,7 +8,7 @@ Per-commit cost of a page-side hook on a 10,000-component tree. Moved from `spik
 
 ## What it measures
 
-- Page: `fixtures/vite/bench.html` (`src/bench.jsx`): 10,000 `Cell` components. `window.__bench(mode, n)` times `n` commits with `performance.now()` around `flushSync`; `all` updates every cell, `one` updates the first.
+- Page: `fixtures/vite/bench.html` (`src/bench.jsx`): 10,000 `Cell` components (under a `Bench` component since M3 #26). `window.__bench(mode, n)` times `n` commits with `performance.now()` around `flushSync`; `all` updates every cell, `one` updates the first.
 - Per case and mode: 10 warmup commits, then 50 measured; median and nearest-rank p95 (`stats.ts`).
 - Cases, each in a fresh headed persistent context with background throttling off:
 

@@ -46,6 +46,8 @@ const isString = (value: unknown, max: number): value is string =>
 const isCount = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) >= 0
 
+const isId = (value: unknown): value is number => isCount(value) && value >= 1
+
 const isRendererId = (value: unknown): value is number =>
   isCount(value) && value >= 1 && value <= MAX_RENDERERS
 
@@ -74,16 +76,127 @@ function parseSnapshot(message: Record<string, unknown>) {
   for (const root of roots) {
     if (typeof root !== "object" || root === null) return
     const { rendererId, id, commits } = root as Record<string, unknown>
-    if (
-      !isRendererId(rendererId) ||
-      !isCount(id) ||
-      id < 1 ||
-      !isCount(commits)
-    )
-      return
+    if (!isRendererId(rendererId) || !isId(id) || !isCount(commits)) return
     parsed.push({ rendererId, id, commits })
   }
   return snapshotMessage(parsed)
+}
+
+export type TreeKind =
+  | "function"
+  | "class"
+  | "forwardRef"
+  | "memo"
+  | "lazy"
+  | "suspense"
+  | "provider"
+  | "consumer"
+  | "profiler"
+  | "activity"
+  | "host"
+
+// parentId 0 is the root's top level; removing a node removes its descendants.
+export type TreeOp =
+  | { op: "reset" }
+  | {
+      op: "add"
+      id: number
+      parentId: number
+      rootId: number
+      kind: TreeKind
+      name: string
+      key: string | null
+      index: number
+    }
+  | { op: "remove"; id: number }
+  | { op: "reorder"; rootId: number; parentId: number; children: number[] }
+  | { op: "rename"; id: number; name: string }
+
+export type TreeBatchMessage = {
+  source: "reactdx"
+  type: "tree"
+  seq: number
+  ops: TreeOp[]
+}
+
+export const treeBatch = (seq: number, ops: TreeOp[]): TreeBatchMessage => ({
+  source: "reactdx",
+  type: "tree",
+  seq,
+  ops,
+})
+
+export const MAX_OPS = 2000
+export const MAX_TREE_STRING = 256
+const MAX_CHILDREN = 10000
+
+const TREE_KINDS = new Set<unknown>([
+  "function",
+  "class",
+  "forwardRef",
+  "memo",
+  "lazy",
+  "suspense",
+  "provider",
+  "consumer",
+  "profiler",
+  "activity",
+  "host",
+] satisfies TreeKind[])
+
+// Any invalid op drops the whole batch: a partial batch would desync the panel's mirror.
+export function parseTreeBatch(data: unknown): TreeBatchMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, seq, ops } = data as Record<string, unknown>
+  if (source !== "reactdx" || type !== "tree" || !isId(seq)) return
+  if (!Array.isArray(ops) || ops.length < 1 || ops.length > MAX_OPS) return
+  const parsed: TreeOp[] = []
+  for (const op of ops) {
+    const result = parseTreeOp(op)
+    if (!result) return
+    parsed.push(result)
+  }
+  return treeBatch(seq, parsed)
+}
+
+function parseTreeOp(data: unknown): TreeOp | undefined {
+  if (typeof data !== "object" || data === null) return
+  const o = data as Record<string, unknown>
+  switch (o.op) {
+    case "reset":
+      return { op: "reset" }
+    case "add": {
+      const { id, parentId, rootId, kind, name, key, index } = o
+      if (!isId(id) || !isCount(parentId) || !isId(rootId)) return
+      if (!isCount(index) || !TREE_KINDS.has(kind)) return
+      if (!isString(name, MAX_TREE_STRING)) return
+      if (key !== null && !isString(key, MAX_TREE_STRING)) return
+      return {
+        op: "add",
+        id,
+        parentId,
+        rootId,
+        kind: kind as TreeKind,
+        name,
+        key,
+        index,
+      }
+    }
+    case "remove":
+      return isId(o.id) ? { op: "remove", id: o.id } : undefined
+    case "reorder": {
+      const { rootId, parentId, children } = o
+      if (!isId(rootId) || !isCount(parentId)) return
+      if (!Array.isArray(children) || children.length > MAX_CHILDREN) return
+      if (!children.every(isId)) return
+      return { op: "reorder", rootId, parentId, children: [...children] }
+    }
+    case "rename": {
+      const { id, name } = o
+      if (!isId(id) || !isString(name, MAX_TREE_STRING)) return
+      return { op: "rename", id, name }
+    }
+  }
 }
 
 export type ToolbarIcon = "none" | "development" | "production"
@@ -106,8 +219,81 @@ export type GetStateMessage = { type: "get-state" }
 // Panel to background, over its port: send me this tab's state.
 export type SubscribeMessage = { type: "subscribe"; tabId: number }
 
+// Panel to background (with the tab), then background to the relay's tree port:
+// the mirror fell out of step, send the whole tree again.
+export type ResyncMessage = { type: "resync"; tabId: number }
+
+// Background's reply to a TabStateMessage: a panel is open on this tab.
+export type StateReply = { watch: boolean }
+
 // Content script to agent, through the page: post a fresh snapshot.
 export const GET_SNAPSHOT = { source: "reactdx-relay", type: "get-snapshot" }
+
+// Content script to agent: a panel is watching, so track the tree (and resync), or stop.
+export const WATCH = { source: "reactdx-relay", type: "watch" }
+export const UNWATCH = { source: "reactdx-relay", type: "unwatch" }
+
+// Panel to background over its port: highlight a tree node on the page, or stop.
+export type HighlightMessage = { type: "highlight"; tabId: number; id: number }
+export type ClearHighlightMessage = { type: "clear-highlight"; tabId: number }
+// Panel to background: start or stop the element picker on the page.
+export type PickMessage = { type: "pick-start" | "pick-stop"; tabId: number }
+
+// Background to the relay's tree port. The relay checks each one before acting:
+// a malformed command never reaches the page.
+export type TreeCommand =
+  | { type: "resync" }
+  | { type: "highlight"; id: number }
+  | { type: "clear-highlight" }
+  | { type: "pick-start" }
+  | { type: "pick-stop" }
+
+// Commands with no arguments.
+const BARE_COMMANDS = new Set<unknown>([
+  "resync",
+  "clear-highlight",
+  "pick-start",
+  "pick-stop",
+])
+
+export function parseTreeCommand(data: unknown): TreeCommand | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { type, id } = data as Record<string, unknown>
+  if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
+  if (type === "highlight" && isId(id)) return { type, id }
+}
+
+// Content script to agent: draw or remove the highlight overlay.
+export const highlight = (id: number) => ({
+  source: "reactdx-relay",
+  type: "highlight",
+  id,
+})
+export const CLEAR_HIGHLIGHT = {
+  source: "reactdx-relay",
+  type: "clear-highlight",
+}
+export const PICK_START = { source: "reactdx-relay", type: "pick-start" }
+export const PICK_STOP = { source: "reactdx-relay", type: "pick-stop" }
+
+// Agent to panel (relay, tree port, background): the picked component's id, or
+// null when picking ended without one (Escape, or a click on nothing React owns).
+export type PickedMessage = {
+  source: "reactdx"
+  type: "picked"
+  id: number | null
+}
+export const picked = (id: number | null): PickedMessage => ({
+  source: "reactdx",
+  type: "picked",
+  id,
+})
+export function parsePicked(data: unknown): PickedMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, id } = data as Record<string, unknown>
+  if (source !== "reactdx" || type !== "picked") return
+  if (id === null || isId(id)) return picked(id)
+}
 
 // Roots of renderers the relay hasn't seen are dropped.
 export const tabState = (

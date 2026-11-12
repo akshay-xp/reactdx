@@ -4,12 +4,65 @@ Solid UI rendered in the DevTools panel. The browser glue (`browser.devtools.*`)
 
 ## Connection list (`src/ConnectionList.tsx`, `src/Panel.tsx`)
 
-- `Panel(props: { renderers: RendererView[] })` renders `ConnectionList` in the themed `<main>`. `apps/extension/entrypoints/panel/main.tsx` connects a `runtime` port named `panel`, subscribes with `browser.devtools.inspectedWindow.tabId`, and sets a signal from each `TabStateMessage` (`docs/messages.md`).
+- `Panel(props: { renderers: RendererView[]; tree: TreeStore })` renders `ConnectionList` in the themed `<main>`. `apps/extension/entrypoints/panel/main.tsx` connects a `runtime` port named `panel`, subscribes with `browser.devtools.inspectedWindow.tabId`, sets a signal from each `TabStateMessage`, and applies each tree batch to the store (`docs/messages.md`, "Tree flow").
 - States: no renderers: "No React on this page". Only production: "Production build of React <versions>. ReactDX inspects development builds." Otherwise one `[data-testid=renderer]` per copy (`React <version> <development|production> <rendererPackageName>`) with `[data-testid=root]` rows ("Root N", "N commits", `data-commits`). Production copies are listed with their roots (Next's dev overlay) but get no agent.
+- Under each development root, a `TreeView` of its components. Production roots list no components.
 - Page data is only ever a Solid text node, never markup (unit test and `e2e/forged.test.ts` check an `<img onerror>` version renders as text).
-- `test/ConnectionList.test.tsx` (Vitest `panel` project): each state, text-only, no Tailwind palette classes.
+- `test/ConnectionList.test.tsx` (Vitest `panel` project): each state, component rows under development roots only, text-only, no Tailwind palette classes or arbitrary values (so `TreeView`'s `max-height: 80vh` is an inline style).
 - Reconnect: `main.tsx` `connect()` opens the `panel` port and subscribes; when the port drops (the background stopped), it connects again, which wakes the background and asks the relay for current state.
 - Reset: `browser.devtools.network.onNavigated` clears the list and subscribes again on the current port, so a new document shows only what it reports ("No React on this page" until its React connects).
+
+## Tree store (`createTreeStore()`, `src/tree.ts`; M3 #25)
+
+The page's component tree, rebuilt from the agent's ops (`docs/messages.md`, "Tree batches"). Exported as `@reactdx/panel/tree`.
+
+- `apply(batch)` applies `reset`, `add`, `remove` (with descendants), `reorder` and `rename`, and bumps a Solid `version` signal. It returns true when the panel must ask for a resync: the first time a batch has the wrong `seq` or an op names an unknown id (an `add` under an unknown parent, a `reorder` of one, a `remove` or `rename` of an unknown node). After that it ignores batches until one starting with `reset`, so a burst of bad batches asks once.
+- `rows(rootId)`: `Row = { id, name, depth, kind, key, expandable, expanded, match }`, depth-first. Host (DOM element) nodes are hidden unless `showHosts()`: their children take their place and depth. `expandable` means it has a visible descendant through hidden hosts. Collapsed nodes' descendants aren't listed; everything starts expanded. `match`: the node matches the search.
+- `showHosts()` / `setShowHosts(on)` (M3 #27): one visibility rule for rows, `expandable` and Left's parent. Hiding hosts clears a selected host (it has no row). Off on every panel open.
+- `toggle(id)`: collapses or expands.
+- `selected()` / `select(id)`: one selection for the panel (ids are unique per document). After each batch it's cleared only if its node is gone, so it survives commits and a resync that re-adds the id (ids persist across watches, `docs/page.md`).
+- `key(rootId, key): boolean`: moves the selection within that root's rows; true when the key is handled. A selection in another root counts as none.
+  - `ArrowUp`/`ArrowDown`: previous/next row, clamped; with none selected, the first row.
+  - `Home`/`End`: first/last row.
+  - `ArrowLeft`: collapses an expanded row, else selects the nearest non-host ancestor.
+  - `ArrowRight`: expands a collapsed row, else selects its first child; nothing on a leaf.
+- Search (M3 #27): the current match is the selection, so arrowing or clicking elsewhere and pressing Enter continues from there.
+  - `query()` / `setQuery(q)`: sets the query and selects the first match.
+  - `matches()`: ids of visible-kind nodes whose name contains the query, case-insensitive. Every root depth-first, roots in first-seen order, collapsed subtrees included. Empty query: none.
+  - `step(1 | -1)`: next or previous match, wrapping; from a non-match, the first or last.
+  - `position()`: the selection's index among the matches from 1, or 0 if it isn't one.
+  - Selecting a match (`setQuery`, `step`) also expands its ancestors, so it has a row, and TreeView scrolls it into view.
+- `hovered()` / `hover(id | undefined)` (M3 #28): the row under the pointer. `main.tsx` sends a highlight or clear-highlight command on each change (`docs/messages.md`, "Tree flow").
+- `picking()` / `setPicking(on)`, `picked(id | null)` (M3 #29): `main.tsx` sends `pick-start`/`pick-stop` whenever `picking` changes (a redundant `pick-stop` after a pick is ignored by the agent). `picked` turns picking off and, for an id the mirror has, selects and reveals it (expands ancestors; TreeView scrolls it into view). `null` or an unknown id only turns picking off.
+- `clear()`: on `onNavigated`, with the renderer list; also drops collapse state, the selection, the hover and picking. The query and DOM toggle stay.
+- `test/tree.test.ts`: rows, hidden hosts, each op, the resync rules, collapse, selection, every key, shown hosts, search, step.
+
+## Tree view (`TreeView`, `src/TreeView.tsx`, `src/virtual.ts`; M3 #26)
+
+One per development root: `TreeView(props: { tree: TreeStore; rootId: number })`.
+
+- Virtual list: a scroll container (`[data-testid=tree]`, `role="tree"`, focusable, `max-height: 80vh`) holding a spacer of `rows × ROW_HEIGHT` (20px) and only the window of rows `windowOf(scrollTop, height, count)` returns: the rows in view plus `OVERSCAN` (10) each side. `scrollTop` and `clientHeight` are read on mount, `scroll` and window `resize`. Fixed row height keeps the window arithmetic and unit-testable without layout (`test/virtual.test.ts`).
+- Rows (`[data-testid=node]`, `role="treeitem"`, `aria-level`, `aria-selected`, `aria-expanded` when expandable, `data-id`): a toggle (`[data-toggle]` area, `[data-testid=toggle]` CSS-border triangle, rotated when expanded; no text so the e2e text readers don't take it for a name), the name, a `[data-testid=badge]` for `memo`/`forwardRef`/`lazy`, and `[data-testid=key]` as one text node `key="…"`. All page data is text nodes.
+- Selected row: `bg-selected`, badge and key `text-fg` (dark `muted` on `selected` is 2.9:1).
+- Search matches: `data-match`, and the name (`[data-testid=name]`) in `text-accent`, except on the selected row (`text-fg`; accent on `selected` isn't a checked contrast pair).
+- Clicks and keys are handled once on the container: rows are recycled as the window moves, and the container holds focus. A click on an expandable row's toggle area toggles it; any other row click selects. Handled keys (`tree.key`) are `preventDefault`ed.
+- Hover: a delegated `onPointerOver` hovers the row under the pointer; `onPointerLeave` on the tree clears it. Pointer rather than mouse events because Biome's a11y rule asks for a focus counterpart to `onMouseOver`; keyboard selection doesn't highlight the page (not in M3's scope).
+- A selection change scrolls the selected row into view (End on 10,000 rows renders the last one). Only selection changes scroll, so a commit doesn't pull the view back.
+- Perf marks: `main.tsx` marks `reactdx:subscribe` on every subscribe; `TreeView` marks `reactdx:rows` each time its rows go from empty to non-empty. `e2e/perf.test.ts` reads them (`docs/e2e.md`).
+- `test/TreeView.test.tsx`: a 1,000-row tree keeps fewer than 100 rows in the DOM, badges, keys and toggles, text-only keys, click, toggle and keyboard, match marking.
+
+## Toolbar (`Toolbar`, `src/Toolbar.tsx`; M3 #27)
+
+Above the copies, only when a development copy is present (`ConnectionList`), so the no-React and production notices stay exactly as they were.
+
+Laid out like SnapQL's search bar (`~/Code/snapql/apps/extension/src/panel/search.tsx`): a `<search>` bar `h-10`, its buttons copied from SnapQL's `IconButton`.
+
+- `Pick element` icon button (`[data-testid=pick]`, crosshair icon; the name is its `aria-label` and `title`; `aria-pressed` from `picking()`, `bg-accent/20 text-accent` when on).
+
+- Search field: a rounded `bg-surface` label filling the bar (search icon, accent focus ring) around the input (`[data-testid=search]`, `aria-label="Search components"`, bound to `query()`, native cancel button hidden): input sets the query; Enter steps to the next match, Shift+Enter to the previous.
+- Inside the field, only while there's a query: the counter (`[data-testid=search-count]`, `<position> of <matches>`: "1 of 3" after typing, "0 of 0" with no matches) and a `Clear search` icon button.
+- `Show DOM elements` icon button (`[data-testid=show-dom]`, `</>` icon, the name as `aria-label` and `title`, `aria-pressed`, accent when on): `setShowHosts`. An icon rather than a labelled pill, so the search field keeps the bar's width.
+- `test/Toolbar.test.tsx`: counter, Enter and Shift+Enter, no matches, clearing, the DOM toggle, the picker button.
 
 ## Themes (`src/themes.ts`, `src/index.css`)
 
@@ -27,7 +80,7 @@ Copied from SnapQL (`~/Code/snapql/apps/extension/src/panel/themes.ts`, `index.c
   - `@theme inline` maps `--color-<token>` to `--theme-<token>`.
   - Biome needs `css.parser.tailwindDirectives` (`biome.json`).
 - Type: labels `font-sans` 12px (`text-xs`), page data `font-mono` (M2 list onwards).
-- Exports: `@reactdx/panel` (`Panel`), `@reactdx/panel/themes`, `@reactdx/panel/index.css`.
+- Exports: `@reactdx/panel` (`Panel`), `@reactdx/panel/tree`, `@reactdx/panel/themes`, `@reactdx/panel/index.css`.
 
 ## Theme source (`apps/extension/entrypoints/panel/theme.ts`, `main.tsx`)
 
