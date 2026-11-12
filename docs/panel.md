@@ -17,7 +17,8 @@ Solid UI rendered in the DevTools panel. The browser glue (`browser.devtools.*`)
 The page's component tree, rebuilt from the agent's ops (`docs/messages.md`, "Tree batches"). Exported as `@reactdx/panel/tree`.
 
 - `apply(batch)` applies `reset`, `add`, `remove` (with descendants), `reorder` and `rename`, and bumps a Solid `version` signal. It returns true when the panel must ask for a resync: the first time a batch has the wrong `seq` or an op names an unknown id (an `add` under an unknown parent, a `reorder` of one, a `remove` or `rename` of an unknown node). After that it ignores batches until one starting with `reset`, so a burst of bad batches asks once.
-- `rows(rootId)`: `Row = { id, name, depth, kind, key, expandable, expanded }`, depth-first. Host (DOM element) nodes are hidden: their children take their place and depth. `expandable` means it has a non-host descendant through hosts. Collapsed nodes' descendants aren't listed; everything starts expanded.
+- `rows(rootId)`: `Row = { id, name, depth, kind, key, expandable, expanded, match }`, depth-first. Host (DOM element) nodes are hidden unless `showHosts()`: their children take their place and depth. `expandable` means it has a visible descendant through hidden hosts. Collapsed nodes' descendants aren't listed; everything starts expanded. `match`: the node matches the search.
+- `showHosts()` / `setShowHosts(on)` (M3 #27): one visibility rule for rows, `expandable` and Left's parent. Hiding hosts clears a selected host (it has no row). Off on every panel open.
 - `toggle(id)`: collapses or expands.
 - `selected()` / `select(id)`: one selection for the panel (ids are unique per document). After each batch it's cleared only if its node is gone, so it survives commits and a resync that re-adds the id (ids persist across watches, `docs/page.md`).
 - `key(rootId, key): boolean`: moves the selection within that root's rows; true when the key is handled. A selection in another root counts as none.
@@ -25,8 +26,14 @@ The page's component tree, rebuilt from the agent's ops (`docs/messages.md`, "Tr
   - `Home`/`End`: first/last row.
   - `ArrowLeft`: collapses an expanded row, else selects the nearest non-host ancestor.
   - `ArrowRight`: expands a collapsed row, else selects its first child; nothing on a leaf.
-- `clear()`: on `onNavigated`, with the renderer list; also drops collapse state and the selection.
-- `test/tree.test.ts`: rows, hidden hosts, each op, the resync rules, collapse, selection, every key.
+- Search (M3 #27): the current match is the selection, so arrowing or clicking elsewhere and pressing Enter continues from there.
+  - `query()` / `setQuery(q)`: sets the query and selects the first match.
+  - `matches()`: ids of visible-kind nodes whose name contains the query, case-insensitive. Every root depth-first, roots in first-seen order, collapsed subtrees included. Empty query: none.
+  - `step(1 | -1)`: next or previous match, wrapping; from a non-match, the first or last.
+  - `position()`: the selection's index among the matches from 1, or 0 if it isn't one.
+  - Selecting a match (`setQuery`, `step`) also expands its ancestors, so it has a row, and TreeView scrolls it into view.
+- `clear()`: on `onNavigated`, with the renderer list; also drops collapse state and the selection. The query and DOM toggle stay.
+- `test/tree.test.ts`: rows, hidden hosts, each op, the resync rules, collapse, selection, every key, shown hosts, search, step.
 
 ## Tree view (`TreeView`, `src/TreeView.tsx`, `src/virtual.ts`; M3 #26)
 
@@ -35,10 +42,20 @@ One per development root: `TreeView(props: { tree: TreeStore; rootId: number })`
 - Virtual list: a scroll container (`[data-testid=tree]`, `role="tree"`, focusable, `max-height: 80vh`) holding a spacer of `rows × ROW_HEIGHT` (20px) and only the window of rows `windowOf(scrollTop, height, count)` returns: the rows in view plus `OVERSCAN` (10) each side. `scrollTop` and `clientHeight` are read on mount, `scroll` and window `resize`. Fixed row height keeps the window arithmetic and unit-testable without layout (`test/virtual.test.ts`).
 - Rows (`[data-testid=node]`, `role="treeitem"`, `aria-level`, `aria-selected`, `aria-expanded` when expandable, `data-id`): a toggle (`[data-toggle]` area, `[data-testid=toggle]` CSS-border triangle, rotated when expanded; no text so the e2e text readers don't take it for a name), the name, a `[data-testid=badge]` for `memo`/`forwardRef`/`lazy`, and `[data-testid=key]` as one text node `key="…"`. All page data is text nodes.
 - Selected row: `bg-selected`, badge and key `text-fg` (dark `muted` on `selected` is 2.9:1).
+- Search matches: `data-match`, and the name (`[data-testid=name]`) in `text-accent`, except on the selected row (`text-fg`; accent on `selected` isn't a checked contrast pair).
 - Clicks and keys are handled once on the container: rows are recycled as the window moves, and the container holds focus. A click on an expandable row's toggle area toggles it; any other row click selects. Handled keys (`tree.key`) are `preventDefault`ed.
 - A selection change scrolls the selected row into view (End on 10,000 rows renders the last one). Only selection changes scroll, so a commit doesn't pull the view back.
 - Perf marks: `main.tsx` marks `reactdx:subscribe` on every subscribe; `TreeView` marks `reactdx:rows` each time its rows go from empty to non-empty. `e2e/perf.test.ts` reads them (`docs/e2e.md`).
-- `test/TreeView.test.tsx`: a 1,000-row tree keeps fewer than 100 rows in the DOM, badges, keys and toggles, text-only keys, click, toggle and keyboard.
+- `test/TreeView.test.tsx`: a 1,000-row tree keeps fewer than 100 rows in the DOM, badges, keys and toggles, text-only keys, click, toggle and keyboard, match marking.
+
+## Toolbar (`Toolbar`, `src/Toolbar.tsx`; M3 #27)
+
+Above the copies, only when a development copy is present (`ConnectionList`), so the no-React and production notices stay exactly as they were.
+
+- Search box (`[data-testid=search]`, `aria-label="Search components"`): input sets the query; Enter steps to the next match, Shift+Enter to the previous.
+- Counter (`[data-testid=search-count]`, `<position> of <matches>`), only while there's a query: "1 of 3" after typing, "0 of 0" with no matches.
+- `Show DOM elements` checkbox (`[data-testid=show-dom]`, inside its `<label>`): `setShowHosts`.
+- `test/Toolbar.test.tsx`: counter, Enter and Shift+Enter, no matches, clearing, the DOM toggle.
 
 ## Themes (`src/themes.ts`, `src/index.css`)
 
