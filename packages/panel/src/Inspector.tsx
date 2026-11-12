@@ -184,6 +184,36 @@ export function Inspector(props: {
                   </For>
                 </Section>
               </Show>
+              <Show when={props.inspector.data()?.owners?.length}>
+                <Section
+                  name="Rendered by"
+                  open={!collapsed().has("Rendered by")}
+                  onToggle={() => toggle("Rendered by")}
+                >
+                  <For each={props.inspector.data()?.owners}>
+                    {(owner) => (
+                      <div class="whitespace-nowrap pr-2 pl-6">
+                        {owner.id === null ? (
+                          <span data-testid="owner" class="text-muted">
+                            {owner.name}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            data-testid="owner"
+                            class="text-accent hover:underline"
+                            onClick={() =>
+                              props.tree.reveal(owner.id as number)
+                            }
+                          >
+                            {owner.name}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </For>
+                </Section>
+              </Show>
             </div>
           </div>
         )}

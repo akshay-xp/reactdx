@@ -250,3 +250,69 @@ test("hooks that couldn't be read say why", () => {
   expect(sections(container)).toEqual(["Hooks"])
   expect(container.textContent).toContain("Couldn't read hooks: boom")
 })
+
+test("Context lists each context read, after Hooks", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      hooks: [{ name: "State", value: 0 }],
+      contexts: [
+        { name: "Theme", value: "dark" },
+        { name: "Context", value: object({ a: 1 }, { id: 5 }) },
+      ],
+    }),
+  )
+  expect(sections(container)).toEqual(["Hooks", "Context"])
+  expect(rows(container)).toEqual([
+    "State: 0",
+    'Theme: "dark"',
+    "Context: {a: 1}",
+  ])
+  fireEvent.click(toggle(container, "Context") as Element)
+  expect(rows(container)).toContain("a: 1")
+})
+
+test("Rendered by lists owners; tree nodes are buttons that select", () => {
+  const { container, inspector, select, tree } = setup()
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 2,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "App",
+        key: null,
+        index: 1,
+      },
+    ]),
+  )
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ a: 1 }),
+      owners: [
+        { id: 2, name: "App" },
+        { id: null, name: "Page" },
+      ],
+    }),
+  )
+  expect(sections(container)).toEqual(["Props", "Rendered by"])
+  const owner = [...container.querySelectorAll("[data-testid=owner]")]
+  expect(owner.map((el) => [el.tagName, el.textContent])).toEqual([
+    ["BUTTON", "App"],
+    ["SPAN", "Page"],
+  ])
+  fireEvent.click(owner[0] as Element)
+  expect(tree.selected()).toBe(2)
+})
+
+test("no owners, no Rendered by", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ a: 1 }), owners: [] }))
+  expect(sections(container)).toEqual(["Props"])
+})
