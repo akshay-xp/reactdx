@@ -13,13 +13,16 @@ const fixtures = [
 ].filter((f) => only === undefined || f.fixture === only)
 
 const stops: (() => void)[] = []
-before(async () => {
-  for (const { script, port } of fixtures)
-    stops.push(await startFixture(script, port))
-})
-after(() => {
-  for (const stop of stops) stop()
-})
+// Node 24 hangs on a file with hooks and no tests (--fixture=multi or prod).
+if (fixtures.length) {
+  before(async () => {
+    for (const { script, port } of fixtures)
+      stops.push(await startFixture(script, port))
+  })
+  after(() => {
+    for (const stop of stops) stop()
+  })
+}
 
 for (const { fixture, port } of fixtures)
   test(`${fixture}: the inspector shows the selection's props, live`, async () => {
