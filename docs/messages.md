@@ -26,6 +26,8 @@ The tree streams only while a panel watches the tab. Closing the relay's `tree` 
 
 7. **Highlight** (M3 #28): when the panel's hovered row changes (`docs/panel.md`), it sends `HighlightMessage` `{ type: "highlight", tabId, id }` or `ClearHighlightMessage` `{ type: "clear-highlight", tabId }` over its port. The background strips `tabId` and posts the command to the tab's tree port without reading it. The relay keeps only what `parseTreeCommand` accepts and posts `highlight(id)` or `CLEAR_HIGHLIGHT` to the agent (`docs/page.md`, "Highlight"). Closing the panel needs no command: the unwatch that follows hides the overlay.
 
+8. **Picker** (M3 #29): the panel's toggle sends `PickMessage` `{ type: "pick-start" | "pick-stop", tabId }`, forwarded like highlight. The agent's result, `PickedMessage` `{ source: "reactdx", type: "picked", id }` (`id` null: Escape, or a click on nothing React owns), passes the relay's `parsePicked` (checked before `parsePageMessage`, with `parseTreeBatch`) and goes over the tree port; the background forwards tree-port messages to the tab's panels as for batches. The panel applies it with `tree.picked(id)`.
+
 - **bfcache:** Chrome closes the port when the page enters bfcache but delivers the disconnect only after the restore, after `pageshow` already tried to watch. So the relay closes its own port on a persisted `pagehide`.
 - **Forged commands:** a page can post `UNWATCH` itself and stop its own tree updates (it shares the world with the hook, as in M2). Forged `WATCH` only causes a resync. `e2e/forged.test.ts` leaves `UNWATCH` out.
 
@@ -97,8 +99,11 @@ Background to the relay's tree port. Everything the relay acts on passes through
 | `{ type: "resync" }`          | `WATCH`                                                               |
 | `{ type: "highlight", id }`   | `highlight(id)`: `{ source: "reactdx-relay", type: "highlight", id }` |
 | `{ type: "clear-highlight" }` | `CLEAR_HIGHLIGHT`                                                     |
+| `{ type: "pick-start" }`      | `PICK_START`                                                          |
+| `{ type: "pick-stop" }`       | `PICK_STOP`                                                           |
 
 - `id`: positive safe integer. Anything else (no id, a string, 0, a fraction, an unsafe integer, an unknown type, a non-object) is dropped. Extra keys are stripped.
+- `parsePicked(data)`: `source: "reactdx"`, `type: "picked"`, `id` a positive safe integer or `null`; anything else dropped, extra keys stripped. Built with `picked(id)`.
 - `packages/messages/test/commands.test.ts`.
 
 ## Toolbar (`toolbarState(renderers)`, `toolbarIcons(icon)`)

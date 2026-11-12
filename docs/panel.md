@@ -33,7 +33,8 @@ The page's component tree, rebuilt from the agent's ops (`docs/messages.md`, "Tr
   - `position()`: the selection's index among the matches from 1, or 0 if it isn't one.
   - Selecting a match (`setQuery`, `step`) also expands its ancestors, so it has a row, and TreeView scrolls it into view.
 - `hovered()` / `hover(id | undefined)` (M3 #28): the row under the pointer. `main.tsx` sends a highlight or clear-highlight command on each change (`docs/messages.md`, "Tree flow").
-- `clear()`: on `onNavigated`, with the renderer list; also drops collapse state, the selection and the hover. The query and DOM toggle stay.
+- `picking()` / `setPicking(on)`, `picked(id | null)` (M3 #29): `main.tsx` sends `pick-start`/`pick-stop` whenever `picking` changes (a redundant `pick-stop` after a pick is ignored by the agent). `picked` turns picking off and, for an id the mirror has, selects and reveals it (expands ancestors; TreeView scrolls it into view). `null` or an unknown id only turns picking off.
+- `clear()`: on `onNavigated`, with the renderer list; also drops collapse state, the selection, the hover and picking. The query and DOM toggle stay.
 - `test/tree.test.ts`: rows, hidden hosts, each op, the resync rules, collapse, selection, every key, shown hosts, search, step.
 
 ## Tree view (`TreeView`, `src/TreeView.tsx`, `src/virtual.ts`; M3 #26)
@@ -54,10 +55,12 @@ One per development root: `TreeView(props: { tree: TreeStore; rootId: number })`
 
 Above the copies, only when a development copy is present (`ConnectionList`), so the no-React and production notices stay exactly as they were.
 
+- `Pick element` toggle (`[data-testid=pick]`, `aria-pressed` from `picking()`, `bg-selected` when on).
+
 - Search box (`[data-testid=search]`, `aria-label="Search components"`): input sets the query; Enter steps to the next match, Shift+Enter to the previous.
 - Counter (`[data-testid=search-count]`, `<position> of <matches>`), only while there's a query: "1 of 3" after typing, "0 of 0" with no matches.
 - `Show DOM elements` checkbox (`[data-testid=show-dom]`, inside its `<label>`): `setShowHosts`.
-- `test/Toolbar.test.tsx`: counter, Enter and Shift+Enter, no matches, clearing, the DOM toggle.
+- `test/Toolbar.test.tsx`: counter, Enter and Shift+Enter, no matches, clearing, the DOM toggle, the picker button.
 
 ## Themes (`src/themes.ts`, `src/index.css`)
 

@@ -59,6 +59,15 @@ The agent tracks the component tree only between `WATCH` and `UNWATCH` message e
 - `hide()`: removes the host. Page elements' styles and layout are never touched (`e2e/highlight.test.ts` compares every computed style).
 - Not repositioned on scroll or resize while shown.
 
+## Picker (`src/agent.ts`; M3 #29)
+
+- `tree.owner(element)`: walks DOM parents to the first element with a `__reactFiber$…` key, then `fiber.return` to the nearest fiber with a kind that isn't `host`, whose id the tree still has (mounted and emitted). So a pick is always a component, with a row even when DOM elements are hidden. `undefined` outside React.
+- `pick-start` adds capture-phase listeners on the window, ahead of React's on the root container:
+  - `pointermove`: highlights the owner of the element under the pointer (hides the overlay over anything React doesn't own).
+  - `click`: `preventDefault` and `stopImmediatePropagation` (the app never sees it), ends picking, posts `picked(owner ?? null)`.
+  - `keydown` Escape: ends picking, posts `picked(null)`.
+- Ending picking removes the listeners and hides the overlay. `pick-stop` and `unwatch` end it without posting. Only `click` is swallowed: `pointerdown` and `mousedown` still reach the page.
+
 ## Types
 
 - `Hook`, `HookRecord`, `FiberRoot`; `RendererInfo` comes from `@reactdx/messages` (re-exported), so `page` depends on `messages`, never the reverse. `declare global { var __REACT_DEVTOOLS_GLOBAL_HOOK__: Hook | undefined }` types `window` and `globalThis`.
