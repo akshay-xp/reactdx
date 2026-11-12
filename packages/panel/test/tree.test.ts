@@ -82,6 +82,32 @@ test.each<[string, TreeOp]>([
   expect(tree.apply(treeBatch(2, [op]))).toBe(true)
 })
 
+test("rows carry kind, key and expand state", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  const [app, a, b] = tree.rows(1)
+  expect(app).toMatchObject({
+    kind: "function",
+    key: null,
+    expandable: true,
+    expanded: true,
+  })
+  expect(a?.expandable).toBe(true)
+  expect(b?.expandable).toBe(false)
+})
+
+test("collapsing hides descendants; expanding restores them", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.toggle(1)
+  expect(names(tree.rows(1))).toEqual(["0 App"])
+  expect(tree.rows(1)[0]?.expanded).toBe(false)
+  tree.toggle(1)
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "2 B", "1 C"])
+  tree.toggle(3)
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "1 C"])
+})
+
 test("clear empties the store", () => {
   const tree = createTreeStore()
   tree.apply(resync)

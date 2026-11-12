@@ -1,13 +1,22 @@
 import type { TreeBatchMessage, TreeKind, TreeOp } from "@reactdx/messages"
 import { createSignal } from "solid-js"
 
-export type Row = { id: number; name: string; depth: number }
+export type Row = {
+  id: number
+  name: string
+  depth: number
+  kind: TreeKind
+  key: string | null
+  expandable: boolean
+  expanded: boolean
+}
 
 type Node = {
   rootId: number
   parentId: number
   kind: TreeKind
   name: string
+  key: string | null
   children: number[]
 }
 
@@ -17,6 +26,7 @@ export type TreeStore = ReturnType<typeof createTreeStore>
 export function createTreeStore() {
   const nodes = new Map<number, Node>()
   const tops = new Map<number, number[]>()
+  const collapsed = new Set<number>()
   const [version, setVersion] = createSignal(0)
 
   const siblings = (rootId: number, parentId: number) => {
@@ -40,10 +50,10 @@ export function createTreeStore() {
       return true
     }
     if (op.op === "add") {
-      const { id, rootId, parentId, kind, name, index } = op
+      const { id, rootId, parentId, kind, name, key, index } = op
       const list = siblings(rootId, parentId)
       if (!list) return false
-      nodes.set(id, { rootId, parentId, kind, name, children: [] })
+      nodes.set(id, { rootId, parentId, kind, name, key, children: [] })
       list.splice(index, 0, id)
       return true
     }
@@ -67,6 +77,17 @@ export function createTreeStore() {
   let expected = 1
   let stale = false
 
+  // The nearest non-host descendants: what a node's row shows as its children.
+  const shown = (ids: number[], out: number[] = []) => {
+    for (const id of ids) {
+      const node = nodes.get(id)
+      if (!node) continue
+      if (node.kind === "host") shown(node.children, out)
+      else out.push(id)
+    }
+    return out
+  }
+
   return {
     // True when the panel must ask the page for a resync.
     apply(batch: TreeBatchMessage): boolean {
@@ -84,19 +105,32 @@ export function createTreeStore() {
       version()
       const rows: Row[] = []
       const visit = (id: number, depth: number) => {
-        const node = nodes.get(id)
-        if (!node) return
-        const shown = node.kind !== "host"
-        if (shown) rows.push({ id, name: node.name, depth })
-        for (const child of node.children)
-          visit(child, shown ? depth + 1 : depth)
+        const { name, kind, key, children } = nodes.get(id) as Node
+        const kids = shown(children)
+        const expanded = !collapsed.has(id)
+        rows.push({
+          id,
+          name,
+          depth,
+          kind,
+          key,
+          expandable: kids.length > 0,
+          expanded,
+        })
+        if (expanded) for (const kid of kids) visit(kid, depth + 1)
       }
-      for (const id of tops.get(rootId) ?? []) visit(id, 0)
+      for (const id of shown(tops.get(rootId) ?? [])) visit(id, 0)
       return rows
+    },
+
+    toggle(id: number) {
+      if (!collapsed.delete(id)) collapsed.add(id)
+      setVersion(version() + 1)
     },
 
     clear() {
       reset()
+      collapsed.clear()
       setVersion(version() + 1)
     },
   }
