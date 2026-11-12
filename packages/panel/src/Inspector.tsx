@@ -237,6 +237,8 @@ export function Inspector(props: {
                   </Show>
                   <HookRows
                     inspector={props.inspector}
+                    sources={props.sources}
+                    settings={props.settings}
                     hooks={props.inspector.data()?.hooks ?? []}
                     path="Hooks"
                     depth={0}
@@ -373,6 +375,8 @@ function Children(props: {
 // nothing to show (an effect without deps) is just its name.
 function HookRows(props: {
   inspector: InspectorStore
+  sources: Sources
+  settings: Settings
   hooks: HookValue[]
   path: string
   depth: number
@@ -382,6 +386,15 @@ function HookRows(props: {
       {(hook, index) => {
         const path = () => `${props.path}.${index()}`
         const open = () => props.inspector.isOpen(path())
+        // `State(count)` with hook names on and a name found; else the type.
+        const [named] = createResource(
+          () => props.settings.hookNames() && hook.site,
+          (site) => props.sources.hookName(site),
+        )
+        const label = () => {
+          const name = props.settings.hookNames() && named.latest
+          return name ? `${hook.name}(${name})` : hook.name
+        }
         return (
           <Switch>
             <Match when={hook.hooks}>
@@ -401,7 +414,7 @@ function HookRows(props: {
                       }
                     />
                     <span class="text-syntax-key">
-                      {hook.value === undefined ? hook.name : `${hook.name}:`}
+                      {hook.value === undefined ? label() : `${label()}:`}
                     </span>
                     <Show when={hook.value !== undefined}>
                       {" "}
@@ -413,6 +426,8 @@ function HookRows(props: {
                   <Show when={open()}>
                     <HookRows
                       inspector={props.inspector}
+                      sources={props.sources}
+                      settings={props.settings}
                       hooks={hooks()}
                       path={path()}
                       depth={props.depth + 1}
@@ -424,7 +439,7 @@ function HookRows(props: {
             <Match when={hook.value !== undefined}>
               <ValueRow
                 inspector={props.inspector}
-                entry={{ name: hook.name, value: hook.value as Value }}
+                entry={{ name: label(), value: hook.value as Value }}
                 path={path()}
                 depth={props.depth}
               />
@@ -435,7 +450,7 @@ function HookRows(props: {
                 class="whitespace-nowrap pr-2 text-syntax-key"
                 style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
               >
-                {hook.name}
+                {label()}
               </div>
             </Match>
           </Switch>

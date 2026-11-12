@@ -11,6 +11,7 @@ const settings = { hookNames: () => false, setHookNames: () => {} }
 const sources: Sources = {
   resolve: async () => null,
   open: async () => "opened",
+  hookName: async () => null,
 }
 
 const copy = (

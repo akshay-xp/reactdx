@@ -3,7 +3,7 @@ import {
   originalPositionFor,
   type TraceMap,
 } from "@jridgewell/trace-mapping"
-import type { SourceRef } from "@reactdx/messages"
+import type { CallSite, SourceRef } from "@reactdx/messages"
 
 // 1-based line and column; `file` absolute, or relative to the dev server's root.
 export type SourceLocation = { file: string; line: number; column: number }
@@ -12,6 +12,8 @@ export type SourceLocation = { file: string; line: number; column: number }
 export type Sources = {
   resolve(source: SourceRef): Promise<SourceLocation | null>
   open(location: SourceLocation): Promise<"opened" | "copied">
+  // The variable a hook call is assigned to (src/names.ts), if any.
+  hookName(site: CallSite): Promise<string | null>
 }
 
 // The full form: what's copied, and the header's title.

@@ -36,6 +36,7 @@ function createSettings(hookNames = false) {
 const noSources: Sources = {
   resolve: async () => null,
   open: async () => "opened",
+  hookName: async () => null,
 }
 
 function setup(
@@ -391,6 +392,7 @@ test("Open in editor opens the resolved location; a copy offers VS Code for an a
   let result: "opened" | "copied" = "opened"
   // Each frame maps one line up, so another frame is another location.
   const sources: Sources = {
+    ...noSources,
     resolve: async (source) => ({ ...counterAt, line: source.line - 1 }),
     open: async (location) => {
       opened.push(location)
@@ -426,6 +428,7 @@ test("Open in editor opens the resolved location; a copy offers VS Code for an a
 
 test("a copied relative path offers no VS Code link", async () => {
   const sources: Sources = {
+    ...noSources,
     resolve: async () => ({ ...counterAt, file: "src/Counter.jsx" }),
     open: async () => "copied",
   }
@@ -452,4 +455,56 @@ test("the Hook names toggle shows and changes the setting", () => {
   fireEvent.click(toggle)
   expect(settings.hookNames()).toBe(true)
   expect(toggle.getAttribute("aria-pressed")).toBe("true")
+})
+
+test("with Hook names on, sited hooks show the variable they're assigned to", async () => {
+  const site = (line: number) => ({ url: "http://h/App.jsx", line, column: 3 })
+  const asked: number[] = []
+  const sources: Sources = {
+    ...noSources,
+    hookName: async ({ line }) => {
+      asked.push(line)
+      return line === 3 ? "count" : line === 4 ? "cart" : null
+    },
+  }
+  const settings = createSettings()
+  const { container, inspector, select } = setup(
+    "function",
+    null,
+    sources,
+    settings,
+  )
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      hooks: [
+        { name: "State", value: 1, site: site(3) },
+        {
+          name: "useCart",
+          value: "2 items",
+          site: site(4),
+          hooks: [{ name: "State", value: 2, site: site(9) }],
+        },
+        { name: "Effect" },
+      ],
+    }),
+  )
+  inspector.open("Hooks.1")
+  await settled()
+  expect(rows(container)).toEqual([
+    "State: 1",
+    'useCart: "2 items"',
+    "State: 2",
+    "Effect",
+  ])
+  expect(asked).toEqual([])
+  settings.setHookNames(true)
+  await settled()
+  expect(rows(container)).toEqual([
+    "State(count): 1",
+    'useCart(cart): "2 items"',
+    "State: 2",
+    "Effect",
+  ])
 })
