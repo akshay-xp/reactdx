@@ -151,12 +151,22 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
     }
   })
 
-// Selects a component once the tree lists it (a new page's tree fills in).
+// Selects a component once the tree lists it (a new page's tree fills in). After
+// a navigation the new document's first watch can reset the tree just after the
+// click, dropping the selection, so it's made again until the inspector has it.
 async function selectListed(panel: PanelText, component: string) {
-  await until(panel, (t) =>
-    parseCopies(t).some((c) => c.names.includes(component)),
-  )
-  await panel.select(component)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await until(panel, (t) =>
+      parseCopies(t).some((c) => c.names.includes(component)),
+    )
+    await panel.select(component)
+    const header = await until(
+      panel.inspector,
+      (t) => t.startsWith(`${component} `),
+      2000,
+    )
+    if (header.startsWith(`${component} `)) return
+  }
 }
 
 // Hook names are opt-in: off, the parser chunk (hook-names) never loads.
