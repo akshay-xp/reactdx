@@ -233,6 +233,31 @@ test("a query matches names case-insensitively and selects the first", () => {
   expect(tree.matches()).toEqual([])
 })
 
+test("step cycles the matches and position counts from 1", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.setQuery("a")
+  expect(tree.position()).toBe(1)
+  tree.step(1)
+  expect([tree.selected(), tree.position()]).toEqual([3, 2])
+  tree.step(1)
+  expect(tree.selected()).toBe(1)
+  tree.step(-1)
+  expect(tree.selected()).toBe(3)
+
+  tree.select(6)
+  expect(tree.position()).toBe(0)
+  tree.step(1)
+  expect(tree.selected()).toBe(1)
+  tree.select(6)
+  tree.step(-1)
+  expect(tree.selected()).toBe(3)
+
+  tree.setQuery("zzz")
+  tree.step(1)
+  expect(tree.selected()).toBe(3)
+})
+
 test("clear empties the store", () => {
   const tree = createTreeStore()
   tree.apply(resync)

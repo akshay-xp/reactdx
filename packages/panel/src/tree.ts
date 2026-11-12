@@ -211,6 +211,17 @@ export function createTreeStore() {
     toggle,
     query,
     matches,
+    // The selection's place among the matches, from 1; 0 when it isn't one.
+    position: () => matches().indexOf(selected() as number) + 1,
+    // Next (1) or previous (-1) match, wrapping; from a non-match, the first or last.
+    step(direction: 1 | -1) {
+      const list = matches()
+      if (list.length === 0) return
+      const at = list.indexOf(selected() as number)
+      // From a non-match (-1), +1 lands on 0; -1 must start at 0 to land on the last.
+      const from = at === -1 && direction === -1 ? 0 : at
+      reveal(list[(from + direction + list.length) % list.length] as number)
+    },
     setQuery(value: string) {
       querySignal(value)
       const [first] = matches()
