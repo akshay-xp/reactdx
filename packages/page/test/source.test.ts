@@ -1,5 +1,11 @@
+import React from "react"
 import { expect, test } from "vitest"
 import { stackSource } from "../src/source.ts"
+import { inspecting } from "./inspecting.ts"
+
+const h = React.createElement
+const { inspect } = inspecting()
+const react18 = React.version.startsWith("18.")
 
 const at = { url: "http://h/src/Counter.jsx?t=1", line: 14, column: 47 }
 
@@ -35,4 +41,42 @@ test.each([
   ],
 ])("finds no location in %s", (_, stack) => {
   expect(stackSource(stack)).toBeNull()
+})
+
+// React 18's createElement takes the JSX transform's location as __source.
+const at18 = (fileName: string, lineNumber: number) =>
+  ({
+    __source: { fileName, lineNumber, columnNumber: 3 },
+  }) as React.Attributes
+
+function Card() {
+  return h("p", at18("/a/Card.jsx", 5))
+}
+function Pass({ children }: { children?: React.ReactNode }) {
+  return children
+}
+function Bare() {
+  return h("p")
+}
+
+test.skipIf(!react18)("React 18: the first element it renders", async () => {
+  const data = await inspect(h(Card, at18("/a/App.jsx", 9)), "Card")
+  expect(data?.source).toEqual({ file: "/a/Card.jsx", line: 5, column: 3 })
+})
+
+test.skipIf(!react18)(
+  "React 18: rendering only its children, where it was rendered",
+  async () => {
+    const data = await inspect(
+      h(Pass, at18("/a/App.jsx", 9), h("p", at18("/a/App.jsx", 10))),
+      "Pass",
+    )
+    expect(data?.source).toEqual({ file: "/a/App.jsx", line: 9, column: 3 })
+  },
+)
+
+test.skipIf(!react18)("React 18: no location written", async () => {
+  const data = await inspect(h(Bare), "Bare")
+  expect(data).toBeDefined()
+  expect(data && "source" in data).toBe(false)
 })

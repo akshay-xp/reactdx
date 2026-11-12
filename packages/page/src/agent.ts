@@ -29,6 +29,7 @@ import {
 } from "./hooks.ts"
 import { createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
+import { sourceOf } from "./source.ts"
 import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
@@ -225,6 +226,8 @@ export function startAgent(
     // Class components (tag 1) keep their state on the instance.
     if (fiber.tag === 1 && state != null) data.state = serialize(state) as Value
     data.owners = ownersOf(fiber)
+    const source = sourceOf(fiber)
+    if (source) data.source = source
     if (contexts.length)
       data.contexts = contexts.map(({ name, value }) => ({
         name,
