@@ -62,18 +62,21 @@ test("the first rows show within 500 ms of subscribe", { skip }, async (t) => {
   }
 })
 
-type Timed = Window & { reactdxAt?: number }
+type Timed = Window & { reactdxAt?: number[] }
 
+// The median of five mounts: one timing on a shared CI runner ranged from 70 to
+// over 130 ms, on main too.
 test("a mounted component's row shows within 100 ms of its batch", {
   skip,
 }, async (t) => {
   const { browser, page, panel } = await benchPanel()
   try {
-    await page.evaluate(() =>
+    // Each batch that adds Extra, and each time its row appears in the panel.
+    await page.evaluate(() => {
+      const w = window as Timed
+      w.reactdxAt = []
       addEventListener("message", ({ data }) => {
-        const w = window as Timed
         if (
-          w.reactdxAt === undefined &&
           data?.source === "reactdx" &&
           data.type === "tree" &&
           data.ops.some(
@@ -81,29 +84,46 @@ test("a mounted component's row shows within 100 ms of its batch", {
               op.op === "add" && op.name === "Extra",
           )
         )
-          w.reactdxAt = Date.now()
-      }),
-    )
+          w.reactdxAt?.push(Date.now())
+      })
+    })
     await panel.evaluate(() => {
-      const shown = () =>
-        [...document.querySelectorAll("[data-testid=node]")].some(
+      const w = window as Timed
+      w.reactdxAt = []
+      let was = false
+      new MutationObserver(() => {
+        const shown = [...document.querySelectorAll("[data-testid=node]")].some(
           (n) => n.textContent === "Extra",
         )
-      new MutationObserver((_, observer) => {
-        if (!shown()) return
-        ;(window as Timed).reactdxAt = Date.now()
-        observer.disconnect()
+        if (shown && !was) w.reactdxAt?.push(Date.now())
+        was = shown
       }).observe(document.body, { childList: true, subtree: true })
     })
-    await page.click("[data-testid=extra]")
-    const at = (frame: typeof page | typeof panel) =>
-      frame
-        .waitForFunction(() => (window as Timed).reactdxAt, { timeout: 5000 })
-        .then((handle) => handle.jsonValue() as Promise<number>)
-    const posted = await at(page)
-    const shown = await at(panel)
-    t.diagnostic(`${shown - posted} ms`)
-    assert.ok(shown - posted < 100, `${shown - posted} ms`)
+    const times = (frame: typeof page | typeof panel) =>
+      frame.evaluate(() => (window as Timed).reactdxAt ?? [])
+    const extraShown = (on: boolean) =>
+      panel.waitForFunction(
+        (on) =>
+          [...document.querySelectorAll("[data-testid=node]")].some(
+            (n) => n.textContent === "Extra",
+          ) === on,
+        { timeout: 5000 },
+        on,
+      )
+    for (let round = 0; round < 5; round++) {
+      await page.click("[data-testid=extra]")
+      await extraShown(true)
+      await page.click("[data-testid=extra]")
+      await extraShown(false)
+    }
+    const posted = await times(page)
+    const shown = await times(panel)
+    assert.equal(posted.length, 5)
+    assert.equal(shown.length, 5)
+    const delays = shown.map((at, i) => at - (posted[i] as number))
+    const median = [...delays].sort((a, b) => a - b)[2] as number
+    t.diagnostic(`median ${median} ms of ${delays.join(", ")}`)
+    assert.ok(median < 100, `${median} ms (${delays.join(", ")})`)
   } finally {
     await browser.close()
   }
