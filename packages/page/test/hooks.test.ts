@@ -9,6 +9,7 @@ import type { Root } from "react-dom/client"
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import { startAgent } from "../src/agent.ts"
 import { installHook } from "../src/hook.ts"
+import { lineOf } from "./marker.ts"
 import { windowLike } from "./window.ts"
 
 const h = React.createElement
@@ -64,13 +65,22 @@ async function inspect(element: React.ReactNode, name: string) {
   send({ source: "reactdx-relay", type: "inspect", id: idOf(name) })
   return last()
 }
-const last = () =>
+const lastRaw = () =>
   posted
     .filter(
       (m): m is InspectedMessage =>
         (m as { type?: string }).type === "inspected",
     )
     .at(-1)?.data
+// Call sites are tested on their own; the rest compares hooks without them.
+const unsited = (hooks: HookValue[]): HookValue[] =>
+  hooks.map(({ site: _, hooks: inner, ...hook }) =>
+    inner ? { ...hook, hooks: unsited(inner) } : hook,
+  )
+const last = () => {
+  const data = lastRaw()
+  return data?.hooks ? { ...data, hooks: unsited(data.hooks) } : data
+}
 
 const names = (hooks: HookValue[] = []) => hooks.map((hook) => hook.name)
 
@@ -358,4 +368,35 @@ test("forwardRef and memo components have hooks; classes have none", async () =>
     { name: "State", value: "m" },
   ])
   expect((await inspect(h(Klass), "Klass"))?.hooks).toBeUndefined()
+})
+
+const marks: Record<string, Error> = {}
+function useSited() {
+  const [value, here] = [React.useState(2), new Error()]
+  marks.inner = here
+  return value
+}
+function Sited() {
+  const [, here] = [React.useState(1), new Error()]
+  marks.state = here
+  const [, there] = [useSited(), new Error()]
+  marks.custom = there
+  return null
+}
+
+test("each hook and custom hook carries where it was called", async () => {
+  await inspect(h(Sited), "Sited")
+  const [state, custom] = lastRaw()?.hooks ?? []
+  expect(state?.site).toEqual({
+    ...lineOf(marks.state),
+    column: expect.any(Number),
+  })
+  expect(custom?.site).toEqual({
+    ...lineOf(marks.custom),
+    column: expect.any(Number),
+  })
+  expect(custom?.hooks?.[0]?.site).toEqual({
+    ...lineOf(marks.inner),
+    column: expect.any(Number),
+  })
 })

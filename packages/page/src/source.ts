@@ -1,4 +1,4 @@
-import type { SourceRef } from "@reactdx/messages"
+import type { CallSite, SourceRef } from "@reactdx/messages"
 import { parseStack } from "./stack.ts"
 import type { Fiber } from "./tree.ts"
 
@@ -19,7 +19,12 @@ const LOCATION = /^(?:at (?:.+? \()?|[^@]*@)(.+):(\d+):(\d+)\)?$/
 export function stackSource(stack: string) {
   const [top, caller] = parseStack(stack)
   if (!caller || top?.functionName === "UnknownOwner") return null
-  const match = LOCATION.exec(caller.source)
+  return frameLocation(caller.source)
+}
+
+// A frame's `url:line:column`, from parseStack's `source`.
+export function frameLocation(source: string): CallSite | null {
+  const match = LOCATION.exec(source)
   if (!match?.[1]) return null
   return { url: match[1], line: Number(match[2]), column: Number(match[3]) }
 }

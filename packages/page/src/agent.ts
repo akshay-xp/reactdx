@@ -240,6 +240,7 @@ export function startAgent(
         name: hook.name,
         ...("value" in hook && { value: serialize(hook.value) as Value }),
         ...(hook.hooks && { hooks: hook.hooks.map(describeHook) }),
+        ...(hook.site && { site: hook.site }),
       })
       data.hooks = read.hooks.map(describeHook)
       if (read.error !== undefined) data.hooksError = read.error

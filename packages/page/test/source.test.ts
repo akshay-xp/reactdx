@@ -1,8 +1,8 @@
 import React from "react"
 import { expect, test } from "vitest"
 import { stackSource } from "../src/source.ts"
-import { parseStack } from "../src/stack.ts"
 import { inspecting } from "./inspecting.ts"
+import { lineOf } from "./marker.ts"
 
 const h = React.createElement
 const { inspect } = inspecting()
@@ -83,15 +83,9 @@ test.skipIf(!react18)("React 18: no location written", async () => {
   expect(data && "source" in data).toBe(false)
 })
 
-// Where an Error made on the element's line was made: React 19 records that line.
+// An Error made on the element's line: React 19 records that line.
 let marker: Error | undefined
-const markedAt = () => {
-  const [, url, line] =
-    /\(?([^ (]+):(\d+):\d+\)?$/.exec(
-      parseStack(marker?.stack ?? "")[0]?.source ?? "",
-    ) ?? []
-  return { url, line: Number(line) }
-}
+const markedAt = () => lineOf(marker)
 
 function Located() {
   const [element, here] = [h("p"), new Error()]

@@ -2,6 +2,8 @@
 // dispatcher (docs/page.md, Hooks). After react-debug-tools' inspectHooksOfFiber
 // (MIT), which RDT uses.
 
+import type { CallSite } from "@reactdx/messages"
+import { frameLocation } from "./source.ts"
 import { type Frame, parseStack } from "./stack.ts"
 
 type HookState = { memoizedState: unknown; next: HookState | null }
@@ -27,7 +29,13 @@ export type DispatcherRef = { H?: unknown; current?: unknown }
 
 // A hook as read: `value` is absent for hooks with nothing to show (an effect
 // without deps).
-export type RawHook = { name: string; value?: unknown; hooks?: RawHook[] }
+// `site`: where it was called (the panel names it from that line).
+export type RawHook = {
+  name: string
+  value?: unknown
+  hooks?: RawHook[]
+  site?: CallSite
+}
 
 type Call = {
   name: string
@@ -46,10 +54,14 @@ const BELOW = 1
 // name, keyed by where it was called, so two calls of one hook stay apart.
 function chainOf(frames: Frame[], depth: number) {
   const chain = frames.slice(ABOVE, frames.length - depth - BELOW).reverse()
-  return chain.slice(1).map((frame, i) => ({
-    name: frame.functionName,
-    key: `${(chain[i] as Frame).source} ${frame.functionName}`,
-  }))
+  return chain.slice(1).map((frame, i) => {
+    const caller = (chain[i] as Frame).source
+    return {
+      name: frame.functionName,
+      key: `${caller} ${frame.functionName}`,
+      site: frameLocation(caller),
+    }
+  })
 }
 
 // Nests each call under its custom hooks; a DebugValue labels the hook it's in.
@@ -68,17 +80,21 @@ function group(calls: Call[], depth: number): RawHook[] {
     open = open.slice(0, shared)
     for (const level of chain.slice(shared)) {
       const hook: RawHook = { name: level.name, hooks: [] }
+      if (level.site) hook.site = level.site
       ;(open.at(-1)?.hook.hooks ?? top).push(hook)
       open.push({ key: level.key, hook })
     }
     const parent = open.at(-1)?.hook
     if (parent && call.name === "DebugValue") parent.value = call.value
-    else
-      (parent?.hooks ?? top).push(
-        call.hasValue
-          ? { name: call.name, value: call.value }
-          : { name: call.name },
-      )
+    else {
+      const hook: RawHook = { name: call.name }
+      if (call.hasValue) hook.value = call.value
+      // The frame below React's own hook is the one that called it.
+      const site =
+        call.frames[ABOVE] && frameLocation(call.frames[ABOVE].source)
+      if (site) hook.site = site
+      ;(parent?.hooks ?? top).push(hook)
+    }
   }
   return top
 }
