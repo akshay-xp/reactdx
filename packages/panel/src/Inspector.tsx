@@ -101,13 +101,21 @@ export function Inspector(props: {
   sources: Sources
   settings: Settings
 }) {
-  const [resolved] = createResource(
-    () => props.inspector.data()?.source,
-    (source) => props.sources.resolve(source),
-  )
-  // The last resolution stays shown while a re-send's equal source resolves.
-  const location = () =>
-    props.inspector.data()?.source ? resolved.latest : undefined
+  // Keyed by value: a re-send's equal source keeps the last resolution shown
+  // (no flash), and another source never shows the previous one's location (an
+  // "Open in editor" click would open the wrong file).
+  const sourceKey = () => {
+    const source = props.inspector.data()?.source
+    return source && JSON.stringify(source)
+  }
+  const [resolved] = createResource(sourceKey, async (key) => ({
+    key,
+    location: await props.sources.resolve(JSON.parse(key)),
+  }))
+  const location = () => {
+    const latest = resolved.latest
+    return latest && latest.key === sourceKey() ? latest.location : undefined
+  }
   // The location last copied because no dev server opened it.
   const [copied, setCopied] = createSignal<string>()
   const open = async (at: SourceLocation) => {

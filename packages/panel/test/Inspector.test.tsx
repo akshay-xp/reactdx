@@ -508,3 +508,23 @@ test("with Hook names on, sited hooks show the variable they're assigned to", as
     "Effect",
   ])
 })
+
+test("another source never shows the previous one's location while it resolves", async () => {
+  const other = { ...frame, url: "http://h/src/Other.jsx" }
+  const sources: Sources = {
+    ...noSources,
+    // The other source never resolves.
+    resolve: (source) =>
+      "url" in source && source.url === other.url
+        ? new Promise(() => {})
+        : Promise.resolve(counterAt),
+  }
+  const { container, inspector, select } = setup("function", null, sources)
+  select()
+  inspector.receive(inspected(3, { props: object({}), source: frame }))
+  await settled()
+  expect(container.querySelector("[data-testid=source]")).not.toBeNull()
+  inspector.receive(inspected(3, { props: object({}), source: other }))
+  await settled()
+  expect(container.querySelector("[data-testid=source]")).toBeNull()
+})
