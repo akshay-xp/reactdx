@@ -73,13 +73,24 @@ export type Value =
 // A hook, or a custom hook (named after its function) holding the hooks it called.
 export type HookValue = { name: string; value?: Value; hooks?: HookValue[] }
 
+// A context the node read, by its displayName ("Context" without one).
+export type ContextValue = { name: string; value: Value }
+// A component that rendered the node, nearest first. `id` null: not in the tree
+// (a Server Component).
+export type Owner = { id: number | null; name: string }
+
 // `hooksError`: why the hooks couldn't be read (the shadow render threw).
 export type InspectedData = {
   props: Value
   state?: Value
   hooks?: HookValue[]
   hooksError?: string
+  contexts?: ContextValue[]
+  owners?: Owner[]
 }
+
+const MAX_CONTEXTS = 50
+const MAX_OWNERS = 50
 
 const MAX_HOOKS = 200
 const MAX_HOOK_NESTING = 8
@@ -309,10 +320,8 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
   if (!isId(message.id)) return
   if (message.data === null) return inspected(message.id, null)
   if (typeof message.data !== "object") return
-  const { props, state, hooks, hooksError } = message.data as Record<
-    string,
-    unknown
-  >
+  const { props, state, hooks, hooksError, contexts, owners } =
+    message.data as Record<string, unknown>
   const budget = { left: MAX_VALUES }
   const parsed: InspectedData = { props: null }
   const value = parseValue(props, 0, budget)
@@ -332,7 +341,41 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     if (!isText(hooksError)) return
     parsed.hooksError = hooksError
   }
+  if (contexts !== undefined) {
+    const list = parseList(contexts, MAX_CONTEXTS, (item) => {
+      const value = parseValue(item.value, 0, budget)
+      return isName(item.name) && value !== undefined
+        ? { name: item.name, value }
+        : undefined
+    })
+    if (!list) return
+    parsed.contexts = list
+  }
+  if (owners !== undefined) {
+    const list = parseList(owners, MAX_OWNERS, ({ id, name }) =>
+      isName(name) && (id === null || isId(id)) ? { id, name } : undefined,
+    )
+    if (!list) return
+    parsed.owners = list
+  }
   return inspected(message.id, parsed)
+}
+
+// Undefined unless `data` is an array of at most `max` objects `each` accepts.
+function parseList<T>(
+  data: unknown,
+  max: number,
+  each: (item: Record<string, unknown>) => T | undefined,
+): T[] | undefined {
+  if (!Array.isArray(data) || data.length > max) return
+  const out: T[] = []
+  for (const item of data) {
+    if (typeof item !== "object" || item === null) return
+    const parsed = each(item as Record<string, unknown>)
+    if (parsed === undefined) return
+    out.push(parsed)
+  }
+  return out
 }
 
 export function parseExpanded(data: unknown): ExpandedMessage | undefined {

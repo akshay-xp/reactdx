@@ -215,3 +215,38 @@ test("groups nested 8 deep are kept", () => {
   const data = { props: object({}), hooks: nestHooks(8) }
   expect(parseInspected({ ...inspected(3, null), data })?.data).toEqual(data)
 })
+
+test("inspected replies carry contexts and owners", () => {
+  const data = {
+    props: object({}),
+    contexts: [{ name: "Theme", value: "dark" }],
+    owners: [
+      { id: 2, name: "App" },
+      { id: null, name: "Page" },
+    ],
+  }
+  expect(parseInspected(inspected(3, data))).toEqual(inspected(3, data))
+})
+
+test.each<[string, Record<string, unknown>]>([
+  ["51 contexts", { contexts: Array(51).fill({ name: "C", value: 1 }) }],
+  ["51 owners", { owners: Array(51).fill({ id: 1, name: "A" }) }],
+  [
+    "a 257-char context name",
+    { contexts: [{ name: "x".repeat(257), value: 1 }] },
+  ],
+  ["a 257-char owner name", { owners: [{ id: 1, name: "x".repeat(257) }] }],
+  ["owner id 0", { owners: [{ id: 0, name: "A" }] }],
+  ["a string owner id", { owners: [{ id: "2", name: "A" }] }],
+  [
+    "a bad context value",
+    { contexts: [{ name: "C", value: { type: "weird" } }] },
+  ],
+])("drops %s", (_, extra) => {
+  expect(
+    parseInspected({
+      ...inspected(3, null),
+      data: { props: object({}), ...extra },
+    }),
+  ).toBeUndefined()
+})
