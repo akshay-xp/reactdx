@@ -156,3 +156,62 @@ test("a message over 50,000 values is dropped", () => {
   const huge = page(() => page(() => page(() => 1)))
   expect(parseValue(huge)).toBeUndefined()
 })
+
+test("inspected replies carry hooks, nested, or the error reading them", () => {
+  const props = object({})
+  const hooks = [
+    { name: "State", value: 0 },
+    {
+      name: "useCart",
+      value: "2 items",
+      hooks: [{ name: "State", value: 2 }],
+    },
+    { name: "Effect" },
+  ]
+  expect(parseInspected(inspected(3, { props, hooks }))).toEqual(
+    inspected(3, { props, hooks }),
+  )
+  const failed = { props, hooks: [], hooksError: "boom" }
+  expect(parseInspected(inspected(3, failed))).toEqual(inspected(3, failed))
+})
+
+const nestHooks = (depth: number): unknown[] =>
+  depth === 0 ? [] : [{ name: "useX", hooks: nestHooks(depth - 1) }]
+
+test.each<[string, unknown]>([
+  [
+    "201 hooks",
+    [
+      ...Array(150).fill({ name: "State", value: 1 }),
+      { name: "useX", hooks: Array(50).fill({ name: "State", value: 1 }) },
+    ],
+  ],
+  ["groups nested 9 deep", nestHooks(9)],
+  ["a 257-char name", [{ name: "x".repeat(257) }]],
+  ["a bad value", [{ name: "State", value: { type: "weird" } }]],
+  ["a non-array", { name: "State" }],
+])("drops hooks with %s", (_, hooks) => {
+  expect(
+    parseInspected({
+      ...inspected(3, { props: object({}) }),
+      data: { props: object({}), hooks },
+    }),
+  ).toBeUndefined()
+})
+
+test("drops a 1,001-char hooks error", () => {
+  expect(
+    parseInspected(
+      inspected(3, {
+        props: object({}),
+        hooks: [],
+        hooksError: "x".repeat(1001),
+      }),
+    ),
+  ).toBeUndefined()
+})
+
+test("groups nested 8 deep are kept", () => {
+  const data = { props: object({}), hooks: nestHooks(8) }
+  expect(parseInspected({ ...inspected(3, null), data })?.data).toEqual(data)
+})

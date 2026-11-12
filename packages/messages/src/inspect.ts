@@ -70,7 +70,19 @@ export type Value =
   | Container
 
 // The selected node's values. Null: the agent has no such node (it unmounted).
-export type InspectedData = { props: Value; state?: Value }
+// A hook, or a custom hook (named after its function) holding the hooks it called.
+export type HookValue = { name: string; value?: Value; hooks?: HookValue[] }
+
+// `hooksError`: why the hooks couldn't be read (the shadow render threw).
+export type InspectedData = {
+  props: Value
+  state?: Value
+  hooks?: HookValue[]
+  hooksError?: string
+}
+
+const MAX_HOOKS = 200
+const MAX_HOOK_NESTING = 8
 
 // Agent to panel (relay, tree port, background).
 export type InspectedMessage = {
@@ -260,6 +272,36 @@ function container(
   }
 }
 
+// Undefined unless every hook is valid: at most MAX_HOOKS in all, groups nested at
+// most MAX_HOOK_NESTING deep, values checked against the message's budget.
+function parseHooks(
+  data: unknown,
+  budget: Budget,
+  count: { left: number },
+  depth = 0,
+): HookValue[] | undefined {
+  if (!Array.isArray(data) || depth > MAX_HOOK_NESTING) return
+  const out: HookValue[] = []
+  for (const item of data) {
+    if (--count.left < 0 || typeof item !== "object" || item === null) return
+    const { name, value, hooks } = item as Record<string, unknown>
+    if (!isName(name)) return
+    const hook: HookValue = { name }
+    if (value !== undefined) {
+      const parsed = parseValue(value, 0, budget)
+      if (parsed === undefined) return
+      hook.value = parsed
+    }
+    if (hooks !== undefined) {
+      const parsed = parseHooks(hooks, budget, count, depth + 1)
+      if (!parsed) return
+      hook.hooks = parsed
+    }
+    out.push(hook)
+  }
+  return out
+}
+
 export function parseInspected(data: unknown): InspectedMessage | undefined {
   if (typeof data !== "object" || data === null) return
   const message = data as Record<string, unknown>
@@ -267,14 +309,30 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
   if (!isId(message.id)) return
   if (message.data === null) return inspected(message.id, null)
   if (typeof message.data !== "object") return
-  const { props, state } = message.data as Record<string, unknown>
+  const { props, state, hooks, hooksError } = message.data as Record<
+    string,
+    unknown
+  >
   const budget = { left: MAX_VALUES }
-  const parsedProps = parseValue(props, 0, budget)
-  if (parsedProps === undefined) return
-  if (state === undefined) return inspected(message.id, { props: parsedProps })
-  const parsedState = parseValue(state, 0, budget)
-  if (parsedState === undefined) return
-  return inspected(message.id, { props: parsedProps, state: parsedState })
+  const parsed: InspectedData = { props: null }
+  const value = parseValue(props, 0, budget)
+  if (value === undefined) return
+  parsed.props = value
+  if (state !== undefined) {
+    const value = parseValue(state, 0, budget)
+    if (value === undefined) return
+    parsed.state = value
+  }
+  if (hooks !== undefined) {
+    const list = parseHooks(hooks, budget, { left: MAX_HOOKS })
+    if (!list) return
+    parsed.hooks = list
+  }
+  if (hooksError !== undefined) {
+    if (!isText(hooksError)) return
+    parsed.hooksError = hooksError
+  }
+  return inspected(message.id, parsed)
 }
 
 export function parseExpanded(data: unknown): ExpandedMessage | undefined {
