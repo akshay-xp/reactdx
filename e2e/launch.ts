@@ -43,7 +43,13 @@ async function launchChrome(
   })
   if (userDataDir)
     browser.on("disconnected", () =>
-      rmSync(userDataDir, { recursive: true, force: true }),
+      // Chrome can still be writing into the profile as it exits (ENOTEMPTY).
+      rmSync(userDataDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 200,
+      }),
     )
   if (!openDevtools || !extensions.includes(reactdxBuild("chrome")))
     return { browser, panelCreated: async () => false }
