@@ -43,22 +43,77 @@ for (const { fixture, port } of fixtures)
         listed,
       )
       await panel.select("Counter")
-      const props = await until(panel.inspector, (t) =>
-        t.includes('label: "Count"'),
+      const props = await until(
+        panel.inspector,
+        (t) => t.includes('label: "Count"') && t.includes("State: 0"),
       )
       assert.ok(props.includes('label: "Count"'), props)
+      assert.ok(props.includes("State: 0"), props)
+      await page.click("[data-testid=counter]")
+      const state = await until(panel.inspector, (t) => t.includes("State: 1"))
+      assert.ok(state.includes("State: 1"), state)
 
       await panel.press("Show DOM elements")
       await until(read, (t) => t.includes("button"))
       await panel.select("button")
-      const before = 'children: ["Count", ": ", 0]'
+      const before = 'children: ["Count", ": ", 1]'
       const shown = await until(panel.inspector, (t) => t.includes(before))
       assert.ok(shown.includes(before), shown)
 
       await page.click("[data-testid=counter]")
-      const after = 'children: ["Count", ": ", 1]'
+      const after = 'children: ["Count", ": ", 2]'
       const live = await until(panel.inspector, (t) => t.includes(after))
       assert.ok(live.includes(after), live)
+    } finally {
+      await browser.close()
+    }
+  })
+
+// Every top-level hook in fixtures/vite/src/hooks.jsx, as the inspector shows it.
+const HOOKS = [
+  "State: 1",
+  'Reducer: "r"',
+  "Ref: {a: 1}",
+  "Memo: 3",
+  "Callback: ƒ",
+  "Effect: [1]",
+  "LayoutEffect",
+  "InsertionEffect: []",
+  "ImperativeHandle: {focus: ƒ focus()}",
+  'DeferredValue: "d"',
+  "Transition: false",
+  'SyncExternalStore: "s"',
+  "Id: ",
+  'Context(Theme): "dark"',
+  'useCart: "2 items"',
+]
+const HOOKS_19 = [
+  "Use: 5",
+  'ActionState: "a"',
+  'Optimistic: "o"',
+  "FormStatus: {",
+  "EffectEvent: ƒ",
+]
+
+for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
+  test(`${fixture}: every hook type shows with its value`, async () => {
+    const { browser, page, panel } = await panelFor(
+      name,
+      `http://localhost:${port}/hooks.html`,
+      "after",
+    )
+    try {
+      await page.waitForSelector("[data-testid=hooks]")
+      await until(panel, (t) =>
+        parseCopies(t).some((c) => c.names.includes("Hooks")),
+      )
+      await panel.select("Hooks")
+      const expected = fixture === "19" ? [...HOOKS, ...HOOKS_19] : HOOKS
+      const text = await until(panel.inspector, (t) =>
+        expected.every((hook) => t.includes(hook)),
+      )
+      for (const hook of expected)
+        assert.ok(text.includes(hook), `${hook} in ${text}`)
     } finally {
       await browser.close()
     }
