@@ -71,7 +71,15 @@ export type Value =
 
 // The selected node's values. Null: the agent has no such node (it unmounted).
 // A hook, or a custom hook (named after its function) holding the hooks it called.
-export type HookValue = { name: string; value?: Value; hooks?: HookValue[] }
+// Where a call was made, in a served script (a hook's, for its variable name).
+export type CallSite = { url: string; line: number; column: number }
+
+export type HookValue = {
+  name: string
+  value?: Value
+  hooks?: HookValue[]
+  site?: CallSite
+}
 
 // A context the node read, by its displayName ("Context" without one).
 export type ContextValue = { name: string; value: Value }
@@ -84,7 +92,7 @@ export type Owner = { id: number | null; name: string }
 // in a served script (React 19's _debugStack), which the panel maps to a file.
 export type SourceRef =
   | { file: string; line: number; column: number }
-  | { url: string; line: number; column: number }
+  | CallSite
 
 export type InspectedData = {
   props: Value
@@ -302,7 +310,7 @@ function parseHooks(
   const out: HookValue[] = []
   for (const item of data) {
     if (--count.left < 0 || typeof item !== "object" || item === null) return
-    const { name, value, hooks } = item as Record<string, unknown>
+    const { name, value, hooks, site } = item as Record<string, unknown>
     if (!isName(name)) return
     const hook: HookValue = { name }
     if (value !== undefined) {
@@ -314,6 +322,11 @@ function parseHooks(
       const parsed = parseHooks(hooks, budget, count, depth + 1)
       if (!parsed) return
       hook.hooks = parsed
+    }
+    if (site !== undefined) {
+      const parsed = parseCallSite(site)
+      if (!parsed) return
+      hook.site = parsed
     }
     out.push(hook)
   }
@@ -375,11 +388,16 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
 
 function parseSource(data: unknown): SourceRef | undefined {
   if (typeof data !== "object" || data === null) return
-  const { file, url, line, column } = data as Record<string, unknown>
-  if (!isId(line) || !isId(column)) return
-  if (file !== undefined && url === undefined && isText(file) && file)
+  const { file, line, column } = data as Record<string, unknown>
+  if (file === undefined) return parseCallSite(data)
+  if (isId(line) && isId(column) && isText(file) && file && !("url" in data))
     return { file, line, column }
-  if (url !== undefined && file === undefined && isText(url) && url)
+}
+
+function parseCallSite(data: unknown): CallSite | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { url, line, column } = data as Record<string, unknown>
+  if (isId(line) && isId(column) && isText(url) && url)
     return { url, line, column }
 }
 

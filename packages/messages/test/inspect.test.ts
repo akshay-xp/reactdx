@@ -277,3 +277,31 @@ test.each<[string, Record<string, unknown>]>([
     }),
   ).toBeUndefined()
 })
+
+const site = { url: "http://h/src/A.jsx", line: 3, column: 9 }
+
+test("hooks carry their call sites", () => {
+  const data = {
+    props: object({}),
+    hooks: [
+      { name: "State", value: 1, site },
+      { name: "useCart", site, hooks: [{ name: "State", value: 2, site }] },
+    ],
+  }
+  expect(parseInspected(inspected(3, data))).toEqual(inspected(3, data))
+})
+
+test.each<[string, Record<string, unknown>]>([
+  ["a file", { file: "/a", line: 1, column: 1 }],
+  ["an empty url", { url: "", line: 1, column: 1 }],
+  ["a 1,001-char url", { url: "x".repeat(1001), line: 1, column: 1 }],
+  ["line 0", { url: "http://h/a", line: 0, column: 1 }],
+  ["a string column", { url: "http://h/a", line: 1, column: "1" }],
+])("drops a hook site with %s", (_, bad) => {
+  expect(
+    parseInspected({
+      ...inspected(3, null),
+      data: { props: object({}), hooks: [{ name: "State", site: bad }] },
+    }),
+  ).toBeUndefined()
+})
