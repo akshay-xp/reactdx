@@ -64,6 +64,22 @@ for (const { fixture, port } of fixtures)
       const after = 'children: ["Count", ": ", 2]'
       const live = await until(panel.inspector, (t) => t.includes(after))
       assert.ok(live.includes(after), live)
+
+      // Vite's Counter is rendered by App; Next's by the Page Server Component,
+      // which isn't in the tree.
+      await panel.select("Counter")
+      const owner = fixture === "next" ? "Page" : "App"
+      const owners = await until(panel.inspector, (t) =>
+        t.includes(`Rendered by ${owner}`),
+      )
+      assert.ok(owners.includes(`Rendered by ${owner}`), owners)
+      if (fixture !== "next") {
+        await panel.press("App")
+        // App has nothing else to show: its inspector is its header alone.
+        const header = await until(panel.inspector, (t) => /^App( |$)/.test(t))
+        assert.match(header, /^App( |$)/)
+        assert.equal(await panel.selected(), "App")
+      }
     } finally {
       await browser.close()
     }
@@ -86,6 +102,8 @@ const HOOKS = [
   "Id: ",
   'Context(Theme): "dark"',
   'useCart: "2 items"',
+  // The Context section.
+  'Context Theme: "dark"',
 ]
 const HOOKS_19 = [
   "Use: 5",
