@@ -15,6 +15,8 @@ const h = React.createElement
 const posted: unknown[] = []
 let root: Root
 let mount: (element: React.ReactNode) => Promise<void>
+// Loaded after the hook, like react-dom/client: React registers as it loads.
+let ReactDOM: { useFormStatus?: () => unknown }
 
 // One hook and one agent per file: react-dom registers once per module load.
 beforeAll(async () => {
@@ -23,6 +25,7 @@ beforeAll(async () => {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true
   const { createRoot } = await import("react-dom/client")
+  ReactDOM = await import("react-dom")
   startAgent(globalThis, (message) => posted.push(message))
   const container = document.createElement("div")
   document.body.append(container)
@@ -193,5 +196,52 @@ test("each call of a custom hook is its own group; formatters apply", async () =
     { name: "useCount", hooks: [{ name: "State", value: 2 }] },
     { name: "useCount", hooks: [{ name: "State", value: 2 }] },
     { name: "useLabel", value: "3 items", hooks: [] },
+  ])
+})
+
+const react19 = React.version.startsWith("19.")
+const fulfilled = Object.assign(Promise.resolve(5), {
+  status: "fulfilled",
+  value: 5,
+})
+
+function Modern() {
+  const R = React as unknown as Record<string, (...args: unknown[]) => unknown>
+  R.use?.(Theme)
+  R.use?.(fulfilled)
+  R.useActionState?.((s: unknown) => s, "a")
+  R.useOptimistic?.("o")
+  ReactDOM.useFormStatus?.()
+  R.useEffectEvent?.(() => {})
+  React.useState("last")
+  return null
+}
+
+test.skipIf(!react19)("React 19 hooks", async () => {
+  const data = await inspect(
+    h(Theme.Provider, { value: "dark" }, h(Modern)),
+    "Modern",
+  )
+  expect(data?.hooksError).toBeUndefined()
+  const hooks = data?.hooks ?? []
+  expect(names(hooks)).toEqual([
+    "Context(Theme)",
+    "Use",
+    "ActionState",
+    "Optimistic",
+    "FormStatus",
+    "EffectEvent",
+    "State",
+  ])
+  expect(hooks.map((hook) => hook.value)).toEqual([
+    "dark",
+    5,
+    "a",
+    "o",
+    expect.objectContaining({
+      props: expect.objectContaining({ pending: false }),
+    }),
+    expect.objectContaining({ type: "function" }),
+    "last",
   ])
 })
