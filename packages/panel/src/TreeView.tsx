@@ -34,6 +34,20 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
     addEventListener("resize", measure)
     onCleanup(() => removeEventListener("resize", measure))
   })
+  const selected = (id: number) => props.tree.selected() === id
+  // Dark muted on selected is 2.9:1 (docs/panel.md, Themes).
+  const muted = (id: number) => (selected(id) ? "text-fg" : "text-muted")
+  // One listener for every row: a toggle click on an expandable row toggles it,
+  // any other click selects the row.
+  const click = (event: MouseEvent) => {
+    const target = event.target as Element
+    const row = target.closest<HTMLElement>("[data-testid=node]")
+    if (!row) return
+    const id = Number(row.dataset.id)
+    if (target.closest("[data-toggle]") && row.hasAttribute("aria-expanded"))
+      props.tree.toggle(id)
+    else props.tree.select(id)
+  }
   const range = () => windowOf(scrollTop(), height(), rows().length)
 
   return (
@@ -45,6 +59,10 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
       class="overflow-y-auto"
       style={{ "max-height": "80vh" }}
       onScroll={measure}
+      onClick={click}
+      onKeyDown={(event) => {
+        if (props.tree.key(props.rootId, event.key)) event.preventDefault()
+      }}
     >
       <div
         class="relative"
@@ -60,14 +78,17 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                 role="treeitem"
                 tabIndex={-1}
                 aria-level={row.depth + 1}
+                aria-selected={selected(row.id)}
                 aria-expanded={row.expandable ? row.expanded : undefined}
                 class="flex items-center gap-1 whitespace-nowrap font-mono"
+                classList={{ "bg-selected": selected(row.id) }}
+                data-id={row.id}
                 style={{
                   height: `${ROW_HEIGHT}px`,
                   "padding-left": `${row.depth * 12}px`,
                 }}
               >
-                <span class="flex w-3 shrink-0 justify-center">
+                <span data-toggle class="flex w-3 shrink-0 justify-center">
                   <Show when={row.expandable}>
                     <span
                       data-testid="toggle"
@@ -80,13 +101,13 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                 {row.name}
                 <Show when={BADGES.has(row.kind)}>
                   {" "}
-                  <span data-testid="badge" class="text-muted">
+                  <span data-testid="badge" class={muted(row.id)}>
                     {row.kind}
                   </span>
                 </Show>
                 <Show when={row.key !== null}>
                   {" "}
-                  <span data-testid="key" class="truncate text-muted">
+                  <span data-testid="key" class={`truncate ${muted(row.id)}`}>
                     {`key="${row.key}"`}
                   </span>
                 </Show>
