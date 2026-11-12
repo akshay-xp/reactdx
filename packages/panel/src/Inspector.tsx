@@ -166,6 +166,24 @@ export function Inspector(props: {
                   />
                 </Section>
               </Show>
+              <Show when={props.inspector.data()?.contexts?.length}>
+                <Section
+                  name="Context"
+                  open={!collapsed().has("Context")}
+                  onToggle={() => toggle("Context")}
+                >
+                  <For each={props.inspector.data()?.contexts}>
+                    {(context, index) => (
+                      <ValueRow
+                        inspector={props.inspector}
+                        entry={context}
+                        path={`Context.${index()}`}
+                        depth={0}
+                      />
+                    )}
+                  </For>
+                </Section>
+              </Show>
             </div>
           </div>
         )}
