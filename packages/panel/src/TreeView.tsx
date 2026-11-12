@@ -1,5 +1,6 @@
 import type { TreeKind } from "@reactdx/messages"
 import {
+  createEffect,
   createMemo,
   createSignal,
   For,
@@ -48,6 +49,9 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
       props.tree.toggle(id)
     else props.tree.select(id)
   }
+  // Times the first rows after a subscribe (e2e/perf.test.ts).
+  const shown = createMemo(() => rows().length > 0)
+  createEffect(() => shown() && performance.mark("reactdx:rows"))
   const range = () => windowOf(scrollTop(), height(), rows().length)
 
   return (

@@ -21,8 +21,11 @@ onThemeChanged((kind) => apply(defaultTheme(kind)))
 const [renderers, setRenderers] = createSignal<RendererView[]>([])
 const tree = createTreeStore()
 const tabId = browser.devtools.inspectedWindow.tabId
-const subscribe = (port: Browser.runtime.Port) =>
+// The mark times the first rows (e2e/perf.test.ts).
+const subscribe = (port: Browser.runtime.Port) => {
+  performance.mark("reactdx:subscribe")
   port.postMessage({ type: "subscribe", tabId } satisfies SubscribeMessage)
+}
 
 // The port drops whenever the background stops (an idle service worker); connecting
 // again wakes it, and subscribing asks the page's relay for the current state.
