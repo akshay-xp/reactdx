@@ -2,6 +2,8 @@
 // dispatcher (docs/page.md, Hooks). After react-debug-tools' inspectHooksOfFiber
 // (MIT), which RDT uses.
 
+import { type Frame, parseStack } from "./stack.ts"
+
 type HookState = { memoizedState: unknown; next: HookState | null }
 type ContextItem = { memoizedValue: unknown; next: ContextItem | null }
 type Context = { displayName?: string; _currentValue?: unknown }
@@ -23,7 +25,59 @@ export type DispatcherRef = { H?: unknown; current?: unknown }
 // without deps).
 export type RawHook = { name: string; value?: unknown; hooks?: RawHook[] }
 
-type Call = { name: string; value?: unknown; hasValue: boolean }
+type Call = {
+  name: string
+  value?: unknown
+  hasValue: boolean
+  frames: Frame[]
+}
+
+// Frames on a stub's stack above the custom hook chain: record(), the stub
+// method, and React's exported hook (useState, useFormStatus...). Below the
+// chain: renderOf's closure, then what the stack before the render had.
+const ABOVE = 3
+const BELOW = 1
+
+// Each level of a hook's custom hook chain, outermost first: the custom hook's
+// name, keyed by where it was called, so two calls of one hook stay apart.
+function chainOf(frames: Frame[], depth: number) {
+  const chain = frames.slice(ABOVE, frames.length - depth - BELOW).reverse()
+  return chain.slice(1).map((frame, i) => ({
+    name: frame.functionName,
+    key: `${(chain[i] as Frame).source} ${frame.functionName}`,
+  }))
+}
+
+// Nests each call under its custom hooks; a DebugValue labels the hook it's in.
+function group(calls: Call[], depth: number): RawHook[] {
+  const top: RawHook[] = []
+  let open: { key: string; hook: RawHook }[] = []
+  for (const call of calls) {
+    const chain = chainOf(call.frames, depth)
+    let shared = 0
+    while (
+      shared < open.length &&
+      shared < chain.length &&
+      open[shared]?.key === chain[shared]?.key
+    )
+      shared++
+    open = open.slice(0, shared)
+    for (const level of chain.slice(shared)) {
+      const hook: RawHook = { name: level.name, hooks: [] }
+      ;(open.at(-1)?.hook.hooks ?? top).push(hook)
+      open.push({ key: level.key, hook })
+    }
+    const parent = open.at(-1)?.hook
+    if (parent && call.name === "DebugValue") parent.value = call.value
+    else
+      (parent?.hooks ?? top).push(
+        call.hasValue
+          ? { name: call.name, value: call.value }
+          : { name: call.name },
+      )
+  }
+  return top
+}
 
 const noop = () => {}
 
@@ -61,7 +115,12 @@ export function inspectHooks(
     return value
   }
   const record = (name: string, value?: unknown, hasValue = true) =>
-    calls.push({ name, value, hasValue })
+    calls.push({
+      name,
+      value,
+      hasValue,
+      frames: parseStack(new Error().stack ?? ""),
+    })
   const effect = (name: string) => () => {
     const deps = (next()?.memoizedState as { deps?: unknown } | undefined)?.deps
     record(name, deps, deps != null)
@@ -158,18 +217,22 @@ export function inspectHooks(
   const key = "H" in ref ? "H" : "current"
   const previous = ref[key]
   ref[key] = dispatcher
+  // V8 keeps 10 frames by default: a deep custom hook chain needs them all.
+  const limit = Error.stackTraceLimit
+  Error.stackTraceLimit = Number.POSITIVE_INFINITY
   let error: string | undefined
+  let depth = 0
   try {
+    depth = parseStack(new Error().stack ?? "").length
     render(fiber.memoizedProps)
   } catch (thrown) {
     error = String(thrown)
   } finally {
     ref[key] = previous
+    Error.stackTraceLimit = limit
   }
   return {
-    hooks: calls.map(({ name, value, hasValue }) =>
-      hasValue ? { name, value } : { name },
-    ),
+    hooks: group(calls, depth),
     ...(error !== undefined && { error }),
   }
 }

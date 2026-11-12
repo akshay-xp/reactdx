@@ -150,3 +150,48 @@ test("a commit sends the new values", async () => {
   await flushed()
   expect(last()?.hooks?.[0]).toEqual({ name: "State", value: 7 })
 })
+
+function useCount() {
+  return React.useState(2)
+}
+function useCart() {
+  useCount()
+  React.useDebugValue("2 items")
+}
+function useLabel() {
+  React.useDebugValue(3, (n: number) => `${n} items`)
+}
+function Shop() {
+  useCart()
+  useCount()
+  React.useState(0)
+  return null
+}
+function Twice() {
+  useCount()
+  useCount()
+  useLabel()
+  return null
+}
+
+test("custom hooks are groups of the hooks they call", async () => {
+  const data = await inspect(h(Shop), "Shop")
+  expect(data?.hooks).toEqual([
+    {
+      name: "useCart",
+      value: "2 items",
+      hooks: [{ name: "useCount", hooks: [{ name: "State", value: 2 }] }],
+    },
+    { name: "useCount", hooks: [{ name: "State", value: 2 }] },
+    { name: "State", value: 0 },
+  ])
+})
+
+test("each call of a custom hook is its own group; formatters apply", async () => {
+  const data = await inspect(h(Twice), "Twice")
+  expect(data?.hooks).toEqual([
+    { name: "useCount", hooks: [{ name: "State", value: 2 }] },
+    { name: "useCount", hooks: [{ name: "State", value: 2 }] },
+    { name: "useLabel", value: "3 items", hooks: [] },
+  ])
+})
