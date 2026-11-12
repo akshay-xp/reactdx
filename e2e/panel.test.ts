@@ -231,9 +231,9 @@ describe("fixture:18 DOM elements filter", {
         assert.equal(names(text), want, text)
       }
       await expectNames(["App", "Counter"])
-      await panel.check("Show DOM elements")
+      await panel.press("Show DOM elements")
       await expectNames(["App", "p", "Counter", "button"])
-      await panel.check("Show DOM elements")
+      await panel.press("Show DOM elements")
       await expectNames(["App", "Counter"])
     } finally {
       await browser.close()

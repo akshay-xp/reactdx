@@ -55,11 +55,13 @@ One per development root: `TreeView(props: { tree: TreeStore; rootId: number })`
 
 Above the copies, only when a development copy is present (`ConnectionList`), so the no-React and production notices stay exactly as they were.
 
-- `Pick element` toggle (`[data-testid=pick]`, `aria-pressed` from `picking()`, `bg-selected` when on).
+Laid out like SnapQL's search bar (`~/Code/snapql/apps/extension/src/panel/search.tsx`): a `<search>` bar `h-10`, its buttons copied from SnapQL's `IconButton`.
 
-- Search box (`[data-testid=search]`, `aria-label="Search components"`): input sets the query; Enter steps to the next match, Shift+Enter to the previous.
-- Counter (`[data-testid=search-count]`, `<position> of <matches>`), only while there's a query: "1 of 3" after typing, "0 of 0" with no matches.
-- `Show DOM elements` checkbox (`[data-testid=show-dom]`, inside its `<label>`): `setShowHosts`.
+- `Pick element` icon button (`[data-testid=pick]`, crosshair icon; the name is its `aria-label` and `title`; `aria-pressed` from `picking()`, `bg-accent/20 text-accent` when on).
+
+- Search field: a rounded `bg-surface` label filling the bar (search icon, accent focus ring) around the input (`[data-testid=search]`, `aria-label="Search components"`, bound to `query()`, native cancel button hidden): input sets the query; Enter steps to the next match, Shift+Enter to the previous.
+- Inside the field, only while there's a query: the counter (`[data-testid=search-count]`, `<position> of <matches>`: "1 of 3" after typing, "0 of 0" with no matches) and a `Clear search` icon button.
+- `Show DOM elements` icon button (`[data-testid=show-dom]`, `</>` icon, the name as `aria-label` and `title`, `aria-pressed`, accent when on): `setShowHosts`. An icon rather than a labelled pill, so the search field keeps the bar's width.
 - `test/Toolbar.test.tsx`: counter, Enter and Shift+Enter, no matches, clearing, the DOM toggle, the picker button.
 
 ## Themes (`src/themes.ts`, `src/index.css`)

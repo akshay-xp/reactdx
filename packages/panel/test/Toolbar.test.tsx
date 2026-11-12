@@ -69,14 +69,31 @@ test("typing shows the counter; Enter and Shift+Enter cycle", () => {
   expect(count()).toBeUndefined()
 })
 
-test("Show DOM elements toggles host rows", () => {
+test("the clear button empties the search", () => {
+  const { tree, container, search, type } = setup()
+  const clear = () =>
+    container.querySelector("[aria-label='Clear search']") as Element | null
+  expect(clear()).toBeNull()
+  type("item")
+  fireEvent.click(clear() as Element)
+  expect(tree.query()).toBe("")
+  expect(search.value).toBe("")
+  expect(clear()).toBeNull()
+})
+
+test("the Show DOM elements toggle shows and hides host rows", () => {
   const { container, names } = setup()
-  const box = container.querySelector("[data-testid=show-dom]") as Element
-  expect(box.closest("label")?.textContent).toBe("Show DOM elements")
+  const toggle = container.querySelector("[data-testid=show-dom]") as Element
+  expect(toggle.tagName).toBe("BUTTON")
+  expect(toggle.textContent).toBe("")
+  expect(toggle.getAttribute("aria-label")).toBe("Show DOM elements")
+  expect(toggle.getAttribute("title")).toBe("Show DOM elements")
+  expect(toggle.getAttribute("aria-pressed")).toBe("false")
   expect(names()).not.toContain("div")
-  fireEvent.click(box)
+  fireEvent.click(toggle)
+  expect(toggle.getAttribute("aria-pressed")).toBe("true")
   expect(names()).toContain("div")
-  fireEvent.click(box)
+  fireEvent.click(toggle)
   expect(names()).not.toContain("div")
 })
 
@@ -84,7 +101,8 @@ test("the picker button toggles picking and follows a pick", () => {
   const { tree, container } = setup()
   const pick = container.querySelector("[data-testid=pick]") as Element
   expect(pick).not.toBeNull()
-  expect(pick.textContent).toBe("Pick element")
+  expect(pick.getAttribute("aria-label")).toBe("Pick element")
+  expect(pick.getAttribute("title")).toBe("Pick element")
   expect(pick.getAttribute("aria-pressed")).toBe("false")
   fireEvent.click(pick)
   expect(tree.picking()).toBe(true)

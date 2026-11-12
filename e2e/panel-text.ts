@@ -5,13 +5,13 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // The panel's visible text, whitespace-normalized, read the same way in both browsers.
 // end() presses End on each tree: a tree only renders the rows in view, so a big
 // one (Next's) shows its last rows, where the app's components are, only then.
-// check(label) clicks the checkbox with that label. hover(name) puts the pointer on
+// hover(name) puts the pointer on
 // the tree row with that name; leave() moves it off the trees. close() closes DevTools.
-// press(name) clicks the button with that text, pressed(name) reads its aria-pressed,
+// press(name) clicks the button with that name (its text or aria-label), pressed(name)
+// reads its aria-pressed,
 // selected() is the selected row's name.
 export type PanelText = (() => Promise<string>) & {
   end(): Promise<void>
-  check(label: string): Promise<void>
   hover(name: string): Promise<void>
   leave(): Promise<void>
   close(): Promise<void>
@@ -54,17 +54,6 @@ export async function openPanelText(
         await frame.page().keyboard.press("End")
       }
     }
-    const check = async (label: string) => {
-      await frame.evaluate((label) => {
-        const box = [
-          ...document.querySelectorAll<HTMLInputElement>(
-            "input[type=checkbox]",
-          ),
-        ].find((el) => el.closest("label")?.textContent?.trim() === label)
-        if (!box) throw new Error(`no checkbox labelled ${label}`)
-        box.click()
-      }, label)
-    }
     const hover = async (name: string) => {
       const rows = await frame.$$("[data-testid=name]")
       for (const row of rows)
@@ -79,7 +68,7 @@ export async function openPanelText(
     }
     const close = () => frame.page().close()
     const button = (name: string) =>
-      `[...document.querySelectorAll("button")].find((el) => el.textContent.trim() === ${json(name)})`
+      `[...document.querySelectorAll("button")].find((el) => (el.getAttribute("aria-label") ?? el.textContent.trim()) === ${json(name)})`
     const press = async (name: string) => {
       await frame.evaluate(`${button(name)}.click()`)
     }
@@ -96,7 +85,6 @@ export async function openPanelText(
       )
     return Object.assign(read, {
       end,
-      check,
       hover,
       leave,
       close,
@@ -217,13 +205,6 @@ export async function openPanelText(
     if (result === missing) throw new Error(missing)
     return result
   }
-  // A checkbox's action 0 is a click.
-  const check = async (label: string) => {
-    await onAccessible(
-      `node.role === ${role("CHECKBUTTON")} && node.name === ${json(label)}`,
-      `node.doAction(0); return "ok"`,
-    )
-  }
   // A native mouse move to the middle of the accessible's screen bounds (device
   // pixels, as getBounds gives them): the panel's DOM is in another process.
   const pointAt = async (match: string) => {
@@ -296,7 +277,6 @@ export async function openPanelText(
     )) ?? undefined
   return Object.assign(read, {
     end,
-    check,
     hover,
     leave,
     close,
