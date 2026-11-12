@@ -161,3 +161,26 @@ test("the 10k tree scrolls with under 100 DOM rows and no long task", {
     await browser.close()
   }
 })
+
+test("End and Home select the last and first rows and scroll to them", {
+  skip,
+}, async () => {
+  const { browser, panel } = await benchPanel()
+  try {
+    const selected = (text: string) =>
+      panel.waitForFunction(
+        (want) =>
+          document.querySelector("[data-testid=node][aria-selected=true]")
+            ?.textContent === want,
+        { timeout: 2000 },
+        text,
+      )
+    await panel.focus("[data-testid=tree]")
+    await panel.page().keyboard.press("End")
+    await selected('Cell key="9999"')
+    await panel.page().keyboard.press("Home")
+    await selected("Bench")
+  } finally {
+    await browser.close()
+  }
+})

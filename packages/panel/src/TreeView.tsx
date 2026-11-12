@@ -4,6 +4,7 @@ import {
   createMemo,
   createSignal,
   For,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -52,6 +53,17 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
   // Times the first rows after a subscribe (e2e/perf.test.ts).
   const shown = createMemo(() => rows().length > 0)
   createEffect(() => shown() && performance.mark("reactdx:rows"))
+  // Only on selection changes: a commit mustn't scroll back to the selection.
+  createEffect(
+    on(props.tree.selected, (id) => {
+      const index = rows().findIndex((row) => row.id === id)
+      if (index === -1) return
+      const top = index * ROW_HEIGHT
+      if (top < scroller.scrollTop) scroller.scrollTop = top
+      else if (top + ROW_HEIGHT > scroller.scrollTop + scroller.clientHeight)
+        scroller.scrollTop = top + ROW_HEIGHT - scroller.clientHeight
+    }),
+  )
   const range = () => windowOf(scrollTop(), height(), rows().length)
 
   return (
