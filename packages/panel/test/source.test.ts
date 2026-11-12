@@ -71,3 +71,47 @@ test("a failed or rejected fetch resolves to nothing", async () => {
     Promise.reject(new TypeError("offline"))) as typeof fetch
   expect(await createSourceResolver(rejecting)(frame)).toBe(null)
 })
+
+// Next's chunks: an external map in sections, with file:// sources.
+const chunk = "http://h/_next/static/chunks/c.js"
+const sectioned = JSON.stringify({
+  version: 3,
+  sections: [
+    {
+      offset: { line: 4, column: 0 },
+      map: JSON.parse(map("file:///abs/app/Counter.jsx")),
+    },
+  ],
+})
+
+test("a frame maps through an external sectioned map", async () => {
+  const { fetch } = serve({
+    [chunk]: "code\n//# sourceMappingURL=c.js.map\n",
+    [`${chunk}.map`]: sectioned,
+  })
+  // Section offset 4 lines: generated 18 is the section's 14.
+  expect(
+    await createSourceResolver(fetch)({ url: chunk, line: 18, column: 47 }),
+  ).toEqual({ file: "/abs/app/Counter.jsx", line: 13, column: 7 })
+})
+
+test("a map that isn't on the web leaves the frame as is", async () => {
+  const { fetch, requests } = serve({
+    [chunk]: "code\n//# sourceMappingURL=file:///c.js.map\n",
+  })
+  expect(
+    await createSourceResolver(fetch)({ url: chunk, line: 18, column: 47 }),
+  ).toEqual({ file: "_next/static/chunks/c.js", line: 18, column: 47 })
+  expect(requests).toEqual([chunk])
+})
+
+test("each script and map is fetched once", async () => {
+  const { fetch, requests } = serve({
+    [chunk]: "code\n//# sourceMappingURL=c.js.map\n",
+    [`${chunk}.map`]: sectioned,
+  })
+  const resolve = createSourceResolver(fetch)
+  await resolve({ url: chunk, line: 18, column: 47 })
+  await resolve({ url: chunk, line: 5, column: 1 })
+  expect(requests).toEqual([chunk, `${chunk}.map`])
+})

@@ -38,13 +38,25 @@ export function createSourceResolver(fetch: typeof globalThis.fetch) {
     if (!response.ok) throw new Error(`${response.status} for ${url}`)
     return response.text()
   }
-  const consumerFor = async (scriptUrl: string) => {
+  const load = async (scriptUrl: string) => {
     const comment = MAP_COMMENT.exec(await text(scriptUrl))?.[1]
     if (!comment) return null
     const mapUrl = new URL(comment, scriptUrl).href
     if (mapUrl.startsWith("data:"))
       return new Consumer(JSON.parse(decodeDataUrl(mapUrl)), scriptUrl)
-    return null
+    if (!WEB.test(mapUrl)) return null
+    return new Consumer(JSON.parse(await text(mapUrl)), mapUrl)
+  }
+  // Per script for the panel's lifetime; a failed load is tried again next time.
+  const consumers = new Map<string, Promise<SourceMapConsumer | null>>()
+  const consumerFor = (scriptUrl: string) => {
+    let consumer = consumers.get(scriptUrl)
+    if (!consumer) {
+      consumer = load(scriptUrl)
+      consumers.set(scriptUrl, consumer)
+      consumer.catch(() => consumers.delete(scriptUrl))
+    }
+    return consumer
   }
   return async (source: SourceRef): Promise<SourceLocation | null> => {
     if ("file" in source) return source
