@@ -160,7 +160,7 @@ describe("fixture:19 tree page", {
   before(async () => (stop = await startFixture("fixture:19", 5219)))
   after(() => stop?.())
 
-  test("every component kind shows by name, wrappers hidden", async () => {
+  test("every component kind shows its name, badge and key; wrappers hidden", async () => {
     const { browser, panel } = await panelFor(
       name,
       "http://localhost:5219/tree.html",
@@ -171,10 +171,14 @@ describe("fixture:19 tree page", {
         "Kinds",
         "Klass",
         "Memoized",
+        "memo",
         "Fwd",
+        "forwardRef",
         "Named",
+        "forwardRef",
         "Suspense",
         "Lazy",
+        "lazy",
         "Theme",
         "Theme",
         "Context",
@@ -182,7 +186,9 @@ describe("fixture:19 tree page", {
         "Item",
         "Anonymous",
         "Item",
+        'key="a"',
         "Item",
+        'key="b"',
         "Activity",
         "Item",
       ]

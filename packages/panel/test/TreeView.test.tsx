@@ -45,3 +45,27 @@ test("only a window of a large tree is in the DOM", () => {
   const spacer = container.querySelector("[data-testid=tree] > div")
   expect((spacer as HTMLElement).style.height).toBe("20020px")
 })
+
+test("rows show a kind badge, the key and a text-free toggle", () => {
+  const { nodes } = view([
+    add(1, 0, "App"),
+    add(2, 1, "Memoized", 0, "memo", "a"),
+    add(3, 1, "Fwd", 1, "forwardRef"),
+  ])
+  expect(nodes().map((n) => n.textContent)).toEqual([
+    "App",
+    'Memoized memo key="a"',
+    "Fwd forwardRef",
+  ])
+  const toggles = nodes().map((n) => n.querySelector("[data-testid=toggle]"))
+  expect(toggles.map((t) => t !== null)).toEqual([true, false, false])
+  expect(toggles[0]?.textContent).toBe("")
+})
+
+test("keys render as text, never markup", () => {
+  const { container } = view([
+    add(1, 0, "App", 0, "function", "<img src=x onerror=alert(1)>"),
+  ])
+  expect(container.querySelector("img")).toBeNull()
+  expect(container.textContent).toContain('key="<img src=x onerror=alert(1)>"')
+})
