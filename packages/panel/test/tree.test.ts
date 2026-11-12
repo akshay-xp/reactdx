@@ -180,6 +180,27 @@ test("Left collapses or goes to the parent; Right expands or goes to the first c
   expect(press("ArrowRight")).toBe(5)
 })
 
+test("DOM elements show as rows on request", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  expect(tree.showHosts()).toBe(false)
+  tree.setShowHosts(true)
+  expect(names(tree.rows(1))).toEqual([
+    "0 App",
+    "1 div",
+    "2 A",
+    "3 span",
+    "4 B",
+    "2 C",
+  ])
+  tree.select(5)
+  tree.key(1, "ArrowLeft")
+  expect(tree.selected()).toBe(4)
+  tree.setShowHosts(false)
+  expect(tree.selected()).toBeUndefined()
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "2 B", "1 C"])
+})
+
 test("clear empties the store", () => {
   const tree = createTreeStore()
   tree.apply(resync)

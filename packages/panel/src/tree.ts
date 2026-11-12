@@ -29,6 +29,10 @@ export function createTreeStore() {
   const collapsed = new Set<number>()
   const [version, setVersion] = createSignal(0)
   const [selected, select] = createSignal<number>()
+  const [showHosts, showHostsSignal] = createSignal(false)
+  // Host (DOM element) nodes are rows only while "Show DOM elements" is on.
+  const visible = (node: Node | undefined) =>
+    node !== undefined && (node.kind !== "host" || showHosts())
 
   const siblings = (rootId: number, parentId: number) => {
     if (parentId) return nodes.get(parentId)?.children
@@ -78,18 +82,17 @@ export function createTreeStore() {
   let expected = 1
   let stale = false
 
-  // The nearest non-host descendants: what a node's row shows as its children.
+  // The nearest visible descendants: what a node's row shows as its children.
   const shown = (ids: number[], out: number[] = []) => {
     for (const id of ids) {
       const node = nodes.get(id)
-      if (!node) continue
-      if (node.kind === "host") shown(node.children, out)
-      else out.push(id)
+      if (visible(node)) out.push(id)
+      else if (node) shown(node.children, out)
     }
     return out
   }
 
-  // Host elements are hidden: their children take their place and depth.
+  // Hidden host elements: their children take their place and depth.
   const rows = (rootId: number): Row[] => {
     version()
     const rows: Row[] = []
@@ -117,10 +120,10 @@ export function createTreeStore() {
     setVersion(version() + 1)
   }
 
-  // The nearest non-host ancestor, or undefined at the top of a root.
+  // The nearest visible ancestor, or undefined at the top of a root.
   const parentOf = (id: number) => {
     let parent = nodes.get(id)?.parentId
-    while (parent && nodes.get(parent)?.kind === "host")
+    while (parent && !visible(nodes.get(parent)))
       parent = nodes.get(parent)?.parentId
     return parent || undefined
   }
@@ -173,6 +176,12 @@ export function createTreeStore() {
     select: (id: number) => select(id),
 
     toggle,
+    showHosts,
+    setShowHosts(on: boolean) {
+      showHostsSignal(on)
+      if (!visible(nodes.get(selected() as number))) select(undefined)
+      setVersion(version() + 1)
+    },
 
     clear() {
       reset()
