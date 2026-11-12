@@ -1,5 +1,6 @@
 import type { RendererView } from "@reactdx/messages"
 import { For, Match, Show, Switch } from "solid-js"
+import { TreeView } from "./TreeView"
 import type { TreeStore } from "./tree"
 
 const build = (bundleType: number) =>
@@ -44,21 +45,7 @@ export function ConnectionList(props: {
                           {root.commits} commits
                         </span>
                         <Show when={renderer.bundleType === 1}>
-                          <ul>
-                            <For each={props.tree.rows(root.id)}>
-                              {(row) => (
-                                <li
-                                  data-testid="node"
-                                  class="font-mono"
-                                  style={{
-                                    "padding-left": `${row.depth * 12}px`,
-                                  }}
-                                >
-                                  {row.name}
-                                </li>
-                              )}
-                            </For>
-                          </ul>
+                          <TreeView tree={props.tree} rootId={root.id} />
                         </Show>
                       </li>
                     )}
