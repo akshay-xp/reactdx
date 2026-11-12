@@ -9,6 +9,7 @@
     "./source": "./src/source.ts",
     "./editor": "./src/editor.ts",
     "./names": "./src/names.ts",
+    "./settings": "./src/settings.ts",
     "./themes": "./src/themes.ts",
     "./index.css": "./src/index.css"
   },
