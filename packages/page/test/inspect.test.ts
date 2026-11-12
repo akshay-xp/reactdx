@@ -238,3 +238,33 @@ test("symbol keys, array extras and holes are kept", () => {
   // biome-ignore lint/suspicious/noSparseArray: the hole is the point
   expect(at(serialize([1, , 3]), "items")).toEqual([1, { type: "hole" }, 3])
 })
+
+test("typed arrays are paged, buffers and weak collections summarized", () => {
+  const { serialize, expand } = createInspector()
+  const bytes = new Uint8Array(1_000_000).map((_, i) => i % 256)
+  const start = performance.now()
+  const result = serialize(bytes)
+  expect(performance.now() - start).toBeLessThan(5)
+  expect(result).toEqual({
+    type: "typed-array",
+    className: "Uint8Array",
+    id: expect.any(Number),
+    length: 1_000_000,
+    items: Array.from({ length: 100 }, (_, i) => i),
+    nextOffset: 100,
+  })
+  expect(at(expand(at(result, "id") as number, 100), "items.0")).toBe(100)
+  expect(at(serialize(new BigInt64Array([1n])), "items")).toEqual([
+    { type: "bigint", value: "1" },
+  ])
+  expect(serialize(new ArrayBuffer(8))).toEqual({
+    type: "array-buffer",
+    byteLength: 8,
+  })
+  expect(serialize(new DataView(new ArrayBuffer(4)))).toEqual({
+    type: "data-view",
+    byteLength: 4,
+  })
+  expect(serialize(new WeakMap())).toEqual({ type: "weak-map" })
+  expect(serialize(new WeakSet())).toEqual({ type: "weak-set" })
+})

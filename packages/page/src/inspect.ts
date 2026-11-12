@@ -65,7 +65,18 @@ function leaf(value: object) {
   if (value instanceof Error)
     return { type: "error", name: value.name, message: value.message }
   if (value instanceof Promise) return { type: "promise" }
+  if (value instanceof ArrayBuffer)
+    return { type: "array-buffer", byteLength: value.byteLength }
+  if (value instanceof DataView)
+    return { type: "data-view", byteLength: value.byteLength }
+  if (value instanceof WeakMap) return { type: "weak-map" }
+  if (value instanceof WeakSet) return { type: "weak-set" }
 }
+
+type TypedArray = ArrayLike<number | bigint>
+// A DataView is a view too, but is summarized in leaf().
+const isTypedArray = (value: object): value is TypedArray =>
+  ArrayBuffer.isView(value)
 
 // Own keys, symbols included, read without running getters.
 const keysOf = (value: object) =>
@@ -96,6 +107,12 @@ function propsOf(
 
 function preview(value: object) {
   if (Array.isArray(value)) return { type: "array", length: value.length }
+  if (isTypedArray(value))
+    return {
+      type: "typed-array",
+      className: className(value),
+      length: value.length,
+    }
   if (value instanceof Map) return { type: "map", size: value.size }
   if (value instanceof Set) return { type: "set", size: value.size }
   return {
@@ -138,6 +155,9 @@ export function createInspector() {
         ...(extras.length && { props: propsOf(value, extras, child) }),
       }
     }
+    // Read by index: walking a million-element array's own properties is slow.
+    if (isTypedArray(value))
+      return paged(indexes(value.length), (i) => child(value[i]))
     if (value instanceof Map) {
       const { items, ...rest } = paged(value.entries(), ([key, item]) => [
         child(key),
