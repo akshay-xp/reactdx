@@ -146,3 +146,37 @@ test("a provider's new value re-sends a consumer whose props didn't change", asy
     { name: "Theme", value: "light" },
   ])
 })
+
+function Leaf() {
+  return h("em", null, "leaf")
+}
+function Inner() {
+  return h(Leaf)
+}
+function Middle() {
+  return h("div", null, h(Inner))
+}
+function Outer() {
+  return h(Middle)
+}
+
+const owners = (
+  data?: { owners?: { id: number | null; name: string }[] } | null,
+) => data?.owners ?? []
+
+test("owners, nearest first, with the tree's ids", async () => {
+  const data = await inspect(h(Outer), "Leaf")
+  expect(owners(data).map((o) => o.name)).toEqual(["Inner", "Middle", "Outer"])
+  expect(owners(data).map((o) => o.id)).toEqual([
+    idOf("Inner"),
+    idOf("Middle"),
+    idOf("Outer"),
+  ])
+  send({ source: "reactdx-relay", type: "inspect", id: idOf("Outer") })
+  expect(replies().at(-1)?.data?.owners).toEqual([])
+  send({ source: "reactdx-relay", type: "inspect", id: idOf("em") })
+  expect(owners(replies().at(-1)?.data)[0]).toEqual({
+    id: idOf("Leaf"),
+    name: "Leaf",
+  })
+})

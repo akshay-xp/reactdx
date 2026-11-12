@@ -90,7 +90,7 @@ export type InspectedData = {
 }
 
 const MAX_CONTEXTS = 50
-const MAX_OWNERS = 50
+export const MAX_OWNERS = 50
 
 const MAX_HOOKS = 200
 const MAX_HOOK_NESTING = 8

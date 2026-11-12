@@ -13,6 +13,8 @@ export type Fiber = {
   return: Fiber | null
   memoizedProps: unknown
   memoizedState: unknown
+  // Development builds: who rendered it (a Fiber, or React 19 server component info).
+  _debugOwner?: unknown
   stateNode: unknown
 }
 
@@ -233,6 +235,14 @@ export function createTree() {
         }
         return
       }
+    },
+    // An emitted, mounted fiber's id and name (either of its two fibers).
+    known(fiber: Fiber) {
+      const id =
+        ids.get(fiber) ??
+        (fiber.alternate ? ids.get(fiber.alternate) : undefined)
+      if (id !== undefined && fibers.has(id))
+        return { id, name: names.get(id) as string }
     },
     // The node's fiber as of the last commit.
     fiber: (id: number) => fibers.get(id),
