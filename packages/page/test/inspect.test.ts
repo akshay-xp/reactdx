@@ -295,3 +295,14 @@ test("names and messages are bounded", () => {
     1000,
   )
 })
+
+test("release() drops every described object", () => {
+  const inspector = createInspector()
+  const ref = at(
+    inspector.serialize({ a: { b: { c: 1 } } }),
+    "props.a.props.b.id",
+  ) as number
+  inspector.release()
+  expect(inspector.expand(ref)).toBeUndefined()
+  expect(at(inspector.serialize({ x: 1 }), "id")).toBe(1)
+})

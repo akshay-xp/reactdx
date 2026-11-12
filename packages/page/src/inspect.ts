@@ -140,7 +140,7 @@ const messageOf = (error: unknown) =>
   String(error instanceof Error ? error.message : error)
 
 export function createInspector() {
-  const ids = new WeakMap<object, number>()
+  let ids = new WeakMap<object, number>()
   const objects = new Map<number, object>()
   // Objects on the current path: meeting one again is a cycle.
   const path = new Set<object>()
@@ -246,6 +246,13 @@ export function createInspector() {
 
   return {
     serialize: (value: unknown) => serialize(value),
-    expand: (id: number, offset = 0) => serialize(objects.get(id), 0, offset),
+    // Undefined for an id this inspector doesn't hold (released, or forged).
+    expand: (id: number, offset = 0) =>
+      objects.has(id) ? serialize(objects.get(id), 0, offset) : undefined,
+    // Drops every described object, so the page keeps none of them alive.
+    release() {
+      objects.clear()
+      ids = new WeakMap()
+    },
   }
 }
