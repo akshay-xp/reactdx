@@ -61,6 +61,9 @@ function contextsOf(fiber: Fiber) {
   })
 }
 
+const sameValues = (a: unknown[], b: unknown[]) =>
+  a.length === b.length && a.every((value, i) => Object.is(value, b[i]))
+
 // Injected only once a development renderer connects (never at document_start).
 // Reads the hook's record, so roots that committed before it arrived are kept.
 export function startAgent(
@@ -166,7 +169,7 @@ export function startAgent(
     | {
         id: number
         values: ReturnType<typeof createInspector>
-        sent?: { props: unknown; state: unknown }
+        sent?: { props: unknown; state: unknown; contexts: unknown[] }
       }
     | undefined
   // The dispatcher of the renderer that owns the fiber's root (HostRoot, tag 3),
@@ -188,7 +191,12 @@ export function startAgent(
   const describe = (id: number): InspectedData | null => {
     const fiber = tree.fiber(id)
     if (!fiber || !selected) return null
-    selected.sent = { props: fiber.memoizedProps, state: fiber.memoizedState }
+    const contexts = contextsOf(fiber)
+    selected.sent = {
+      props: fiber.memoizedProps,
+      state: fiber.memoizedState,
+      contexts: contexts.map(({ value }) => value),
+    }
     const { serialize } = selected.values
     const data: InspectedData = {
       props: serialize(fiber.memoizedProps) as Value,
@@ -196,7 +204,6 @@ export function startAgent(
     const state = (fiber.stateNode as { state?: unknown } | null)?.state
     // Class components (tag 1) keep their state on the instance.
     if (fiber.tag === 1 && state != null) data.state = serialize(state) as Value
-    const contexts = contextsOf(fiber)
     if (contexts.length)
       data.contexts = contexts.map(({ name, value }) => ({
         name,
@@ -227,8 +234,13 @@ export function startAgent(
     const fiber = tree.fiber(id)
     if (
       fiber &&
-      fiber.memoizedProps === sent?.props &&
-      fiber.memoizedState === sent?.state
+      sent &&
+      fiber.memoizedProps === sent.props &&
+      fiber.memoizedState === sent.state &&
+      sameValues(
+        contextsOf(fiber).map(({ value }) => value),
+        sent.contexts,
+      )
     )
       return
     post(inspected(id, describe(id)))

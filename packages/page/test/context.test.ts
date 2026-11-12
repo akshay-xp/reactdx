@@ -113,3 +113,36 @@ test("a component reading none has no contexts", async () => {
   const data = await inspect(dark(h(Nothing)), "Nothing")
   expect(data?.contexts).toBeUndefined()
 })
+
+// Past the agent's 100 ms flush.
+const flushed = () =>
+  React.act(() => new Promise((resolve) => setTimeout(resolve, 150)))
+
+const Consumer = React.memo(function Consumer() {
+  React.useContext(Theme)
+  return null
+})
+let setTheme = (_: string) => {}
+let setOther = (_: number) => {}
+function Switcher() {
+  const [theme, set] = React.useState("dark")
+  const [, other] = React.useState(0)
+  React.useEffect(() => {
+    setTheme = set
+    setOther = other
+  })
+  return h(Theme.Provider, { value: theme }, h(Consumer))
+}
+
+test("a provider's new value re-sends a consumer whose props didn't change", async () => {
+  await inspect(h(Switcher), "Consumer")
+  await React.act(() => setOther(1))
+  await flushed()
+  expect(replies()).toHaveLength(1)
+  await React.act(() => setTheme("light"))
+  await flushed()
+  expect(replies()).toHaveLength(2)
+  expect(replies()[1]?.data?.contexts).toEqual([
+    { name: "Theme", value: "light" },
+  ])
+})
