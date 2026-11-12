@@ -223,3 +223,44 @@ test("a selected Cell's hooks show within 100 ms", { skip }, async (t) => {
     await browser.close()
   }
 })
+
+type Counted = Window & { inspectedCount?: number }
+
+test("an unrelated commit sends no inspected message", { skip }, async () => {
+  const { browser, page, panel } = await benchPanel()
+  try {
+    await selectCell(panel)
+    await page.evaluate(() => {
+      const w = window as Counted
+      w.inspectedCount = 0
+      addEventListener("message", ({ data }) => {
+        if (data?.source === "reactdx" && data.type === "inspected")
+          w.inspectedCount = (w.inspectedCount ?? 0) + 1
+      })
+    })
+    const count = () => page.evaluate(() => (window as Counted).inspectedCount)
+    // Re-renders Bench and mounts Extra; the cells bail out.
+    await page.click("[data-testid=extra]")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    assert.equal(await count(), 0)
+    // The control: a commit to the selected Cell is re-sent.
+    await page.evaluate(() =>
+      (
+        window as unknown as { __bench: (m: string, n: number) => void }
+      ).__bench("one", 1),
+    )
+    await page.waitForFunction(
+      () => ((window as Counted).inspectedCount ?? 0) >= 1,
+      { timeout: 1000 },
+    )
+    await panel.waitForFunction(
+      () =>
+        document
+          .querySelector("[data-testid=inspector]")
+          ?.textContent?.includes("State: 1"),
+      { timeout: 1000 },
+    )
+  } finally {
+    await browser.close()
+  }
+})

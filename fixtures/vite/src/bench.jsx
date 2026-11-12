@@ -7,7 +7,9 @@ const setters = []
 
 function Cell({ index }) {
   const [value, setValue] = useState(0)
-  setters[index] = setValue
+  // The first render's setter (React keeps it): the inspector's shadow render
+  // calls Cell again with a stub dispatcher, whose setter does nothing.
+  setters[index] ??= setValue
   return <span data-testid="cell">{value}</span>
 }
 
