@@ -4,7 +4,10 @@ import {
   type GetStateMessage,
   highlight,
   type InjectAgentMessage,
+  PICK_START,
+  PICK_STOP,
   parsePageMessage,
+  parsePicked,
   parseTreeBatch,
   parseTreeCommand,
   type RendererInfo,
@@ -49,7 +52,11 @@ export default defineContentScript({
         if (command?.type === "resync") window.postMessage(WATCH, "*")
         else if (command?.type === "highlight")
           window.postMessage(highlight(command.id), "*")
-        else if (command) window.postMessage(CLEAR_HIGHLIGHT, "*")
+        else if (command?.type === "clear-highlight")
+          window.postMessage(CLEAR_HIGHLIGHT, "*")
+        else if (command?.type === "pick-start")
+          window.postMessage(PICK_START, "*")
+        else if (command) window.postMessage(PICK_STOP, "*")
       })
       window.postMessage(WATCH, "*")
     }
@@ -60,9 +67,10 @@ export default defineContentScript({
 
     window.addEventListener("message", (event) => {
       if (event.source !== window) return
-      const batch = parseTreeBatch(event.data)
-      if (batch) {
-        tree?.postMessage(batch)
+      // Batches and picks go to the panel over the tree port, unstored.
+      const forward = parseTreeBatch(event.data) ?? parsePicked(event.data)
+      if (forward) {
+        tree?.postMessage(forward)
         return
       }
       const message = parsePageMessage(event.data)

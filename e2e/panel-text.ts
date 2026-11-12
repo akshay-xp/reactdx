@@ -7,12 +7,17 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // one (Next's) shows its last rows, where the app's components are, only then.
 // check(label) clicks the checkbox with that label. hover(name) puts the pointer on
 // the tree row with that name; leave() moves it off the trees. close() closes DevTools.
+// press(name) clicks the button with that text, pressed(name) reads its aria-pressed,
+// selected() is the selected row's name.
 export type PanelText = (() => Promise<string>) & {
   end(): Promise<void>
   check(label: string): Promise<void>
   hover(name: string): Promise<void>
   leave(): Promise<void>
   close(): Promise<void>
+  press(name: string): Promise<void>
+  pressed(name: string): Promise<boolean>
+  selected(): Promise<string | undefined>
 }
 
 // Text pieces are joined with spaces (the accessibility tree splits text differently
@@ -73,7 +78,32 @@ export async function openPanelText(
       await frame.hover("[data-testid=search]")
     }
     const close = () => frame.page().close()
-    return Object.assign(read, { end, check, hover, leave, close })
+    const button = (name: string) =>
+      `[...document.querySelectorAll("button")].find((el) => el.textContent.trim() === ${json(name)})`
+    const press = async (name: string) => {
+      await frame.evaluate(`${button(name)}.click()`)
+    }
+    const pressed = async (name: string) =>
+      (await frame.evaluate(
+        `${button(name)}.getAttribute("aria-pressed") === "true"`,
+      )) as boolean
+    const selected = () =>
+      frame.evaluate(
+        () =>
+          document.querySelector(
+            "[data-testid=node][aria-selected=true] [data-testid=name]",
+          )?.textContent ?? undefined,
+      )
+    return Object.assign(read, {
+      end,
+      check,
+      hover,
+      leave,
+      close,
+      press,
+      pressed,
+      selected,
+    })
   }
   // Firefox runs the panel in an extension process Puppeteer can't reach, but its
   // accessibility tree is mirrored into the parent process, where chrome scope can read it.
@@ -234,7 +264,19 @@ export async function openPanelText(
       })()`,
     )
   }
-  return Object.assign(read, { end, check, hover, leave, close })
+  const press = async (): Promise<never> => {
+    throw new Error("press is Chrome-only")
+  }
+  return Object.assign(read, {
+    end,
+    check,
+    hover,
+    leave,
+    close,
+    press,
+    pressed: press,
+    selected: press,
+  })
 }
 
 const json = JSON.stringify

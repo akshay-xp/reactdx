@@ -1,6 +1,8 @@
 import type {
   ClearHighlightMessage,
   HighlightMessage,
+  PickedMessage,
+  PickMessage,
   RendererView,
   ResyncMessage,
   SubscribeMessage,
@@ -34,11 +36,14 @@ const subscribe = (port: Browser.runtime.Port) => {
 let port = connect()
 function connect() {
   const next = browser.runtime.connect({ name: "panel" })
-  next.onMessage.addListener((message: TabStateMessage | TreeBatchMessage) => {
-    if (message.type === "state") setRenderers(message.renderers)
-    else if (tree.apply(message))
-      next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)
-  })
+  next.onMessage.addListener(
+    (message: TabStateMessage | TreeBatchMessage | PickedMessage) => {
+      if (message.type === "state") setRenderers(message.renderers)
+      else if (message.type === "picked") tree.picked(message.id)
+      else if (tree.apply(message))
+        next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)
+    },
+  )
   next.onDisconnect.addListener(() => {
     port = connect()
   })
@@ -67,6 +72,17 @@ render(() => {
               } satisfies ClearHighlightMessage)
             : ({ type: "highlight", tabId, id } satisfies HighlightMessage),
         ),
+      { defer: true },
+    ),
+  )
+  createEffect(
+    on(
+      tree.picking,
+      (active) =>
+        port.postMessage({
+          type: active ? "pick-start" : "pick-stop",
+          tabId,
+        } satisfies PickMessage),
       { defer: true },
     ),
   )
