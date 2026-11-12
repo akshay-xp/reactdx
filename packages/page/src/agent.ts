@@ -1,6 +1,8 @@
 import {
   MAX_OPS,
   type PageMessage,
+  type PickedMessage,
+  picked,
   type RootInfo,
   snapshotMessage,
   type TreeBatchMessage,
@@ -18,7 +20,7 @@ const THROTTLE_MS = 100
 // Reads the hook's record, so roots that committed before it arrived are kept.
 export function startAgent(
   target: EventTarget,
-  post: (message: PageMessage | TreeBatchMessage) => void,
+  post: (message: PageMessage | TreeBatchMessage | PickedMessage) => void,
 ) {
   const scope = target as unknown as Record<symbol, unknown>
   const record = scope[Symbol.for("reactdx")] as HookRecord | undefined
@@ -71,6 +73,31 @@ export function startAgent(
     overlay.show(found?.elements ?? [], found?.name ?? "")
   }
 
+  // Picking listens on the window in the capture phase, ahead of the page's own
+  // handlers (React's sit on its root container), and swallows only the click.
+  const owner = (event: Event) =>
+    event.target instanceof Element ? tree.owner(event.target) : undefined
+  const pointing = (event: Event) => {
+    const id = owner(event)
+    if (id) highlight(id)
+    else overlay?.hide()
+  }
+  const clicked = (event: Event) => {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    stopPicking()
+    post(picked(owner(event) ?? null))
+  }
+  const startPicking = () => {
+    target.addEventListener("pointermove", pointing, true)
+    target.addEventListener("click", clicked, true)
+  }
+  const stopPicking = () => {
+    target.removeEventListener("pointermove", pointing, true)
+    target.removeEventListener("click", clicked, true)
+    overlay?.hide()
+  }
+
   let pending = false
   record.listeners.add((rendererId, root) => {
     const entry = info(root)
@@ -91,6 +118,7 @@ export function startAgent(
     else if (data.type === "watch") watch()
     else if (data.type === "highlight") highlight(data.id)
     else if (data.type === "clear-highlight") overlay?.hide()
+    else if (data.type === "pick-start") startPicking()
     else if (data.type === "unwatch") {
       overlay?.hide()
       watching = false

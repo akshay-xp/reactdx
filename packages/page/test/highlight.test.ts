@@ -1,6 +1,8 @@
 import {
   CLEAR_HIGHLIGHT,
   highlight,
+  PICK_START,
+  picked,
   type TreeBatchMessage,
   UNWATCH,
   WATCH,
@@ -66,4 +68,37 @@ test("unknown and malformed ids show nothing", () => {
   send(highlight(9999))
   send({ source: "reactdx-relay", type: "highlight", id: "x" })
   expect(children()).toBe(before)
+})
+
+const button = () => document.querySelector("button") as HTMLButtonElement
+const click = (el: Element) =>
+  el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
+
+test("a pick swallows the click and posts the owner's id", () => {
+  send(WATCH)
+  const id = counterId()
+  const before = children()
+  let reached = 0
+  const listener = () => reached++
+  document.addEventListener("click", listener)
+  try {
+    send(PICK_START)
+    button().dispatchEvent(new PointerEvent("pointermove", { bubbles: true }))
+    expect(children()).toBe(before + 1)
+    expect(click(button())).toBe(false)
+    expect(reached).toBe(0)
+    expect(posted.at(-1)).toEqual(picked(id))
+    expect(children()).toBe(before)
+    expect(click(button())).toBe(true)
+    expect(reached).toBe(1)
+
+    send(PICK_START)
+    const outside = document.createElement("div")
+    document.body.append(outside)
+    click(outside)
+    outside.remove()
+    expect(posted.at(-1)).toEqual(picked(null))
+  } finally {
+    document.removeEventListener("click", listener)
+  }
 })
