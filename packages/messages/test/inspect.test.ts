@@ -250,3 +250,30 @@ test.each<[string, Record<string, unknown>]>([
     }),
   ).toBeUndefined()
 })
+
+test.each([
+  { file: "/a/Counter.jsx", line: 13, column: 7 },
+  { url: "http://localhost:5219/src/Counter.jsx", line: 14, column: 47 },
+])("inspected replies carry a source %o", (source) => {
+  const data = { props: object({}), source }
+  expect(parseInspected(inspected(3, data))).toEqual(inspected(3, data))
+})
+
+test.each<[string, Record<string, unknown>]>([
+  ["file and url", { file: "/a", url: "http://h/a", line: 1, column: 1 }],
+  ["no file or url", { line: 1, column: 1 }],
+  ["an empty file", { file: "", line: 1, column: 1 }],
+  ["a 1,001-char file", { file: "x".repeat(1001), line: 1, column: 1 }],
+  ["a 1,001-char url", { url: "x".repeat(1001), line: 1, column: 1 }],
+  ["line 0", { file: "/a", line: 0, column: 1 }],
+  ["a negative column", { file: "/a", line: 1, column: -1 }],
+  ["a fractional line", { file: "/a", line: 1.5, column: 1 }],
+  ["a string column", { file: "/a", line: 1, column: "1" }],
+])("drops a source with %s", (_, source) => {
+  expect(
+    parseInspected({
+      ...inspected(3, null),
+      data: { props: object({}), source },
+    }),
+  ).toBeUndefined()
+})

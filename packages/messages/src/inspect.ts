@@ -80,6 +80,12 @@ export type ContextValue = { name: string; value: Value }
 export type Owner = { id: number | null; name: string }
 
 // `hooksError`: why the hooks couldn't be read (the shadow render threw).
+// Where a component is: an original file (React 18's _debugSource) or a call site
+// in a served script (React 19's _debugStack), which the panel maps to a file.
+export type SourceRef =
+  | { file: string; line: number; column: number }
+  | { url: string; line: number; column: number }
+
 export type InspectedData = {
   props: Value
   state?: Value
@@ -87,6 +93,7 @@ export type InspectedData = {
   hooksError?: string
   contexts?: ContextValue[]
   owners?: Owner[]
+  source?: SourceRef
 }
 
 const MAX_CONTEXTS = 50
@@ -320,7 +327,7 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
   if (!isId(message.id)) return
   if (message.data === null) return inspected(message.id, null)
   if (typeof message.data !== "object") return
-  const { props, state, hooks, hooksError, contexts, owners } =
+  const { props, state, hooks, hooksError, contexts, owners, source } =
     message.data as Record<string, unknown>
   const budget = { left: MAX_VALUES }
   const parsed: InspectedData = { props: null }
@@ -358,7 +365,22 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     if (!list) return
     parsed.owners = list
   }
+  if (source !== undefined) {
+    const ref = parseSource(source)
+    if (!ref) return
+    parsed.source = ref
+  }
   return inspected(message.id, parsed)
+}
+
+function parseSource(data: unknown): SourceRef | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { file, url, line, column } = data as Record<string, unknown>
+  if (!isId(line) || !isId(column)) return
+  if (file !== undefined && url === undefined && isText(file) && file)
+    return { file, line, column }
+  if (url !== undefined && file === undefined && isText(url) && url)
+    return { url, line, column }
 }
 
 // Undefined unless `data` is an array of at most `max` objects `each` accepts.
