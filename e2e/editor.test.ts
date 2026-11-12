@@ -5,7 +5,7 @@ import path from "node:path"
 import { after, before, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
 import type { BrowserName } from "./launch.ts"
-import { panelFor, parseCopies, until } from "./panel-text.ts"
+import { panelFor, selectListed, until } from "./panel-text.ts"
 
 // Opening goes through the dev server, which launches the editor its env names:
 // a stub (e2e/editor/code) that records its arguments. Named `code`, both Vite
@@ -65,16 +65,7 @@ for (const { fixture, port, opens } of fixtures)
     )
     try {
       await page.waitForSelector("[data-testid=counter]")
-      // Next's tree is taller than the panel, and still filling in: wait for
-      // Counter at its end before selecting it.
-      await until(
-        async () => {
-          await panel.end()
-          return panel()
-        },
-        (t) => parseCopies(t).some((c) => c.names.includes("Counter")),
-      )
-      await panel.select("Counter")
+      await selectListed(panel, "Counter")
       const frame = panel.frame
       assert.ok(frame)
       const button = "[data-testid=source] button"
@@ -95,7 +86,10 @@ for (const { fixture, port, opens } of fixtures)
         // A fresh Next server compiles its 404 page for Vite's endpoint first,
         // which takes seconds, before Next's own endpoint is asked.
         const text = await until(launched, (t) => t.includes(opens), 20_000)
-        assert.ok(text.includes(opens), `log never contained ${opens}: ${text}`)
+        assert.ok(
+          text.includes(opens),
+          `log never contained ${opens} (button for ${title}): ${text}`,
+        )
       } else {
         const inspector = await until(panel.inspector, (t) =>
           t.includes("Copied"),

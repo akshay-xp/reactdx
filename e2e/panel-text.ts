@@ -68,7 +68,17 @@ export async function openPanelText(
       throw new Error(`no row named ${name}`)
     }
     const hover = async (name: string) => (await row(name)).hover()
-    const select = async (name: string) => (await row(name)).click()
+    // The tree renders only the rows in view and re-renders them as batches
+    // arrive, so a found row can be replaced before the click: find it again.
+    const select = async (name: string) => {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await (await row(name)).click()
+        } catch (error) {
+          if (attempt === 3 || !String(error).includes("detached")) throw error
+        }
+      }
+    }
     // Onto the toolbar above the trees: CDP's synthetic moves out of the panel
     // frame fire no leave events inside it.
     const leave = async () => {
@@ -372,4 +382,27 @@ export async function panelFor(
   if (order === "after") panel = await openPanelText(name, browser)
   if (!panel) throw new Error("no panel")
   return { browser, page, panel }
+}
+
+// Selects a component once the tree lists it (a new page's tree fills in; End
+// shows a tall tree's last rows, where Next's components are). After
+// a navigation the new document's first watch can reset the tree just after the
+// click, dropping the selection, so it's made again until the inspector has it.
+export async function selectListed(panel: PanelText, component: string) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await until(
+      async () => {
+        await panel.end()
+        return panel()
+      },
+      (t) => parseCopies(t).some((c) => c.names.includes(component)),
+    )
+    await panel.select(component)
+    const header = await until(
+      panel.inspector,
+      (t) => t.startsWith(`${component} `),
+      2000,
+    )
+    if (header.startsWith(`${component} `)) return
+  }
 }

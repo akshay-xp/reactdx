@@ -4,9 +4,9 @@ import { startFixture } from "../fixtures/start.ts"
 import type { BrowserName } from "./launch.ts"
 import {
   openPanelText,
-  type PanelText,
   panelFor,
   parseCopies,
+  selectListed,
   until,
 } from "./panel-text.ts"
 
@@ -136,10 +136,7 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
     )
     try {
       await page.waitForSelector("[data-testid=hooks]")
-      await until(panel, (t) =>
-        parseCopies(t).some((c) => c.names.includes("Hooks")),
-      )
-      await panel.select("Hooks")
+      await selectListed(panel, "Hooks")
       const expected = fixture === "19" ? [...HOOKS, ...HOOKS_19] : HOOKS
       const text = await until(panel.inspector, (t) =>
         expected.every((hook) => t.includes(hook)),
@@ -150,24 +147,6 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
       await browser.close()
     }
   })
-
-// Selects a component once the tree lists it (a new page's tree fills in). After
-// a navigation the new document's first watch can reset the tree just after the
-// click, dropping the selection, so it's made again until the inspector has it.
-async function selectListed(panel: PanelText, component: string) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await until(panel, (t) =>
-      parseCopies(t).some((c) => c.names.includes(component)),
-    )
-    await panel.select(component)
-    const header = await until(
-      panel.inspector,
-      (t) => t.startsWith(`${component} `),
-      2000,
-    )
-    if (header.startsWith(`${component} `)) return
-  }
-}
 
 // Hook names are opt-in: off, the parser chunk (hook-names) never loads.
 const NAMED = [
