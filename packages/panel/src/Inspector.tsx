@@ -1,6 +1,15 @@
 import type { Container, HookValue, Value } from "@reactdx/messages"
-import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
+import {
+  createResource,
+  createSignal,
+  For,
+  type JSX,
+  Match,
+  Show,
+  Switch,
+} from "solid-js"
 import type { InspectorStore } from "./inspection"
+import { label, type Sources } from "./source"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
 import { previewText } from "./value"
@@ -77,7 +86,15 @@ function entriesOf(value: Container): { entries: Entry[]; left: number } {
 export function Inspector(props: {
   tree: TreeStore
   inspector: InspectorStore
+  sources: Sources
 }) {
+  const [resolved] = createResource(
+    () => props.inspector.data()?.source,
+    (source) => props.sources.resolve(source),
+  )
+  // The last resolution stays shown while a re-send's equal source resolves.
+  const location = () =>
+    props.inspector.data()?.source ? resolved.latest : undefined
   const info = () => {
     const id = props.tree.selected()
     return id === undefined ? undefined : props.tree.info(id)
@@ -139,6 +156,21 @@ export function Inspector(props: {
                 <span class="truncate text-muted">{`key="${node().key}"`}</span>
               </Show>
             </header>
+            <Show when={location()}>
+              {(at) => (
+                <div
+                  data-testid="source"
+                  class="flex h-7 shrink-0 items-center gap-2 border-border border-b px-2 font-mono text-muted"
+                >
+                  <span
+                    class="truncate"
+                    title={`${at().file}:${at().line}:${at().column}`}
+                  >
+                    {label(at())}
+                  </span>
+                </div>
+              )}
+            </Show>
             <div class="overflow-y-auto">
               {section("Props", props.inspector.data()?.props)}
               {section("State", props.inspector.data()?.state)}

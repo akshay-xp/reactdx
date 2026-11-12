@@ -4,6 +4,16 @@ import { type RawSourceMap, SourceMapConsumer } from "source-map-js"
 // 1-based line and column; `file` absolute, or relative to the dev server's root.
 export type SourceLocation = { file: string; line: number; column: number }
 
+// What the inspector needs: a page source resolved to a file, and opening it.
+export type Sources = {
+  resolve(source: SourceRef): Promise<SourceLocation | null>
+  open(location: SourceLocation): Promise<"opened" | "copied">
+}
+
+// The header's short form: the file's name and the line.
+export const label = ({ file, line }: SourceLocation) =>
+  `${file.slice(file.lastIndexOf("/") + 1)}:${line}`
+
 const WEB = /^https?:/
 // The last map comment in a script (a bundle can quote others before it).
 const MAP_COMMENT = /\/\/[#@] sourceMappingURL=(\S+)\s*$/

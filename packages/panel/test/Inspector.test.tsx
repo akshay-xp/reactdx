@@ -9,6 +9,7 @@ import { fireEvent, render } from "@solidjs/testing-library"
 import { expect, test } from "vitest"
 import { Inspector } from "../src/Inspector"
 import { createInspectorStore, type InspectorCommand } from "../src/inspection"
+import type { Sources } from "../src/source"
 import { createTreeStore } from "../src/tree"
 
 const object = (
@@ -24,7 +25,17 @@ const object = (
 })
 
 // One selected node (id 3) and an inspector for it.
-function setup(kind: TreeKind = "function", key: string | null = null) {
+// Sources that resolve nothing and open everything, unless a test says otherwise.
+const noSources: Sources = {
+  resolve: async () => null,
+  open: async () => "opened",
+}
+
+function setup(
+  kind: TreeKind = "function",
+  key: string | null = null,
+  sources = noSources,
+) {
   const tree = createTreeStore()
   tree.apply(
     treeBatch(1, [
@@ -43,7 +54,9 @@ function setup(kind: TreeKind = "function", key: string | null = null) {
   )
   const sent: InspectorCommand[] = []
   const inspector = createInspectorStore((command) => sent.push(command))
-  const view = render(() => <Inspector tree={tree} inspector={inspector} />)
+  const view = render(() => (
+    <Inspector tree={tree} inspector={inspector} sources={sources} />
+  ))
   const select = () => {
     tree.select(3)
     inspector.inspect(3)
@@ -315,4 +328,47 @@ test("no owners, no Rendered by", () => {
   select()
   inspector.receive(inspected(3, { props: object({ a: 1 }), owners: [] }))
   expect(sections(container)).toEqual(["Props"])
+})
+
+const frame = { url: "http://h/src/Counter.jsx", line: 14, column: 47 }
+const counterAt = { file: "/a/src/Counter.jsx", line: 13, column: 7 }
+const resolving = (to: typeof counterAt | null): Sources => ({
+  ...noSources,
+  resolve: async () => to,
+})
+// Lets resolved sources render.
+const settled = () => new Promise((resolve) => setTimeout(resolve))
+
+test("the header shows the resolved source, its full location as the title", async () => {
+  const { container, inspector, select } = setup(
+    "function",
+    null,
+    resolving(counterAt),
+  )
+  select()
+  inspector.receive(inspected(3, { props: object({}), source: frame }))
+  await settled()
+  const row = container.querySelector("[data-testid=source]")
+  expect(row?.textContent?.startsWith("Counter.jsx:13")).toBe(true)
+  expect(row?.querySelector("[title]")?.getAttribute("title")).toBe(
+    "/a/src/Counter.jsx:13:7",
+  )
+  // A re-send keeps it while the same source resolves again.
+  inspector.receive(inspected(3, { props: object({}), source: { ...frame } }))
+  expect(container.querySelector("[data-testid=source]")).not.toBeNull()
+})
+
+test("no source row without a source or a resolved one", async () => {
+  const { container, inspector, select } = setup(
+    "function",
+    null,
+    resolving(null),
+  )
+  select()
+  inspector.receive(inspected(3, { props: object({}), source: frame }))
+  await settled()
+  expect(container.querySelector("[data-testid=source]")).toBeNull()
+  inspector.receive(inspected(3, { props: object({}) }))
+  await settled()
+  expect(container.querySelector("[data-testid=source]")).toBeNull()
 })

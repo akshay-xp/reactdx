@@ -2,6 +2,7 @@ import type { RendererView } from "@reactdx/messages"
 import { For, Match, Show, Switch } from "solid-js"
 import { Inspector } from "./Inspector"
 import type { InspectorStore } from "./inspection"
+import type { Sources } from "./source"
 import { Toolbar } from "./Toolbar"
 import { TreeView } from "./TreeView"
 import type { TreeStore } from "./tree"
@@ -16,6 +17,7 @@ export function ConnectionList(props: {
   renderers: RendererView[]
   tree: TreeStore
   inspector: InspectorStore
+  sources: Sources
   stale?: boolean
   onReload?: () => void
 }) {
@@ -93,7 +95,11 @@ export function ConnectionList(props: {
             aria-label="Inspector"
             class="flex min-h-0 min-w-0 flex-1 flex-col border-border border-t sm:border-t-0 sm:border-l"
           >
-            <Inspector tree={props.tree} inspector={props.inspector} />
+            <Inspector
+              tree={props.tree}
+              inspector={props.inspector}
+              sources={props.sources}
+            />
           </aside>
         </div>
       </Match>
