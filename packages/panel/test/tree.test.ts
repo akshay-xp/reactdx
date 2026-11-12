@@ -127,6 +127,34 @@ test("selection survives commits that keep the node, clears when it's gone", () 
   expect(tree.selected()).toBeUndefined()
 })
 
+test("Up, Down, Home and End move through the root's rows", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  const press = (key: string) => {
+    expect(tree.key(1, key)).toBe(true)
+    return tree.selected()
+  }
+  expect(press("ArrowDown")).toBe(1)
+  expect(press("ArrowDown")).toBe(3)
+  expect(press("ArrowDown")).toBe(5)
+  expect(press("ArrowDown")).toBe(6)
+  expect(press("ArrowDown")).toBe(6)
+  tree.select(3)
+  expect(press("ArrowUp")).toBe(1)
+  expect(press("ArrowUp")).toBe(1)
+  expect(press("End")).toBe(6)
+  expect(press("Home")).toBe(1)
+
+  tree.toggle(3)
+  tree.select(3)
+  expect(press("ArrowDown")).toBe(6)
+
+  tree.select(7)
+  expect(press("ArrowDown")).toBe(1)
+  expect(tree.key(1, "a")).toBe(false)
+  expect(tree.selected()).toBe(1)
+})
+
 test("clear empties the store", () => {
   const tree = createTreeStore()
   tree.apply(resync)

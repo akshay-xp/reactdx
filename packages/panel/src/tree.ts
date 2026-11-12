@@ -89,6 +89,46 @@ export function createTreeStore() {
     return out
   }
 
+  // Host elements are hidden: their children take their place and depth.
+  const rows = (rootId: number): Row[] => {
+    version()
+    const rows: Row[] = []
+    const visit = (id: number, depth: number) => {
+      const { name, kind, key, children } = nodes.get(id) as Node
+      const kids = shown(children)
+      const expanded = !collapsed.has(id)
+      rows.push({
+        id,
+        name,
+        depth,
+        kind,
+        key,
+        expandable: kids.length > 0,
+        expanded,
+      })
+      if (expanded) for (const kid of kids) visit(kid, depth + 1)
+    }
+    for (const id of shown(tops.get(rootId) ?? [])) visit(id, 0)
+    return rows
+  }
+
+  // Moves the selection within one root's rows; false for keys it doesn't handle.
+  const key = (rootId: number, name: string): boolean => {
+    const list = rows(rootId)
+    const at = list.findIndex((row) => row.id === selected())
+    const last = list.length - 1
+    const to = {
+      ArrowUp: Math.max(at - 1, 0),
+      ArrowDown: Math.min(at + 1, last),
+      Home: 0,
+      End: last,
+    }[name]
+    if (to === undefined) return false
+    const row = list[to]
+    if (row) select(row.id)
+    return true
+  }
+
   return {
     // True when the panel must ask the page for a resync.
     apply(batch: TreeBatchMessage): boolean {
@@ -102,29 +142,8 @@ export function createTreeStore() {
       return stale
     },
 
-    // Host elements are hidden: their children take their place and depth.
-    rows(rootId: number): Row[] {
-      version()
-      const rows: Row[] = []
-      const visit = (id: number, depth: number) => {
-        const { name, kind, key, children } = nodes.get(id) as Node
-        const kids = shown(children)
-        const expanded = !collapsed.has(id)
-        rows.push({
-          id,
-          name,
-          depth,
-          kind,
-          key,
-          expandable: kids.length > 0,
-          expanded,
-        })
-        if (expanded) for (const kid of kids) visit(kid, depth + 1)
-      }
-      for (const id of shown(tops.get(rootId) ?? [])) visit(id, 0)
-      return rows
-    },
-
+    rows,
+    key,
     selected,
     select: (id: number) => select(id),
 
