@@ -9,6 +9,7 @@ export type Row = {
   key: string | null
   expandable: boolean
   expanded: boolean
+  match: boolean
 }
 
 type Node = {
@@ -93,12 +94,24 @@ export function createTreeStore() {
     return out
   }
 
+  // Case-insensitive substring on the names of nodes that have rows.
+  const isMatch = (node: Node | undefined) => {
+    const q = query().toLowerCase()
+    return (
+      q !== "" &&
+      node !== undefined &&
+      visible(node) &&
+      node.name.toLowerCase().includes(q)
+    )
+  }
+
   // Hidden host elements: their children take their place and depth.
   const rows = (rootId: number): Row[] => {
     version()
     const rows: Row[] = []
     const visit = (id: number, depth: number) => {
-      const { name, kind, key, children } = nodes.get(id) as Node
+      const node = nodes.get(id) as Node
+      const { name, kind, key, children } = node
       const kids = shown(children)
       const expanded = !collapsed.has(id)
       rows.push({
@@ -109,6 +122,7 @@ export function createTreeStore() {
         key,
         expandable: kids.length > 0,
         expanded,
+        match: isMatch(node),
       })
       if (expanded) for (const kid of kids) visit(kid, depth + 1)
     }
@@ -127,17 +141,6 @@ export function createTreeStore() {
     while (parent && !visible(nodes.get(parent)))
       parent = nodes.get(parent)?.parentId
     return parent || undefined
-  }
-
-  // Case-insensitive substring on the names of nodes that have rows.
-  const isMatch = (node: Node | undefined) => {
-    const q = query().toLowerCase()
-    return (
-      q !== "" &&
-      node !== undefined &&
-      visible(node) &&
-      node.name.toLowerCase().includes(q)
-    )
   }
 
   // Every root's matches depth-first, collapsed subtrees included.

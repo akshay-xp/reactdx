@@ -99,6 +99,7 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                 class="flex items-center gap-1 whitespace-nowrap font-mono"
                 classList={{ "bg-selected": selected(row.id) }}
                 data-id={row.id}
+                data-match={row.match || undefined}
                 style={{
                   height: `${ROW_HEIGHT}px`,
                   "padding-left": `${row.depth * 12}px`,
@@ -114,7 +115,15 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                     />
                   </Show>
                 </span>
-                {row.name}
+                <span
+                  data-testid="name"
+                  classList={{
+                    "text-fg": selected(row.id),
+                    "text-accent": row.match && !selected(row.id),
+                  }}
+                >
+                  {row.name}
+                </span>
                 <Show when={BADGES.has(row.kind)}>
                   {" "}
                   <span data-testid="badge" class={muted(row.id)}>

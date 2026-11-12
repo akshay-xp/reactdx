@@ -121,3 +121,20 @@ test("keys on the tree move the selection", () => {
   scroller.dispatchEvent(other)
   expect(other.defaultPrevented).toBe(false)
 })
+
+test("search matches are marked", () => {
+  const { tree, nodes } = view(small)
+  const name = (n: Element) => n.querySelector("[data-testid=name]")
+  const marked = () =>
+    nodes()
+      .filter((n) => n.getAttribute("data-match") === "true")
+      .map((n) => name(n)?.textContent)
+  expect(marked()).toEqual([])
+  tree.setQuery("a")
+  expect(marked()).toEqual(["App", "A"])
+  const app = name(nodes()[0] as Element)
+  expect(app?.classList).toContain("text-fg")
+  expect(app?.classList).not.toContain("text-accent")
+  tree.step(1)
+  expect(name(nodes()[0] as Element)?.classList).toContain("text-accent")
+})
