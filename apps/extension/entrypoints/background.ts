@@ -114,14 +114,16 @@ export default defineBackground(() => {
           })
           .then(
             (state: TabStateMessage) => port.postMessage(state),
-            // No relay: a browser page, or (Chrome) a tab open since before the
-            // install, which a reload fixes.
+            // No relay: a browser page, a document still loading (a navigation's
+            // subscribe can beat its relay), or (Chrome) a tab open since before
+            // the install, which a reload fixes. Only that last one is loaded:
+            // the relay runs at document_start.
             () =>
               browser.tabs.get(tabId).then((tab) =>
                 port.postMessage({
                   type: "state",
                   renderers: [],
-                  stale: isWebPage(tab.url),
+                  stale: isWebPage(tab.url) && tab.status === "complete",
                 } satisfies TabStateMessage),
               ),
           )
