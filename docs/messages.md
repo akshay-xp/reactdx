@@ -28,6 +28,8 @@ The tree streams only while a panel watches the tab. Closing the relay's `tree` 
 
 8. **Picker** (M3 #29): the panel's toggle sends `PickMessage` `{ type: "pick-start" | "pick-stop", tabId }`, forwarded like highlight. The agent's result, `PickedMessage` `{ source: "reactdx", type: "picked", id }` (`id` null: Escape, or a click on nothing React owns), passes the relay's `parsePicked` (checked before `parsePageMessage`, with `parseTreeBatch`) and goes over the tree port; the background forwards tree-port messages to the tab's panels as for batches. The panel applies it with `tree.picked(id)`.
 
+9. **Inspect** (M4 #33): when the selection changes, the panel sends `InspectMessage` `{ type: "inspect", tabId, id }` (`id` null: nothing selected), and `ExpandMessage` `{ type: "expand", tabId, objectId, offset }` to load an object, forwarded like highlight. The agent's `inspected` and `expanded` replies pass the relay's `parseInspected` / `parseExpanded` and go over the tree port to the panels like batches. The agent's inspection ends on `unwatch`, so the panel inspects again when a batch starting with `reset` arrives (a new watch).
+
 - **bfcache:** Chrome closes the port when the page enters bfcache but delivers the disconnect only after the restore, after `pageshow` already tried to watch. So the relay closes its own port on a persisted `pagehide`.
 - **Forged commands:** a page can post `UNWATCH` itself and stop its own tree updates (it shares the world with the hook, as in M2). Forged `WATCH` only causes a resync. `e2e/forged.test.ts` leaves `UNWATCH` out.
 
@@ -103,10 +105,24 @@ Background to the relay's tree port. Everything the relay acts on passes through
 | `{ type: "clear-highlight" }` | `CLEAR_HIGHLIGHT`                                                     |
 | `{ type: "pick-start" }`      | `PICK_START`                                                          |
 | `{ type: "pick-stop" }`       | `PICK_STOP`                                                           |
+| `{ type: "inspect", id }`     | `{ source: "reactdx-relay", type: "inspect", id }`                    |
+| `{ type: "expand", objectId, offset }` | `{ source: "reactdx-relay", type: "expand", objectId, offset }` |
+
+- The relay posts every command but `resync` as `{ source: "reactdx-relay", ...command }`: what `parseTreeCommand` returns has only the known fields.
+- `inspect`'s `id` may be `null`; `expand`'s `objectId` is a positive safe integer and `offset` a non-negative one.
 
 - `id`: positive safe integer. Anything else (no id, a string, 0, a fraction, an unsafe integer, an unknown type, a non-object) is dropped. Extra keys are stripped.
 - `parsePicked(data)`: `source: "reactdx"`, `type: "picked"`, `id` a positive safe integer or `null`; anything else dropped, extra keys stripped. Built with `picked(id)`.
 - `packages/messages/test/commands.test.ts`.
+
+## Inspected values (`src/inspect.ts`, re-exported; M4 #33)
+
+The agent's `inspected` and `expanded` replies carry `Value` descriptors (`docs/page.md`, "Values"). The page can forge them, so each is checked whole before the panel sees it.
+
+- `parseValue(data)`: a fresh copy with only known fields, or `undefined`. Primitives: finite numbers, booleans, `null`, strings up to 1,000 chars. Descriptors by `type`, each field checked: names (`function`, class names, tags, element names and keys, symbol descriptions, error names) up to 256 chars, other strings up to 1,000, counts non-negative safe integers, ids positive.
+- Containers (`object`, `array`, `typed-array`, `map`, `set`): at most 100 entries in a page (props, items, entries, values), `nextOffset` a positive id, nested at most 4 deep, at most 50,000 values in one message. Map entries are `[key, value]` pairs.
+- `parseInspected`: `{ source: "reactdx", type: "inspected", id, data }`, `data` null or `{ props, state? }` (one 50,000-value budget). `parseExpanded`: `{ source: "reactdx", type: "expanded", objectId, offset, value }`. Builders `inspected(id, data)`, `expanded(objectId, offset, value)`.
+- `packages/messages/test/inspect.test.ts`: every descriptor kept, each bound dropped.
 
 ## Toolbar (`toolbarState(renderers)`, `toolbarIcons(icon)`)
 
@@ -121,6 +137,7 @@ Background to the relay's tree port. Everything the relay acts on passes through
 
 ## Key files
 
+- `packages/messages/src/inspect.ts`, `packages/messages/test/inspect.test.ts`.
 - `packages/messages/src/index.ts`, `packages/messages/test/messages.test.ts`, `packages/messages/test/tree.test.ts`, `packages/messages/test/commands.test.ts`.
 - `apps/extension/entrypoints/hook.content.ts`, `relay.content.ts`, `background.ts`.
 - `e2e/toolbar.test.ts`, `e2e/toolbar.ts` (`docs/e2e.md`).

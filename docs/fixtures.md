@@ -20,6 +20,7 @@ All but `fixture:prod` are development builds. `fixture:prod` builds into `fixtu
 ## Test ids (used by e2e)
 
 - Every root renders `data-testid="react-version"` (text: `React.version`) and `data-testid="counter"` (text `Count: N`, +1 per click).
+- On `fixtures/vite` and `fixtures/next`, `Counter` takes a `label` prop (`"Count"`, from `App` and `app/page.jsx`) and renders `{label}: {count}`, so the inspector e2e has a prop to show and a button whose `children` change on a click.
 - `fixtures/next` also renders `data-testid="server"` from the Server Component (`app/page.jsx`); the counter and version come from the client component (`app/Counter.jsx`).
 - `fixtures/multi` puts each root in `data-testid="root-18"` or `data-testid="root-19"`.
 

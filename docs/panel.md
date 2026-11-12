@@ -4,9 +4,10 @@ Solid UI rendered in the DevTools panel. The browser glue (`browser.devtools.*`)
 
 ## Connection list (`src/ConnectionList.tsx`, `src/Panel.tsx`)
 
-- `Panel(props: { renderers: RendererView[]; tree: TreeStore })` renders `ConnectionList` in the themed `<main>`. `apps/extension/entrypoints/panel/main.tsx` connects a `runtime` port named `panel`, subscribes with `browser.devtools.inspectedWindow.tabId`, sets a signal from each `TabStateMessage`, and applies each tree batch to the store (`docs/messages.md`, "Tree flow").
+- `Panel(props: { renderers: RendererView[]; tree: TreeStore; inspector: InspectorStore })` renders `ConnectionList` in the themed full-height `<main>`. `apps/extension/entrypoints/panel/main.tsx` connects a `runtime` port named `panel`, subscribes with `browser.devtools.inspectedWindow.tabId`, sets a signal from each `TabStateMessage`, and applies each tree batch to the store (`docs/messages.md`, "Tree flow").
 - States: no renderers and `stale` (the tab was open before ReactDX was installed or updated; `docs/messages.md`, "Reconnects"): "This page was open before ReactDX was installed or updated. Reload it to inspect React." with a "Reload page" button (`onReload`, `inspectedWindow.reload()` in `main.tsx`; `onNavigated` clears `stale`). No renderers otherwise: "No React on this page". Only production: "Production build of React <versions>. ReactDX inspects development builds." Otherwise one `[data-testid=renderer]` per copy (`React <version> <development|production> <rendererPackageName>`) with `[data-testid=root]` rows ("Root N", "N commits", `data-commits`). Production copies are listed with their roots (Next's dev overlay) but get no agent.
 - Under each development root, a `TreeView` of its components. Production roots list no components.
+- With a development copy, a split (`[data-testid=split]`): the toolbar and copies on one side, the `Inspector` in `<aside data-testid="inspector" aria-label="Inspector">` on the other. Side by side from Tailwind's `sm` (640 px), stacked below that (DevTools docked at the side); each pane scrolls on its own. No inspector for no-React and production-only pages.
 - Page data is only ever a Solid text node, never markup (unit test and `e2e/forged.test.ts` check an `<img onerror>` version renders as text).
 - `test/ConnectionList.test.tsx` (Vitest `panel` project): each state, component rows under development roots only, text-only, no Tailwind palette classes or arbitrary values (so `TreeView`'s `max-height: 80vh` is an inline style).
 - Reconnect: `main.tsx` `connect()` opens the `panel` port and subscribes; when the port drops (the background stopped), it connects again, which wakes the background and asks the relay for current state.
@@ -36,6 +37,25 @@ The page's component tree, rebuilt from the agent's ops (`docs/messages.md`, "Tr
 - `picking()` / `setPicking(on)`, `picked(id | null)` (M3 #29): `main.tsx` sends `pick-start`/`pick-stop` whenever `picking` changes (a redundant `pick-stop` after a pick is ignored by the agent). `picked` turns picking off and, for an id the mirror has, selects and reveals it (expands ancestors; TreeView scrolls it into view). `null` or an unknown id only turns picking off.
 - `clear()`: on `onNavigated`, with the renderer list; also drops collapse state, the selection, the hover and picking. The query and DOM toggle stay.
 - `test/tree.test.ts`: rows, hidden hosts, each op, the resync rules, collapse, selection, every key, shown hosts, search, step.
+
+## Inspector store (`createInspectorStore(send)`, `src/inspection.ts`; M4 #33)
+
+The selected node's values as the agent last sent them (`docs/messages.md`, "Inspected values"). Exported as `@reactdx/panel/inspection`; `main.tsx` passes a `send` that posts `{ ...command, tabId }` on the current port, calls `inspect(id)` on every selection change, and `resend()` when a batch starts with `reset`. Named `inspection.ts` because `inspector.ts` and `Inspector.tsx` are one file on a case-insensitive disk.
+
+- `inspect(id | undefined)`: sends `inspect` (null for none), clears data, open paths and loaded objects. `resend()` asks again for the same id.
+- `receive(inspected)`: replies for another id are ignored. `data()` is the latest; `gone()` is true for `data: null`. Every reply drops the loaded objects and asks again for each open ref, so open values show current contents.
+- `open(path, ref?)`, `close(path)`, `isOpen(path)`: paths are dot-joined keys from the section name (`Props.user.name`). Opening a ref (a value past the page's depth limit) sends `expand { objectId: ref, offset: 0 }` once.
+- `receiveExpanded(expanded)`, `expansion(objectId)`: what loaded per object; a later page (offset above 0) is appended. `more(container)` sends `expand` at its `nextOffset`, seeding the expansion with what's shown so the page appends to it.
+- `test/inspection.test.ts`.
+
+## Inspector (`Inspector`, `src/Inspector.tsx`, `src/value.ts`; M4 #33)
+
+- Empty states: "Select a component to inspect it." and, for `gone()`, "This component unmounted."
+- Header (`[data-testid=inspector-header]`, fixed above the sections): the name, the tree's badge for `memo`/`forwardRef`/`lazy`, and `key="…"`, from `tree.info(id)`.
+- Sections (`[data-testid=section]`): Props, then State. The header button (`aria-expanded`, the tree's triangle) collapses one; collapsed sections stay collapsed while the panel is open. A section with nothing in it isn't shown.
+- Value rows (`[data-testid=value]`): `name:` (`text-syntax-key`), then `previewText(value)` as one text node (so both browsers' e2e readers get it whole), colored by kind (string, number, muted for undefined/function/symbol/getter/hole/unreadable, accent for null and booleans). Containers and refs get a toggle (`[data-testid=value-toggle]`) that opens them in place, indented 12 px per level; map entries read `key => value`; a paged container ends with "Show more (N left)". Circular refs don't open.
+- `previewText(value)` (`src/value.ts`): DevTools-console-like one-liners: `"text"` (over 50 chars cut, with the full length), `ƒ name()`, `Symbol(x)`, `{a: 1, b: "x"}` and `[1, 2]` inline up to 5 entries (nested containers as `{...}`, `Array(n)`, `Map(n)`), `Array(n)` past 5 items, a class name before an instance's braces, `<Counter key="k" />`, `<button#id.class>`, `(getter)`, `empty`, `[circular]`, `(unreadable: message)`.
+- `test/Inspector.test.tsx`, `test/value.test.ts`.
 
 ## Tree view (`TreeView`, `src/TreeView.tsx`, `src/virtual.ts`; M3 #26)
 

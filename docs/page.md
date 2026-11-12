@@ -68,6 +68,26 @@ The agent tracks the component tree only between `WATCH` and `UNWATCH` message e
   - `keydown` Escape: ends picking, posts `picked(null)`.
 - Ending picking removes the listeners and hides the overlay. `pick-stop` and `unwatch` end it without posting. Only `click` is swallowed: `pointerdown` and `mousedown` still reach the page.
 
+## Values (`createInspector()`, `src/inspect.ts`; M4 #33)
+
+Describes page values for the inspector. Carried from the M0 #7 spike (`docs/m0-findings.md`, "Value format for the panel"), with its gaps fixed. Every result is JSON-safe and passes `parseValue` (`docs/messages.md`, "Inspected values").
+
+- `{ serialize(value), expand(id, offset = 0), release() }`. Objects get ids (a `WeakMap` and an id-to-object `Map`, from 1); the same object keeps its id until `release()`. `expand` of an id it doesn't hold returns `undefined`.
+- Limits: `MAX_DEPTH` 2 (deeper objects are `ref` with a `preview`, one `expand` away), `PAGE` 100 entries per message for every container (object keys too, with `nextOffset`), strings cut to 1,000 chars with their `length`, names (functions, classes, tags, keys, symbol descriptions, error names) to 256, keys, messages and attributes to 1,000.
+- Never runs app code on purpose: properties are read through `Object.getOwnPropertyDescriptors`; accessors are `{ type: "getter" }`.
+- Descriptors beyond the spike's table: `typed-array` (paged by index: a `Uint8Array(1_000_000)` takes under 5 ms), `array-buffer` and `data-view` (`byteLength`), `weak-map`, `weak-set`; symbol-keyed props as `"Symbol(desc)"`; an array's non-index props (up to 100) in `props`; sparse holes as `{ type: "hole" }`.
+- Proxies can't be detected, so their traps run. Anything that throws while read becomes `{ type: "unreadable", message }` and its siblings still serialize.
+- `test/inspect.test.ts`: the spike's cases, every gap, and a mixed value checked against `parseValue`.
+
+## Inspection (`src/agent.ts`; M4 #33)
+
+- `inspect { id }` (checked with `parseTreeCommand`): releases the previous inspection, starts a new `createInspector()`, and posts `inspected(id, data)`: `{ props }` from the fiber's `memoizedProps` (every kind, host nodes included), plus `state` from a class instance (tag 1) when it isn't null. An id the tree doesn't have gets `data: null`. `inspect { id: null }` stops.
+- Live: on the existing 100 ms flush, re-sent only when the fiber `tree.fiber(id)` returns has a different `memoizedProps` or `memoizedState` from the last send (React gives a rendered fiber new ones), so commits elsewhere cost a comparison. An unmounted node gets one `data: null` and the inspection ends.
+- `expand { objectId, offset }`: posts `expanded(objectId, offset, value)` from the current inspection; ids it doesn't hold (released, forged) post nothing.
+- `unwatch` ends the inspection; a new watch starts without one (the panel asks again).
+- `tree.fiber(id)`: the node's fiber as of the last commit.
+- `test/inspect-agent.test.ts`: props, class state, unknown and malformed ids, re-sends, no re-send for a sibling's commit, stop on `inspect null` and `unwatch`, expand, released ids.
+
 ## Types
 
 - `Hook`, `HookRecord`, `FiberRoot`; `RendererInfo` comes from `@reactdx/messages` (re-exported), so `page` depends on `messages`, never the reverse. `declare global { var __REACT_DEVTOOLS_GLOBAL_HOOK__: Hook | undefined }` types `window` and `globalThis`.
@@ -83,6 +103,7 @@ One file per React scenario, because react-dom registers with the hook only once
 - `test/define-later.test.ts`: a hook defined with `defineProperty` after ours.
 - `test/assign-later.test.ts`: a hook set by plain assignment after ours.
 - `test/tree.test.ts`: kinds and names, watch/unwatch, splitting, mounts, unmounts, reorders, renames and Suspense (fake timers drive the flush). `test/tree-mirror.ts` applies ops like the panel and prints an outline.
+- `test/inspect.test.ts`, `test/inspect-agent.test.ts`: values and inspection (above).
 - `test/agent.test.ts`: the agent's first snapshot, 100 ms batching, `get-snapshot`, unmount, a second start (fake timers).
 - `test/window.ts`: `windowLike()` inserts a fresh prototype under `globalThis` to stand in for `Window.prototype`; `mount()` renders a root. `test/fake-hook.ts`: an RDT-like hook.
 

@@ -354,7 +354,7 @@ Shared setup for every experiment, in `spikes/harness/`.
   - first page of a 10k-entry Map: 9,627 B, 0.053 ms;
   - an object nested 50 levels deep: 223 B, 0.002 ms;
   - `{ ref: { current: <button> } }` in Chromium: under 1 KB, under 5 ms (asserted).
-- **Gaps to fix in M4:**
+- **Gaps to fix in M4** (all fixed in M4 #33; `docs/page.md`, "Values"):
   - **Typed arrays and other huge non-plain objects:** a `Uint8Array(1_000_000)` is read as an object with a million own properties, which is slow. It needs its own paged descriptor, and `ArrayBuffer`, `DataView`, `WeakMap`, and `WeakSet` need summaries.
   - **Proxies can't be detected.** Reading `$$typeof` and own-property descriptors runs `get`, `ownKeys`, and `getOwnPropertyDescriptor` traps.
   - **Memory:** the id-to-object `Map` holds strong references to everything ever described. It needs a `release()` when the panel moves to another component or commit.
