@@ -75,7 +75,7 @@ Describes page values for the inspector. Carried from the M0 #7 spike (`docs/m0-
 - `{ serialize(value), expand(id, offset = 0), release() }`. Objects get ids (a `WeakMap` and an id-to-object `Map`, from 1); the same object keeps its id until `release()`. `expand` of an id it doesn't hold returns `undefined`.
 - Limits: `MAX_DEPTH` 2 (deeper objects are `ref` with a `preview`, one `expand` away), `PAGE` 100 entries per message for every container (object keys too, with `nextOffset`), strings cut to 1,000 chars with their `length`, names (functions, classes, tags, keys, symbol descriptions, error names) to 256, keys, messages and attributes to 1,000.
 - Never runs app code on purpose: properties are read through `Object.getOwnPropertyDescriptors`; accessors are `{ type: "getter" }`.
-- Descriptors beyond the spike's table: `typed-array` (paged by index: a `Uint8Array(1_000_000)` takes under 5 ms), `array-buffer` and `data-view` (`byteLength`), `weak-map`, `weak-set`; symbol-keyed props as `"Symbol(desc)"`; an array's non-index props (up to 100) in `props`; sparse holes as `{ type: "hole" }`.
+- Descriptors beyond the spike's table: `typed-array` (paged by index: a `Uint8Array(1_000_000)` takes under 5 ms locally; the unit tests allow 50 ms for shared CI runners), `array-buffer` and `data-view` (`byteLength`), `weak-map`, `weak-set`; symbol-keyed props as `"Symbol(desc)"`; an array's non-index props (up to 100) in `props`; sparse holes as `{ type: "hole" }`.
 - Proxies can't be detected, so their traps run. Anything that throws while read becomes `{ type: "unreadable", message }` and its siblings still serialize.
 - `test/inspect.test.ts`: the spike's cases, every gap, and a mixed value checked against `parseValue`.
 
