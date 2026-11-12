@@ -155,3 +155,32 @@ test("hovering a row sets hovered; leaving the tree clears it", () => {
   tree.clear()
   expect(tree.hovered()).toBeUndefined()
 })
+
+test("rows that arrive after mount fill the tree's height", () => {
+  // jsdom has no layout: the tree's box is 0 px tall while empty, 400 px once filled.
+  let height = 0
+  const clientHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientHeight",
+  )
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get: () => height,
+  })
+  try {
+    const tree = createTreeStore()
+    const { container } = render(() => <TreeView tree={tree} rootId={1} />)
+    height = 400
+    tree.apply(
+      treeBatch(1, [
+        { op: "reset" },
+        ...Array.from({ length: 100 }, (_, i) => add(i + 1, 0, `Row${i}`, i)),
+      ]),
+    )
+    // 400 px holds 20 rows, plus 10 overscan.
+    expect(container.querySelectorAll("[data-testid=node]").length).toBe(30)
+  } finally {
+    if (clientHeight)
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", clientHeight)
+  }
+})

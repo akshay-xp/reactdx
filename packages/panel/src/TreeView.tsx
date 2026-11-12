@@ -51,6 +51,9 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
     else props.tree.select(id)
   }
   // Times the first rows after a subscribe (e2e/perf.test.ts).
+  // The box grows with its rows (up to its max-height) and its height decides the
+  // window, so measure again when the count changes: rows can arrive after mount.
+  createEffect(on(() => rows().length, measure, { defer: true }))
   const shown = createMemo(() => rows().length > 0)
   createEffect(() => shown() && performance.mark("reactdx:rows"))
   // Only on selection changes: a commit mustn't scroll back to the selection.
