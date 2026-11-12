@@ -69,7 +69,7 @@ export function Toolbar(props: { tree: TreeStore }) {
 
 // SnapQL's icon button (apps/extension/src/panel/icon-button.tsx): the label is
 // its accessible name and tooltip.
-function IconButton(props: {
+export function IconButton(props: {
   label: string
   testid?: string
   pressed?: boolean

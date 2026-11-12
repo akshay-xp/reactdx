@@ -6,6 +6,7 @@ import {
   type Value,
 } from "@reactdx/messages"
 import { fireEvent, render } from "@solidjs/testing-library"
+import { createSignal } from "solid-js"
 import { expect, test } from "vitest"
 import { Inspector } from "../src/Inspector"
 import { createInspectorStore, type InspectorCommand } from "../src/inspection"
@@ -25,6 +26,12 @@ const object = (
 })
 
 // One selected node (id 3) and an inspector for it.
+// Settings held in a signal, as main.tsx holds them (stored there).
+function createSettings(hookNames = false) {
+  const [on, set] = createSignal(hookNames)
+  return { hookNames: on, setHookNames: set }
+}
+
 // Sources that resolve nothing and open everything, unless a test says otherwise.
 const noSources: Sources = {
   resolve: async () => null,
@@ -35,6 +42,7 @@ function setup(
   kind: TreeKind = "function",
   key: string | null = null,
   sources = noSources,
+  settings = createSettings(),
 ) {
   const tree = createTreeStore()
   tree.apply(
@@ -55,7 +63,12 @@ function setup(
   const sent: InspectorCommand[] = []
   const inspector = createInspectorStore((command) => sent.push(command))
   const view = render(() => (
-    <Inspector tree={tree} inspector={inspector} sources={sources} />
+    <Inspector
+      tree={tree}
+      inspector={inspector}
+      sources={sources}
+      settings={settings}
+    />
   ))
   const select = () => {
     tree.select(3)
@@ -428,4 +441,15 @@ test("a copied relative path offers no VS Code link", async () => {
   await settled()
   expect(queryByText("Copied")).not.toBeNull()
   expect(queryByRole("link", { name: "VS Code" })).toBeNull()
+})
+
+test("the Hook names toggle shows and changes the setting", () => {
+  const settings = createSettings()
+  const { getByRole, select } = setup("function", null, noSources, settings)
+  select()
+  const toggle = getByRole("button", { name: "Hook names" })
+  expect(toggle.getAttribute("aria-pressed")).toBe("false")
+  fireEvent.click(toggle)
+  expect(settings.hookNames()).toBe(true)
+  expect(toggle.getAttribute("aria-pressed")).toBe("true")
 })

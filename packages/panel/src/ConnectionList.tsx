@@ -1,6 +1,6 @@
 import type { RendererView } from "@reactdx/messages"
 import { For, Match, Show, Switch } from "solid-js"
-import { Inspector } from "./Inspector"
+import { Inspector, type Settings } from "./Inspector"
 import type { InspectorStore } from "./inspection"
 import type { Sources } from "./source"
 import { Toolbar } from "./Toolbar"
@@ -18,6 +18,7 @@ export function ConnectionList(props: {
   tree: TreeStore
   inspector: InspectorStore
   sources: Sources
+  settings: Settings
   stale?: boolean
   onReload?: () => void
 }) {
@@ -99,6 +100,7 @@ export function ConnectionList(props: {
               tree={props.tree}
               inspector={props.inspector}
               sources={props.sources}
+              settings={props.settings}
             />
           </aside>
         </div>

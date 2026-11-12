@@ -1,5 +1,6 @@
 import type { RendererView } from "@reactdx/messages"
 import { ConnectionList } from "./ConnectionList"
+import type { Settings } from "./Inspector"
 import type { InspectorStore } from "./inspection"
 import type { Sources } from "./source"
 import type { TreeStore } from "./tree"
@@ -9,6 +10,7 @@ export function Panel(props: {
   tree: TreeStore
   inspector: InspectorStore
   sources: Sources
+  settings: Settings
   stale?: boolean
   onReload?: () => void
 }) {
@@ -22,6 +24,7 @@ export function Panel(props: {
         tree={props.tree}
         inspector={props.inspector}
         sources={props.sources}
+        settings={props.settings}
         stale={props.stale}
         onReload={props.onReload}
       />

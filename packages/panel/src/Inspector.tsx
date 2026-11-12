@@ -15,6 +15,7 @@ import {
   type SourceLocation,
   type Sources,
 } from "./source"
+import { IconButton } from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
 import { previewText } from "./value"
@@ -87,11 +88,18 @@ function entriesOf(value: Container): { entries: Entry[]; left: number } {
   }
 }
 
+// Panel settings, kept by the extension (storage.local).
+export type Settings = {
+  hookNames(): boolean
+  setHookNames(on: boolean): void
+}
+
 // The selected node's values (docs/panel.md, Inspector). Page data is text only.
 export function Inspector(props: {
   tree: TreeStore
   inspector: InspectorStore
   sources: Sources
+  settings: Settings
 }) {
   const [resolved] = createResource(
     () => props.inspector.data()?.source,
@@ -165,6 +173,18 @@ export function Inspector(props: {
               <Show when={node().key !== null}>
                 <span class="truncate text-muted">{`key="${node().key}"`}</span>
               </Show>
+              <span class="ml-auto">
+                <IconButton
+                  label="Hook names"
+                  pressed={props.settings.hookNames()}
+                  onClick={() =>
+                    props.settings.setHookNames(!props.settings.hookNames())
+                  }
+                >
+                  <path d="M12 2H2v10l9.3 9.3a1 1 0 0 0 1.4 0l6.6-6.6a1 1 0 0 0 0-1.4z" />
+                  <circle cx="7" cy="7" r="1.5" />
+                </IconButton>
+              </span>
             </header>
             <Show when={location()}>
               {(at) => (

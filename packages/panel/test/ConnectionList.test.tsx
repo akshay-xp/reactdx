@@ -7,6 +7,7 @@ import type { Sources } from "../src/source"
 import { createTreeStore } from "../src/tree"
 
 const inspection = () => createInspectorStore(() => {})
+const settings = { hookNames: () => false, setHookNames: () => {} }
 const sources: Sources = {
   resolve: async () => null,
   open: async () => "opened",
@@ -31,6 +32,7 @@ test("no React", () => {
       tree={createTreeStore()}
       inspector={inspection()}
       sources={sources}
+      settings={settings}
       renderers={[]}
     />
   ))
@@ -44,6 +46,7 @@ test("a page open since before the install asks for a reload", () => {
       tree={createTreeStore()}
       inspector={inspection()}
       sources={sources}
+      settings={settings}
       renderers={[]}
       stale
       onReload={() => reloads++}
@@ -62,6 +65,7 @@ test("only production React", () => {
       tree={createTreeStore()}
       inspector={inspection()}
       sources={sources}
+      settings={settings}
       renderers={[copy(1, "19.3.1", 0)]}
     />
   ))
@@ -76,6 +80,7 @@ test("each React copy with its roots and commit counts", () => {
       tree={createTreeStore()}
       inspector={inspection()}
       sources={sources}
+      settings={settings}
       renderers={[
         copy(1, "18.3.1", 1, [{ id: 1, commits: 3 }]),
         copy(2, "19.0.0", 0, [{ id: 2, commits: 0 }]),
@@ -102,6 +107,7 @@ test("page data renders as text, never markup", () => {
       tree={createTreeStore()}
       inspector={inspection()}
       sources={sources}
+      settings={settings}
       renderers={[copy(1, "<img src=x onerror=alert(1)>", 1)]}
     />
   ))
@@ -115,6 +121,7 @@ test("uses theme token classes only", () => {
       tree={createTreeStore()}
       inspector={inspection()}
       sources={sources}
+      settings={settings}
       renderers={[copy(1, "18.3.1", 1, [{ id: 1, commits: 0 }])]}
     />
   ))
@@ -154,6 +161,7 @@ test("development roots list their components; production roots don't", () => {
       tree={tree}
       inspector={inspection()}
       sources={sources}
+      settings={settings}
       renderers={[
         copy(1, "19.3.1", 1, [{ id: 1, commits: 1 }]),
         copy(2, "19.3.1", 0, [{ id: 2, commits: 1 }]),
@@ -181,6 +189,7 @@ test("the tree toolbar shows only above development copies", () => {
         tree={createTreeStore()}
         inspector={inspection()}
         sources={sources}
+        settings={settings}
         renderers={renderers}
       />
     )).container.querySelector("[data-testid=search]")
@@ -196,6 +205,7 @@ test("the inspector sits beside the trees, below them when narrow", () => {
         tree={createTreeStore()}
         inspector={inspection()}
         sources={sources}
+        settings={settings}
         renderers={renderers}
       />
     )).container
