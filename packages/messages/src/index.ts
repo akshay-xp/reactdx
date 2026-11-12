@@ -344,3 +344,5 @@ export function toolbarState(renderers: RendererInfo[]): ToolbarState {
     }
   return { icon: "none", title: "ReactDX: no React" }
 }
+
+export * from "./inspect.ts"
