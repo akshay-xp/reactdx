@@ -61,3 +61,50 @@ test("the first rows show within 500 ms of subscribe", { skip }, async (t) => {
     await browser.close()
   }
 })
+
+type Timed = Window & { reactdxAt?: number }
+
+test("a mounted component's row shows within 100 ms of its batch", {
+  skip,
+}, async (t) => {
+  const { browser, page, panel } = await benchPanel()
+  try {
+    await page.evaluate(() =>
+      addEventListener("message", ({ data }) => {
+        const w = window as Timed
+        if (
+          w.reactdxAt === undefined &&
+          data?.source === "reactdx" &&
+          data.type === "tree" &&
+          data.ops.some(
+            (op: { op: string; name?: string }) =>
+              op.op === "add" && op.name === "Extra",
+          )
+        )
+          w.reactdxAt = Date.now()
+      }),
+    )
+    await panel.evaluate(() => {
+      const shown = () =>
+        [...document.querySelectorAll("[data-testid=node]")].some(
+          (n) => n.textContent === "Extra",
+        )
+      new MutationObserver((_, observer) => {
+        if (!shown()) return
+        ;(window as Timed).reactdxAt = Date.now()
+        observer.disconnect()
+      }).observe(document.body, { childList: true, subtree: true })
+    })
+    await page.click("[data-testid=extra]")
+    const at = (frame: typeof page | typeof panel) =>
+      frame
+        .waitForFunction(() => (window as Timed).reactdxAt, { timeout: 5000 })
+        .then((handle) => handle.jsonValue() as Promise<number>)
+    const posted = await at(page)
+    const shown = await at(panel)
+    t.diagnostic(`${shown - posted} ms`)
+    assert.ok(shown - posted < 100, `${shown - posted} ms`)
+  } finally {
+    await browser.close()
+  }
+})
