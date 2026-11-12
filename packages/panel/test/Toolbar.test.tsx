@@ -51,7 +51,7 @@ const setup = () => {
       (n) => n.textContent,
     )
   const type = (value: string) => fireEvent.input(search, { target: { value } })
-  return { container, search, count, names, type }
+  return { tree, container, search, count, names, type }
 }
 
 test("typing shows the counter; Enter and Shift+Enter cycle", () => {
@@ -78,4 +78,20 @@ test("Show DOM elements toggles host rows", () => {
   expect(names()).toContain("div")
   fireEvent.click(box)
   expect(names()).not.toContain("div")
+})
+
+test("the picker button toggles picking and follows a pick", () => {
+  const { tree, container } = setup()
+  const pick = container.querySelector("[data-testid=pick]") as Element
+  expect(pick).not.toBeNull()
+  expect(pick.textContent).toBe("Pick element")
+  expect(pick.getAttribute("aria-pressed")).toBe("false")
+  fireEvent.click(pick)
+  expect(tree.picking()).toBe(true)
+  expect(pick.getAttribute("aria-pressed")).toBe("true")
+  fireEvent.click(pick)
+  expect(tree.picking()).toBe(false)
+  fireEvent.click(pick)
+  tree.picked(null)
+  expect(pick.getAttribute("aria-pressed")).toBe("false")
 })

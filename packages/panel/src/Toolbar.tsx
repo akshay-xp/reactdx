@@ -1,10 +1,21 @@
 import { Show } from "solid-js"
 import type { TreeStore } from "./tree"
 
-// Search (Enter: next match, Shift+Enter: previous) and the DOM elements filter.
+// The element picker, search (Enter: next match, Shift+Enter: previous) and the
+// DOM elements filter.
 export function Toolbar(props: { tree: TreeStore }) {
   return (
     <div class="flex items-center gap-2 border-border border-b p-1">
+      <button
+        type="button"
+        data-testid="pick"
+        aria-pressed={props.tree.picking()}
+        class="border border-border px-1"
+        classList={{ "bg-selected": props.tree.picking() }}
+        onClick={() => props.tree.setPicking(!props.tree.picking())}
+      >
+        Pick element
+      </button>
       <input
         type="search"
         data-testid="search"
