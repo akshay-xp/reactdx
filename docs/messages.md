@@ -98,15 +98,15 @@ Any invalid op drops the whole batch (a partial batch would desync the mirror). 
 
 Background to the relay's tree port. Everything the relay acts on passes through it, so a malformed command never reaches the page.
 
-| Command                       | Relay posts to the agent                                              |
-| ----------------------------- | --------------------------------------------------------------------- |
-| `{ type: "resync" }`          | `WATCH`                                                               |
-| `{ type: "highlight", id }`   | `highlight(id)`: `{ source: "reactdx-relay", type: "highlight", id }` |
-| `{ type: "clear-highlight" }` | `CLEAR_HIGHLIGHT`                                                     |
-| `{ type: "pick-start" }`      | `PICK_START`                                                          |
-| `{ type: "pick-stop" }`       | `PICK_STOP`                                                           |
-| `{ type: "inspect", id }`     | `{ source: "reactdx-relay", type: "inspect", id }`                    |
-| `{ type: "expand", objectId, offset }` | `{ source: "reactdx-relay", type: "expand", objectId, offset }` |
+| Command                                | Relay posts to the agent                                              |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| `{ type: "resync" }`                   | `WATCH`                                                               |
+| `{ type: "highlight", id }`            | `highlight(id)`: `{ source: "reactdx-relay", type: "highlight", id }` |
+| `{ type: "clear-highlight" }`          | `CLEAR_HIGHLIGHT`                                                     |
+| `{ type: "pick-start" }`               | `PICK_START`                                                          |
+| `{ type: "pick-stop" }`                | `PICK_STOP`                                                           |
+| `{ type: "inspect", id }`              | `{ source: "reactdx-relay", type: "inspect", id }`                    |
+| `{ type: "expand", objectId, offset }` | `{ source: "reactdx-relay", type: "expand", objectId, offset }`       |
 
 - The relay posts every command but `resync` as `{ source: "reactdx-relay", ...command }`: what `parseTreeCommand` returns has only the known fields.
 - `inspect`'s `id` may be `null`; `expand`'s `objectId` is a positive safe integer and `offset` a non-negative one.
