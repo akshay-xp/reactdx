@@ -148,12 +148,22 @@ importers:
 
   packages/panel:
     dependencies:
+      '@jridgewell/trace-mapping':
+        specifier: 0.3.31
+        version: 0.3.31
       '@reactdx/messages':
         specifier: workspace:*
         version: link:../messages
+      acorn:
+        specifier: 8.19.0
+        version: 8.19.0
       solid-js:
         specifier: 1.9.18
         version: 1.9.18
+    devDependencies:
+      source-map-js:
+        specifier: 1.2.2
+        version: 1.2.2
 
   test-env/react-18:
     dependencies:

@@ -20,6 +20,7 @@ All but `fixture:prod` are development builds. `fixture:prod` builds into `fixtu
 ## Test ids (used by e2e)
 
 - Every root renders `data-testid="react-version"` (text: `React.version`) and `data-testid="counter"` (text `Count: N`, +1 per click).
+- On `fixtures/vite` and `fixtures/next`, `Counter` takes a `label` prop (`"Count"`, from `App` and `app/page.jsx`) and renders `{label}: {count}`, so the inspector e2e has a prop to show and a button whose `children` change on a click.
 - `fixtures/next` also renders `data-testid="server"` from the Server Component (`app/page.jsx`); the counter and version come from the client component (`app/Counter.jsx`).
 - `fixtures/multi` puts each root in `data-testid="root-18"` or `data-testid="root-19"`.
 
@@ -31,9 +32,13 @@ Every fixture's `Counter` renders a `Clicked` component (which renders nothing) 
 
 `fixtures/vite` also serves `/tree.html` (`src/tree.jsx`): one of each component kind (class, memo, forwardRef, lazy in Suspense, context provider and consumer, Profiler, an anonymous component, keyed items, Activity on React 19) inside StrictMode, plus wrappers the tree hides (fragments, text, DOM elements). It mirrors the unit `Kinds` app in `packages/page/test/tree.test.ts`; `e2e/panel.test.ts` checks the panel's names on `fixture:19`.
 
+## Hooks page
+
+`fixtures/vite` also serves `/hooks.html` (`src/hooks.jsx`): one `Hooks` component (`data-testid="hooks"`) calling every hook the inspector reads at its top level, inside `Theme` (`"dark"`), plus a `useCart` custom hook with a debug value. For hook names it assigns `const [one, setOne] = useState(1)`, `const box = useRef({ a: 1 })`, `const handle = useRef(null)` and `const cart = useCart()`, read in one `void [...]` (lint's unused-variable rule). React 19's own hooks run only on React 19 (`typeof use === "function"`, the same on every render), inline: a helper function would show as a custom hook. `e2e/inspector.test.ts` lists what each row shows.
+
 ## Bench page
 
-`fixtures/vite` also serves `/bench.html` (`src/bench.jsx`): a `Bench` component over 10,000 `Cell` components (`data-testid="cell"`) and `window.__bench(mode, iterations)`, which times `flushSync` commits (`all` updates every cell, `one` the first) and returns the durations in ms. Used by `pnpm bench:hook-cost` (`docs/bench.md`) and `e2e/perf.test.ts`; checked by `pnpm test:fixtures`.
+`fixtures/vite` also serves `/bench.html` (`src/bench.jsx`): a `Bench` component over 10,000 `Cell` components (`data-testid="cell"`) and `window.__bench(mode, iterations)`, which times `flushSync` commits (`all` updates every cell, `one` the first) and returns the durations in ms. Used by `pnpm bench:hook-cost` (`docs/bench.md`) and `e2e/perf.test.ts`; checked by `pnpm test:fixtures`. Each `Cell` keeps its first render's setter (`setters[index] ??= setValue`): the inspector's shadow render calls `Cell` again with a stub dispatcher whose setter does nothing (M4 #38).
 
 - `[data-testid=extra]` button: mounts or unmounts `Extra` (renders `[data-testid=extra-on]`) before the cells, for the panel's commit-latency test. The cells are built once at module level, so the toggle doesn't re-render them.
 

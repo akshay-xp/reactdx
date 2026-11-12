@@ -1,8 +1,14 @@
 import {
   type ClearHighlightMessage,
+  type ExpandedMessage,
+  type ExpandMessage,
   type GetStateMessage,
   type HighlightMessage,
   type InjectAgentMessage,
+  type InspectedMessage,
+  type InspectMessage,
+  type PickedMessage,
+  type PickMessage,
   type ResyncMessage,
   STALE_TITLE,
   type StateReply,
@@ -61,11 +67,19 @@ export default defineBackground(() => {
     port.onDisconnect.addListener(() => {
       if (trees.get(tabId) === port) trees.delete(tabId)
     })
-    port.onMessage.addListener((batch: TreeBatchMessage) => {
-      const ports = panels.get(tabId)
-      if (!ports) return unwatch(tabId)
-      for (const panel of ports) panel.postMessage(batch)
-    })
+    port.onMessage.addListener(
+      (
+        message:
+          | TreeBatchMessage
+          | PickedMessage
+          | InspectedMessage
+          | ExpandedMessage,
+      ) => {
+        const ports = panels.get(tabId)
+        if (!ports) return unwatch(tabId)
+        for (const panel of ports) panel.postMessage(message)
+      },
+    )
   }
 
   // Disconnecting the relay's port is what tells it to stop watching.
@@ -91,7 +105,10 @@ export default defineBackground(() => {
           | SubscribeMessage
           | ResyncMessage
           | HighlightMessage
-          | ClearHighlightMessage,
+          | ClearHighlightMessage
+          | PickMessage
+          | InspectMessage
+          | ExpandMessage,
       ) => {
         // Commands go to the tab's relay, which validates them (parseTreeCommand).
         const { tabId, ...command } = message

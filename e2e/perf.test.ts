@@ -62,18 +62,21 @@ test("the first rows show within 500 ms of subscribe", { skip }, async (t) => {
   }
 })
 
-type Timed = Window & { reactdxAt?: number }
+type Timed = Window & { reactdxAt?: number[] }
 
+// The median of five mounts: one timing on a shared CI runner ranged from 70 to
+// over 130 ms, on main too.
 test("a mounted component's row shows within 100 ms of its batch", {
   skip,
 }, async (t) => {
   const { browser, page, panel } = await benchPanel()
   try {
-    await page.evaluate(() =>
+    // Each batch that adds Extra, and each time its row appears in the panel.
+    await page.evaluate(() => {
+      const w = window as Timed
+      w.reactdxAt = []
       addEventListener("message", ({ data }) => {
-        const w = window as Timed
         if (
-          w.reactdxAt === undefined &&
           data?.source === "reactdx" &&
           data.type === "tree" &&
           data.ops.some(
@@ -81,29 +84,46 @@ test("a mounted component's row shows within 100 ms of its batch", {
               op.op === "add" && op.name === "Extra",
           )
         )
-          w.reactdxAt = Date.now()
-      }),
-    )
+          w.reactdxAt?.push(Date.now())
+      })
+    })
     await panel.evaluate(() => {
-      const shown = () =>
-        [...document.querySelectorAll("[data-testid=node]")].some(
+      const w = window as Timed
+      w.reactdxAt = []
+      let was = false
+      new MutationObserver(() => {
+        const shown = [...document.querySelectorAll("[data-testid=node]")].some(
           (n) => n.textContent === "Extra",
         )
-      new MutationObserver((_, observer) => {
-        if (!shown()) return
-        ;(window as Timed).reactdxAt = Date.now()
-        observer.disconnect()
+        if (shown && !was) w.reactdxAt?.push(Date.now())
+        was = shown
       }).observe(document.body, { childList: true, subtree: true })
     })
-    await page.click("[data-testid=extra]")
-    const at = (frame: typeof page | typeof panel) =>
-      frame
-        .waitForFunction(() => (window as Timed).reactdxAt, { timeout: 5000 })
-        .then((handle) => handle.jsonValue() as Promise<number>)
-    const posted = await at(page)
-    const shown = await at(panel)
-    t.diagnostic(`${shown - posted} ms`)
-    assert.ok(shown - posted < 100, `${shown - posted} ms`)
+    const times = (frame: typeof page | typeof panel) =>
+      frame.evaluate(() => (window as Timed).reactdxAt ?? [])
+    const extraShown = (on: boolean) =>
+      panel.waitForFunction(
+        (on) =>
+          [...document.querySelectorAll("[data-testid=node]")].some(
+            (n) => n.textContent === "Extra",
+          ) === on,
+        { timeout: 5000 },
+        on,
+      )
+    for (let round = 0; round < 5; round++) {
+      await page.click("[data-testid=extra]")
+      await extraShown(true)
+      await page.click("[data-testid=extra]")
+      await extraShown(false)
+    }
+    const posted = await times(page)
+    const shown = await times(panel)
+    assert.equal(posted.length, 5)
+    assert.equal(shown.length, 5)
+    const delays = shown.map((at, i) => at - (posted[i] as number))
+    const median = [...delays].sort((a, b) => a - b)[2] as number
+    t.diagnostic(`median ${median} ms of ${delays.join(", ")}`)
+    assert.ok(median < 100, `${median} ms (${delays.join(", ")})`)
   } finally {
     await browser.close()
   }
@@ -180,6 +200,105 @@ test("End and Home select the last and first rows and scroll to them", {
     await selected('Cell key="9999"')
     await panel.page().keyboard.press("Home")
     await selected("Bench")
+  } finally {
+    await browser.close()
+  }
+})
+
+// Selects `Cell key="<key>"` by clicking its row in the panel; resolves with the
+// ms until the inspector shows its hooks (a new selection clears the last one's).
+const selectCell = (
+  panel: Awaited<ReturnType<typeof benchPanel>>["panel"],
+  key = 0,
+) =>
+  panel.evaluate(
+    (key) =>
+      new Promise<{ ms: number; cleared: boolean }>((resolve) => {
+        const row = [...document.querySelectorAll("[data-testid=node]")].find(
+          (n) => n.textContent === `Cell key="${key}"`,
+        )
+        const inspector = () =>
+          document.querySelector("[data-testid=inspector]")?.textContent ?? ""
+        const shown = () =>
+          inspector().includes(`key="${key}"`) &&
+          inspector().includes("State: 0")
+        const start = performance.now()
+        // The timing counts only if the last selection's hooks went first.
+        let cleared = false
+        new MutationObserver((_, observer) => {
+          if (!inspector().includes("State: 0")) cleared = true
+          if (!shown()) return
+          observer.disconnect()
+          resolve({ ms: performance.now() - start, cleared })
+        }).observe(document.body, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        })
+        ;(
+          row?.querySelector("[data-testid=name]") as HTMLElement | null
+        )?.click()
+      }),
+    key,
+  )
+
+// The median of five selections: one timing on a shared CI runner varies from
+// tens to over a hundred ms.
+test("a selected Cell's hooks show within 100 ms", { skip }, async (t) => {
+  const { browser, panel } = await benchPanel()
+  try {
+    const times: number[] = []
+    for (const key of [0, 1, 2, 3, 4]) {
+      const { ms, cleared } = await selectCell(panel, key)
+      assert.ok(cleared, `Cell ${key}: the last hooks never cleared`)
+      times.push(ms)
+    }
+    const median = [...times].sort((a, b) => a - b)[2] as number
+    t.diagnostic(
+      `median ${median.toFixed(0)} ms of ${times.map((ms) => ms.toFixed(0)).join(", ")}`,
+    )
+    assert.ok(median < 100, `${median} ms (${times.join(", ")})`)
+  } finally {
+    await browser.close()
+  }
+})
+
+type Counted = Window & { inspectedCount?: number }
+
+test("an unrelated commit sends no inspected message", { skip }, async () => {
+  const { browser, page, panel } = await benchPanel()
+  try {
+    await selectCell(panel)
+    await page.evaluate(() => {
+      const w = window as Counted
+      w.inspectedCount = 0
+      addEventListener("message", ({ data }) => {
+        if (data?.source === "reactdx" && data.type === "inspected")
+          w.inspectedCount = (w.inspectedCount ?? 0) + 1
+      })
+    })
+    const count = () => page.evaluate(() => (window as Counted).inspectedCount)
+    // Re-renders Bench and mounts Extra; the cells bail out.
+    await page.click("[data-testid=extra]")
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    assert.equal(await count(), 0)
+    // The control: a commit to the selected Cell is re-sent.
+    await page.evaluate(() =>
+      (
+        window as unknown as { __bench: (m: string, n: number) => void }
+      ).__bench("one", 1),
+    )
+    await page.waitForFunction(
+      () => ((window as Counted).inspectedCount ?? 0) >= 1,
+      { timeout: 1000 },
+    )
+    await panel.waitForFunction(
+      () =>
+        document
+          .querySelector("[data-testid=inspector]")
+          ?.textContent?.includes("State: 1"),
+      { timeout: 1000 },
+    )
   } finally {
     await browser.close()
   }

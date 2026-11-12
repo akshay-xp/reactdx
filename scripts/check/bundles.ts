@@ -11,7 +11,8 @@ export const MAX_HOOK_BYTES = 2048
 const SCANNED = new Set([".js", ".html", ".json", ".css"])
 // Each match becomes `<rule> (<first capture group>)`.
 const PATTERNS: [rule: string, pattern: RegExp][] = [
-  ["dynamic code", /\b(eval|Function)\s*\(/g],
+  // A method named eval (".eval") is told apart from the global's.
+  ["dynamic code", /(\.?\b(?:eval|Function))\s*\(/g],
   // XML namespace strings (Solid's SVG/MathML) are identifiers, not loads.
   ["remote URL", /\b((?:https?|wss?):\/\/(?!www\.w3\.org\/)[^\s"'`)]+)/g],
   // Banned outright: a static scan can't tell which origin a call reaches.
@@ -20,6 +21,20 @@ const PATTERNS: [rule: string, pattern: RegExp][] = [
     /\b(fetch|importScripts|XMLHttpRequest|WebSocket|EventSource|sendBeacon)\b/g,
   ],
 ]
+
+// The panel's own needs (docs/check.md): it reads the inspected page's scripts and
+// source maps and asks its dev server to open the editor, and reads the page's
+// origin with devtools.inspectedWindow.eval, which runs in the page. Its source map
+// library (@jridgewell/resolve-uri) parses relative paths against a placeholder base.
+const PANEL = /^chunks\/panel-[\w-]+\.js$/
+const ALLOWED = new Set([
+  "network API (fetch)",
+  "dynamic code (.eval)",
+  "remote URL (http://foo.com)",
+  "remote URL (http://foo.com/)",
+])
+const allowed = (file: string, finding: string) =>
+  PANEL.test(file.split(path.sep).join("/")) && ALLOWED.has(finding)
 
 // Returns one `<file>: <rule>` line per invariant the built extension in `dir` breaks.
 export function checkBundle(dir: string): string[] {
@@ -44,7 +59,9 @@ export function checkBundle(dir: string): string[] {
       const found = new Set(
         Array.from(scanned.matchAll(pattern), (match) => match[1]),
       )
-      for (const name of found) violations.push(`${file}: ${rule} (${name})`)
+      for (const name of found)
+        if (!allowed(file, `${rule} (${name})`))
+          violations.push(`${file}: ${rule} (${name})`)
     }
   }
   return violations

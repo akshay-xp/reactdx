@@ -1,26 +1,84 @@
 import {
+  type ExpandedMessage,
+  expanded,
+  type HookValue,
+  type InspectedData,
+  type InspectedMessage,
+  inspected,
   MAX_OPS,
+  MAX_OWNERS,
+  MAX_TREE_STRING,
+  type Owner,
   type PageMessage,
   type PickedMessage,
+  parseTreeCommand,
   picked,
   type RootInfo,
   snapshotMessage,
   type TreeBatchMessage,
   type TreeOp,
   treeBatch,
+  type Value,
 } from "@reactdx/messages"
-import type { FiberRoot, HookRecord } from "./hook.ts"
+import type { FiberRoot, Hook, HookRecord } from "./hook.ts"
+import {
+  type DispatcherRef,
+  type HooksFiber,
+  inspectHooks,
+  type RawHook,
+} from "./hooks.ts"
+import { createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
-import { createTree } from "./tree.ts"
+import { sourceOf } from "./source.ts"
+import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
 const THROTTLE_MS = 100
+
+type ContextRead = {
+  context: { displayName?: unknown }
+  memoizedValue: unknown
+  next: ContextRead | null
+}
+
+// The contexts a fiber read in its last render, once each, in first-read order:
+// useContext, use(), a class's contextType and consumers all land in this list.
+function contextsOf(fiber: Fiber) {
+  const reads = new Map<unknown, unknown>()
+  const dependencies = (
+    fiber as unknown as {
+      dependencies: { firstContext: ContextRead | null } | null
+    }
+  ).dependencies
+  for (let at = dependencies?.firstContext ?? null; at; at = at.next)
+    if (!reads.has(at.context)) reads.set(at.context, at.memoizedValue)
+  return [...reads].map(([context, value]) => {
+    const name = (context as { displayName?: unknown }).displayName
+    return {
+      name:
+        typeof name === "string" && name
+          ? name.slice(0, MAX_TREE_STRING)
+          : "Context",
+      value,
+    }
+  })
+}
+
+const sameValues = (a: unknown[], b: unknown[]) =>
+  a.length === b.length && a.every((value, i) => Object.is(value, b[i]))
 
 // Injected only once a development renderer connects (never at document_start).
 // Reads the hook's record, so roots that committed before it arrived are kept.
 export function startAgent(
   target: EventTarget,
-  post: (message: PageMessage | TreeBatchMessage | PickedMessage) => void,
+  post: (
+    message:
+      | PageMessage
+      | TreeBatchMessage
+      | PickedMessage
+      | InspectedMessage
+      | ExpandedMessage,
+  ) => void,
 ) {
   const scope = target as unknown as Record<symbol, unknown>
   const record = scope[Symbol.for("reactdx")] as HookRecord | undefined
@@ -108,6 +166,112 @@ export function startAgent(
     overlay?.hide()
   }
 
+  // The node the panel inspects, the inspector holding what was sent for it, and
+  // the fiber values sent: React gives a rendered fiber new props and state objects.
+  let selected:
+    | {
+        id: number
+        values: ReturnType<typeof createInspector>
+        sent?: { props: unknown; state: unknown; contexts: unknown[] }
+      }
+    | undefined
+  // The dispatcher of the renderer that owns the fiber's root (HostRoot, tag 3),
+  // from the global hook, which holds the renderer objects React injected.
+  const dispatcherOf = (fiber: Fiber) => {
+    let at: Fiber | null = fiber
+    while (at && at.tag !== 3) at = at.return
+    const root = at?.stateNode as FiberRoot | undefined
+    for (const [rendererId, set] of record.roots)
+      if (root && set.has(root)) {
+        const hook = (scope as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook })
+          .__REACT_DEVTOOLS_GLOBAL_HOOK__
+        const renderer = hook?.renderers.get(rendererId) as
+          | { currentDispatcherRef?: DispatcherRef }
+          | undefined
+        return renderer?.currentDispatcherRef
+      }
+  }
+  // Who rendered the fiber, nearest first: tree nodes by id, Server Components
+  // (React 19 ReactComponentInfo, not in the tree) by name.
+  const ownersOf = (fiber: Fiber) => {
+    const owners: Owner[] = []
+    let owner = fiber._debugOwner as Record<string, unknown> | null | undefined
+    for (let i = 0; owner && i < MAX_OWNERS; i++) {
+      if (typeof owner.tag === "number") {
+        const node = tree.known(owner as unknown as Fiber)
+        if (node) owners.push(node)
+        owner = owner._debugOwner as typeof owner
+      } else {
+        if (typeof owner.name === "string")
+          owners.push({ id: null, name: owner.name.slice(0, MAX_TREE_STRING) })
+        owner = owner.owner as typeof owner
+      }
+    }
+    return owners
+  }
+  const describe = (id: number): InspectedData | null => {
+    const fiber = tree.fiber(id)
+    if (!fiber || !selected) return null
+    const contexts = contextsOf(fiber)
+    selected.sent = {
+      props: fiber.memoizedProps,
+      state: fiber.memoizedState,
+      contexts: contexts.map(({ value }) => value),
+    }
+    const { serialize } = selected.values
+    const data: InspectedData = {
+      props: serialize(fiber.memoizedProps) as Value,
+    }
+    const state = (fiber.stateNode as { state?: unknown } | null)?.state
+    // Class components (tag 1) keep their state on the instance.
+    if (fiber.tag === 1 && state != null) data.state = serialize(state) as Value
+    data.owners = ownersOf(fiber)
+    const source = sourceOf(fiber)
+    if (source) data.source = source
+    if (contexts.length)
+      data.contexts = contexts.map(({ name, value }) => ({
+        name,
+        value: serialize(value) as Value,
+      }))
+    const ref = dispatcherOf(fiber)
+    const read = ref && inspectHooks(fiber as unknown as HooksFiber, ref)
+    if (read) {
+      const describeHook = (hook: RawHook): HookValue => ({
+        name: hook.name,
+        ...("value" in hook && { value: serialize(hook.value) as Value }),
+        ...(hook.hooks && { hooks: hook.hooks.map(describeHook) }),
+        ...(hook.site && { site: hook.site }),
+      })
+      data.hooks = read.hooks.map(describeHook)
+      if (read.error !== undefined) data.hooksError = read.error
+    }
+    return data
+  }
+  const inspect = (id: number | null) => {
+    selected?.values.release()
+    selected = id === null ? undefined : { id, values: createInspector() }
+    if (id !== null) post(inspected(id, describe(id)))
+  }
+  // On the flush: send again only if the node rendered (or unmounted) since.
+  const refresh = () => {
+    if (!selected) return
+    const { id, sent } = selected
+    const fiber = tree.fiber(id)
+    if (
+      fiber &&
+      sent &&
+      fiber.memoizedProps === sent.props &&
+      fiber.memoizedState === sent.state &&
+      sameValues(
+        contextsOf(fiber).map(({ value }) => value),
+        sent.contexts,
+      )
+    )
+      return
+    post(inspected(id, describe(id)))
+    if (!fiber) inspect(null)
+  }
+
   let pending = false
   record.listeners.add((rendererId, root) => {
     const entry = info(root)
@@ -119,6 +283,7 @@ export function startAgent(
       pending = false
       snapshot()
       if (buffer.length) send(buffer.splice(0))
+      refresh()
     }, THROTTLE_MS)
   })
   target.addEventListener("message", (event) => {
@@ -130,8 +295,18 @@ export function startAgent(
     else if (data.type === "clear-highlight") overlay?.hide()
     else if (data.type === "pick-start") startPicking()
     else if (data.type === "pick-stop") stopPicking()
-    else if (data.type === "unwatch") {
+    else if (data.type === "inspect" || data.type === "expand") {
+      const command = parseTreeCommand(data)
+      if (command?.type === "inspect") inspect(command.id)
+      if (command?.type === "expand") {
+        const { objectId, offset } = command
+        const value = selected?.values.expand(objectId, offset)
+        if (value !== undefined)
+          post(expanded(objectId, offset, value as Value))
+      }
+    } else if (data.type === "unwatch") {
       stopPicking()
+      inspect(null)
       watching = false
       buffer.length = 0
       tree.clear()

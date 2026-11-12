@@ -5,6 +5,11 @@
   "exports": {
     ".": "./src/Panel.tsx",
     "./tree": "./src/tree.ts",
+    "./inspection": "./src/inspection.ts",
+    "./source": "./src/source.ts",
+    "./editor": "./src/editor.ts",
+    "./names": "./src/names.ts",
+    "./settings": "./src/settings.ts",
     "./themes": "./src/themes.ts",
     "./index.css": "./src/index.css"
   },
@@ -12,6 +17,11 @@
     "solid-js": "1.9.18"
   },
   "dependencies": {
-    "@reactdx/messages": "workspace:*"
+    "@jridgewell/trace-mapping": "0.3.31",
+    "@reactdx/messages": "workspace:*",
+    "acorn": "8.19.0"
+  },
+  "devDependencies": {
+    "source-map-js": "1.2.2"
   }
 }

@@ -247,6 +247,18 @@ export type HighlightMessage = { type: "highlight"; tabId: number; id: number }
 export type ClearHighlightMessage = { type: "clear-highlight"; tabId: number }
 // Panel to background: start or stop the element picker on the page.
 export type PickMessage = { type: "pick-start" | "pick-stop"; tabId: number }
+// Panel to background: inspect a node (null: stop), or load one page of an object.
+export type InspectMessage = {
+  type: "inspect"
+  tabId: number
+  id: number | null
+}
+export type ExpandMessage = {
+  type: "expand"
+  tabId: number
+  objectId: number
+  offset: number
+}
 
 // Background to the relay's tree port. The relay checks each one before acting:
 // a malformed command never reaches the page.
@@ -256,6 +268,8 @@ export type TreeCommand =
   | { type: "clear-highlight" }
   | { type: "pick-start" }
   | { type: "pick-stop" }
+  | { type: "inspect"; id: number | null }
+  | { type: "expand"; objectId: number; offset: number }
 
 // Commands with no arguments.
 const BARE_COMMANDS = new Set<unknown>([
@@ -267,9 +281,12 @@ const BARE_COMMANDS = new Set<unknown>([
 
 export function parseTreeCommand(data: unknown): TreeCommand | undefined {
   if (typeof data !== "object" || data === null) return
-  const { type, id } = data as Record<string, unknown>
+  const { type, id, objectId, offset } = data as Record<string, unknown>
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
+  if (type === "inspect" && (id === null || isId(id))) return { type, id }
+  if (type === "expand" && isId(objectId) && isCount(offset))
+    return { type, objectId, offset }
 }
 
 // Content script to agent: draw or remove the highlight overlay.
@@ -344,3 +361,5 @@ export function toolbarState(renderers: RendererInfo[]): ToolbarState {
     }
   return { icon: "none", title: "ReactDX: no React" }
 }
+
+export * from "./inspect.ts"

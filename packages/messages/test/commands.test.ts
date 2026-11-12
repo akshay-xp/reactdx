@@ -15,6 +15,10 @@ test.each([
   { type: "clear-highlight" },
   { type: "pick-start" },
   { type: "pick-stop" },
+  { type: "inspect", id: 4 },
+  { type: "inspect", id: null },
+  { type: "expand", objectId: 2, offset: 100 },
+  { type: "expand", objectId: 2, offset: 0 },
 ])("keeps %o", (command) => {
   expect(parseTreeCommand(command)).toEqual(command)
 })
@@ -26,10 +30,29 @@ test.each<[string, unknown]>([
   ["a fractional id", { type: "highlight", id: 1.5 }],
   ["an unsafe id", { type: "highlight", id: 2 ** 53 }],
   ["an unknown command", { type: "pick" }],
+  ["an inspect with a string id", { type: "inspect", id: "4" }],
+  ["an inspect with id 0", { type: "inspect", id: 0 }],
+  ["an inspect without an id", { type: "inspect" }],
+  ["an expand without an offset", { type: "expand", objectId: 2 }],
+  [
+    "an expand with a negative offset",
+    { type: "expand", objectId: 2, offset: -1 },
+  ],
+  ["an expand with objectId 0", { type: "expand", objectId: 0, offset: 0 }],
   ["null", null],
   ["a string", "highlight"],
 ])("drops %s", (_, data) => {
   expect(parseTreeCommand(data)).toBeUndefined()
+})
+
+test("inspect and expand keep only their fields", () => {
+  expect(parseTreeCommand({ type: "inspect", id: 2, extra: 1 })).toEqual({
+    type: "inspect",
+    id: 2,
+  })
+  expect(
+    parseTreeCommand({ type: "expand", objectId: 2, offset: 0, id: 9 }),
+  ).toEqual({ type: "expand", objectId: 2, offset: 0 })
 })
 
 test("only the fields it knows are kept", () => {

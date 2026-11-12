@@ -1,6 +1,8 @@
 import type {
   ClearHighlightMessage,
+  ExpandedMessage,
   HighlightMessage,
+  InspectedMessage,
   PickedMessage,
   PickMessage,
   RendererView,
@@ -10,6 +12,11 @@ import type {
   TreeBatchMessage,
 } from "@reactdx/messages"
 import { Panel } from "@reactdx/panel"
+import { openInEditor } from "@reactdx/panel/editor"
+import { createInspectorStore } from "@reactdx/panel/inspection"
+import { createHookNamer } from "@reactdx/panel/names"
+import { createSettings } from "@reactdx/panel/settings"
+import { createSourceResolver, type Sources } from "@reactdx/panel/source"
 import { applyTheme, defaultTheme, type Theme } from "@reactdx/panel/themes"
 import { createTreeStore } from "@reactdx/panel/tree"
 import { createEffect, createSignal, on } from "solid-js"
@@ -26,6 +33,53 @@ const [renderers, setRenderers] = createSignal<RendererView[]>([])
 const [stale, setStale] = createSignal(false)
 const tree = createTreeStore()
 const tabId = browser.devtools.inspectedWindow.tabId
+// Its commands go over the current port, which the background routes to the tab.
+const inspector = createInspectorStore((command) =>
+  port.postMessage({ ...command, tabId }),
+)
+// Requests go only to the inspected page's own server (docs/panel.md, Sources).
+const editor = {
+  fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
+  // Firefox resolves to [result, exception]; Chrome before 151 only calls back.
+  origin: async () => {
+    const page = browser.devtools.inspectedWindow
+    if (import.meta.env.FIREFOX) {
+      const [origin] = (await page.eval("location.origin")) as unknown as [
+        string,
+      ]
+      return origin
+    }
+    return new Promise<string>((resolve) =>
+      page.eval<string>("location.origin", (...[origin]) =>
+        resolve(String(origin)),
+      ),
+    )
+  },
+  // The Clipboard API needs a focused document, which a DevTools panel often isn't.
+  copy: (text: string) => {
+    const area = document.createElement("textarea")
+    area.value = text
+    document.body.append(area)
+    area.select()
+    document.execCommand("copy")
+    area.remove()
+  },
+}
+const sources: Sources = {
+  resolve: createSourceResolver(editor.fetch),
+  open: (location) => openInEditor(location, editor),
+  hookName: createHookNamer(editor.fetch),
+}
+// Kept across panel opens.
+const settings = createSettings({
+  get: () =>
+    browser.storage.local
+      .get("hookNames")
+      .then((stored) => stored.hookNames as boolean | undefined),
+  set: (on) => {
+    browser.storage.local.set({ hookNames: on })
+  },
+})
 // The mark times the first rows (e2e/perf.test.ts).
 const subscribe = (port: Browser.runtime.Port) => {
   performance.mark("reactdx:subscribe")
@@ -38,13 +92,30 @@ let port = connect()
 function connect() {
   const next = browser.runtime.connect({ name: "panel" })
   next.onMessage.addListener(
-    (message: TabStateMessage | TreeBatchMessage | PickedMessage) => {
+    (
+      message:
+        | TabStateMessage
+        | TreeBatchMessage
+        | PickedMessage
+        | InspectedMessage
+        | ExpandedMessage,
+    ) => {
       if (message.type === "state") {
         setRenderers(message.renderers)
         setStale(message.stale ?? false)
       } else if (message.type === "picked") tree.picked(message.id)
-      else if (tree.apply(message))
-        next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)
+      else if (message.type === "inspected") inspector.receive(message)
+      else if (message.type === "expanded") inspector.receiveExpanded(message)
+      else {
+        if (tree.apply(message))
+          next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)
+        // A new watch (reconnect, reload) starts the agent without a selection.
+        else if (
+          message.ops[0]?.op === "reset" &&
+          tree.selected() !== undefined
+        )
+          inspector.resend()
+      }
     },
   )
   next.onDisconnect.addListener(() => {
@@ -63,6 +134,9 @@ browser.devtools.network.onNavigated.addListener(() => {
 })
 
 render(() => {
+  createEffect(
+    on(tree.selected, (id) => inspector.inspect(id), { defer: true }),
+  )
   // The hovered row is highlighted on the page, until the pointer leaves the tree.
   createEffect(
     on(
@@ -94,6 +168,9 @@ render(() => {
     <Panel
       renderers={renderers()}
       tree={tree}
+      inspector={inspector}
+      sources={sources}
+      settings={settings}
       stale={stale()}
       onReload={() => browser.devtools.inspectedWindow.reload({})}
     />

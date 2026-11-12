@@ -287,3 +287,15 @@ test("clear empties the store", () => {
   tree.clear()
   expect(tree.rows(1)).toEqual([])
 })
+
+test("reveal selects a node and expands its ancestors", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.toggle(1)
+  tree.toggle(3)
+  tree.reveal(5)
+  expect(tree.selected()).toBe(5)
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "2 B", "1 C"])
+  tree.reveal(99)
+  expect(tree.selected()).toBe(5)
+})

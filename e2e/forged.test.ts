@@ -136,3 +136,135 @@ test("forged page messages can't break the relay or the panel", {
     await browser.close()
   }
 })
+
+// Inspector traffic a page can forge: one valid-shaped `inspected` for the
+// selected node (shown, as text), then malformed ones, each carrying DROPPED, and
+// commands the agent must refuse. Runs in the page.
+function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
+  const post = (data: unknown) => window.postMessage(data, "*")
+  const object = (props: Record<string, unknown>) => ({
+    type: "object",
+    className: "Object",
+    id: 1,
+    size: Object.keys(props).length,
+    props,
+  })
+  const inspected = (data: Record<string, unknown>) =>
+    post({ source: "reactdx", type: "inspected", id, data })
+  if (valid) {
+    inspected({
+      props: object({
+        "<img src=x onerror=alert(4)>": "<img src=x onerror=alert(5)>",
+      }),
+    })
+    return
+  }
+  const nest = (depth: number): unknown[] =>
+    depth === 0 ? [] : [{ name: "DROPPED", hooks: nest(depth - 1) }]
+  for (const data of [
+    { props: { type: "weird", value: "DROPPED" } },
+    { props: object({ DROPPED: "x".repeat(1001) }) },
+    {
+      props: object(
+        Object.fromEntries(
+          Array.from({ length: 101 }, (_, i) => [`DROPPED${i}`, i]),
+        ),
+      ),
+    },
+    { props: object({}), hooks: Array(201).fill({ name: "DROPPED" }) },
+    { props: object({}), hooks: nest(9) },
+    { props: object({}), source: { file: "DROPPED", line: 0, column: 1 } },
+    {
+      props: object({}),
+      hooks: [
+        { name: "DROPPED", site: { url: "http://h/a.js", line: 0, column: 1 } },
+      ],
+    },
+  ])
+    inspected(data)
+  post({
+    source: "reactdx",
+    type: "expanded",
+    objectId: "1",
+    offset: 0,
+    value: object({ DROPPED: 1 }),
+  })
+  post({
+    source: "reactdx",
+    type: "expanded",
+    objectId: 1,
+    offset: 0,
+    value: {
+      type: "array",
+      id: 1,
+      length: 101,
+      items: Array(101).fill("DROPPED"),
+    },
+  })
+  const command = (data: Record<string, unknown>) =>
+    post({ source: "reactdx-relay", ...data })
+  command({ type: "inspect", id: "x" })
+  command({ type: "inspect", id: 1e9 })
+  command({ type: "expand", objectId: -1, offset: 0 })
+  command({ type: "expand", objectId: 1, offset: "a" })
+}
+
+type Inspecting = Window & { inspectedId?: number }
+
+test("forged inspect messages and commands break nothing", {
+  skip,
+}, async () => {
+  const { browser } = await launchWithExtension(name)
+  try {
+    const [page] = await browser.pages()
+    if (!page) throw new Error("no page")
+    await page.goto("http://localhost:5218")
+    await page.waitForSelector("[data-testid=counter]")
+    // The agent's replies name the selected node's id.
+    await page.evaluate(() =>
+      addEventListener("message", ({ data }) => {
+        if (data?.source === "reactdx" && data.type === "inspected")
+          (window as Inspecting).inspectedId = data.id
+      }),
+    )
+    const panel = await openPanelText(name, browser)
+    await until(panel, (t) =>
+      parseCopies(t).some((c) => c.names.includes("Counter")),
+    )
+    await panel.select("Counter")
+    const real = await until(panel.inspector, (t) => t.includes("State: 0"))
+    assert.ok(real.includes("State: 0"), real)
+    const id = await page.evaluate(() => (window as Inspecting).inspectedId)
+    assert.ok(id)
+
+    await page.evaluate(forgeInspect, { id, valid: true })
+    const forged = (t: string) =>
+      t.includes('"<img src=x onerror=alert(5)>"') &&
+      t.includes("<img src=x onerror=alert(4)>")
+    const shown = await until(panel.inspector, forged)
+    assert.ok(forged(shown), shown)
+
+    // Each malformed one is dropped whole: the forged view stays.
+    await page.evaluate(forgeInspect, { id, valid: false })
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    // Firefox mirrors the panel's text asynchronously: poll for a whole read.
+    const after = await until(panel.inspector, forged)
+    assert.ok(!after.includes("DROPPED"), after)
+    assert.ok(forged(after), after)
+    if (name === "chrome")
+      assert.equal(await (await openPanel(browser)).$("img"), null)
+
+    // The agent and panel still work. A forged inspect command (valid-shaped ids)
+    // moves the agent's selection: a page can change its own panel's view, and
+    // selecting again brings the real one back, live.
+    await panel.select("App")
+    await until(panel.inspector, (t) => /^App( |$)/.test(t))
+    await panel.select("Counter")
+    await until(panel.inspector, (t) => t.includes("State: 0"))
+    await page.click("[data-testid=counter]")
+    const live = await until(panel.inspector, (t) => t.includes("State: 1"))
+    assert.ok(live.includes("State: 1"), live)
+  } finally {
+    await browser.close()
+  }
+})

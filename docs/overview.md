@@ -40,7 +40,7 @@ DX first. It answers the questions RDT handles poorly: why something rendered, e
 - Why not localhost plus per-site opt-in: runtime-registered scripts miss most first loads after a Chrome restart (M0 #5), and a "reload to connect" prompt is the kind of friction the DX pitch can't afford. All-site access also leaves room for production-build support later.
 - Users can still narrow access with the browser's own per-site controls (Chrome site access, Firefox's revocable host permissions).
 - The script runs on every page, so the `document_start` part stays tiny and does nothing until React connects. Heavier code is injected only after a renderer connects.
-- No network access, remote code, or analytics.
+- No remote code or analytics. The only network requests go to the inspected page's own server: the panel reads its scripts and source maps to locate components, and asks its dev server to open a file in the editor (M4 #36). Nothing is sent anywhere else.
 
 ## Store listing (planned)
 

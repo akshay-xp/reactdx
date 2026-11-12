@@ -210,6 +210,12 @@ export function createTreeStore() {
     },
 
     rows,
+    // A node's name, kind and key, for the inspector's header.
+    info(id: number) {
+      version()
+      const node = nodes.get(id)
+      return node && { name: node.name, kind: node.kind, key: node.key }
+    },
     key,
     selected,
     hovered,
@@ -221,6 +227,11 @@ export function createTreeStore() {
       if (id !== null && nodes.has(id)) reveal(id)
     },
     hover: (id: number | undefined) => hover(id),
+    // Selects a node from outside the tree (the inspector's owners) and makes
+    // its row visible; unknown ids do nothing.
+    reveal(id: number) {
+      if (nodes.has(id)) reveal(id)
+    },
     select: (id: number) => select(id),
 
     toggle,

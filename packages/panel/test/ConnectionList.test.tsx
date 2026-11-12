@@ -2,7 +2,17 @@ import { type RendererView, treeBatch } from "@reactdx/messages"
 import { fireEvent, render } from "@solidjs/testing-library"
 import { expect, test } from "vitest"
 import { ConnectionList } from "../src/ConnectionList"
+import { createInspectorStore } from "../src/inspection"
+import type { Sources } from "../src/source"
 import { createTreeStore } from "../src/tree"
+
+const inspection = () => createInspectorStore(() => {})
+const settings = { hookNames: () => false, setHookNames: () => {} }
+const sources: Sources = {
+  resolve: async () => null,
+  open: async () => "opened",
+  hookName: async () => null,
+}
 
 const copy = (
   id: number,
@@ -19,7 +29,13 @@ const copy = (
 
 test("no React", () => {
   const { container } = render(() => (
-    <ConnectionList tree={createTreeStore()} renderers={[]} />
+    <ConnectionList
+      tree={createTreeStore()}
+      inspector={inspection()}
+      sources={sources}
+      settings={settings}
+      renderers={[]}
+    />
   ))
   expect(container.textContent).toBe("No React on this page")
 })
@@ -29,6 +45,9 @@ test("a page open since before the install asks for a reload", () => {
   const { container } = render(() => (
     <ConnectionList
       tree={createTreeStore()}
+      inspector={inspection()}
+      sources={sources}
+      settings={settings}
       renderers={[]}
       stale
       onReload={() => reloads++}
@@ -45,6 +64,9 @@ test("only production React", () => {
   const { container } = render(() => (
     <ConnectionList
       tree={createTreeStore()}
+      inspector={inspection()}
+      sources={sources}
+      settings={settings}
       renderers={[copy(1, "19.3.1", 0)]}
     />
   ))
@@ -57,6 +79,9 @@ test("each React copy with its roots and commit counts", () => {
   const { container } = render(() => (
     <ConnectionList
       tree={createTreeStore()}
+      inspector={inspection()}
+      sources={sources}
+      settings={settings}
       renderers={[
         copy(1, "18.3.1", 1, [{ id: 1, commits: 3 }]),
         copy(2, "19.0.0", 0, [{ id: 2, commits: 0 }]),
@@ -81,6 +106,9 @@ test("page data renders as text, never markup", () => {
   const { container } = render(() => (
     <ConnectionList
       tree={createTreeStore()}
+      inspector={inspection()}
+      sources={sources}
+      settings={settings}
       renderers={[copy(1, "<img src=x onerror=alert(1)>", 1)]}
     />
   ))
@@ -92,6 +120,9 @@ test("uses theme token classes only", () => {
   const { container } = render(() => (
     <ConnectionList
       tree={createTreeStore()}
+      inspector={inspection()}
+      sources={sources}
+      settings={settings}
       renderers={[copy(1, "18.3.1", 1, [{ id: 1, commits: 0 }])]}
     />
   ))
@@ -129,6 +160,9 @@ test("development roots list their components; production roots don't", () => {
   const { container } = render(() => (
     <ConnectionList
       tree={tree}
+      inspector={inspection()}
+      sources={sources}
+      settings={settings}
       renderers={[
         copy(1, "19.3.1", 1, [{ id: 1, commits: 1 }]),
         copy(2, "19.3.1", 0, [{ id: 2, commits: 1 }]),
@@ -152,9 +186,42 @@ test("development roots list their components; production roots don't", () => {
 test("the tree toolbar shows only above development copies", () => {
   const search = (renderers: RendererView[]) =>
     render(() => (
-      <ConnectionList tree={createTreeStore()} renderers={renderers} />
+      <ConnectionList
+        tree={createTreeStore()}
+        inspector={inspection()}
+        sources={sources}
+        settings={settings}
+        renderers={renderers}
+      />
     )).container.querySelector("[data-testid=search]")
   expect(search([])).toBeNull()
   expect(search([copy(1, "19.3.1", 0)])).toBeNull()
   expect(search([copy(1, "18.3.1", 1, [{ id: 1, commits: 0 }])])).not.toBeNull()
+})
+
+test("the inspector sits beside the trees, below them when narrow", () => {
+  const view = (renderers: RendererView[]) =>
+    render(() => (
+      <ConnectionList
+        tree={createTreeStore()}
+        inspector={inspection()}
+        sources={sources}
+        settings={settings}
+        renderers={renderers}
+      />
+    )).container
+  const split = view([
+    copy(1, "18.3.1", 1, [{ id: 1, commits: 0 }]),
+  ]).querySelector("[data-testid=split]")
+  expect(split).not.toBeNull()
+  expect(split?.classList).toContain("flex-col")
+  expect(split?.classList).toContain("sm:flex-row")
+  expect(split?.lastElementChild?.getAttribute("data-testid")).toBe("inspector")
+  expect(
+    split?.firstElementChild?.querySelector("[data-testid=tree]"),
+  ).not.toBeNull()
+  expect(view([]).querySelector("[data-testid=inspector]")).toBeNull()
+  expect(
+    view([copy(1, "19.3.1", 0)]).querySelector("[data-testid=inspector]"),
+  ).toBeNull()
 })
