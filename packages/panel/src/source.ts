@@ -1,5 +1,9 @@
+import {
+  AnyMap,
+  originalPositionFor,
+  type TraceMap,
+} from "@jridgewell/trace-mapping"
 import type { SourceRef } from "@reactdx/messages"
-import { type RawSourceMap, SourceMapConsumer } from "source-map-js"
 
 // 1-based line and column; `file` absolute, or relative to the dev server's root.
 export type SourceLocation = { file: string; line: number; column: number }
@@ -21,12 +25,6 @@ export const label = ({ file, line }: SourceLocation) =>
 const WEB = /^https?:/
 // The last map comment in a script (a bundle can quote others before it).
 const MAP_COMMENT = /\/\/[#@] sourceMappingURL=(\S+)\s*$/
-
-// The constructor resolves sources against the map's URL; the types omit it.
-const Consumer = SourceMapConsumer as unknown as new (
-  map: RawSourceMap,
-  url: string,
-) => SourceMapConsumer
 
 // A source URL as a path: a served file is relative to the server's root.
 function pathOf(url: string) {
@@ -57,12 +55,12 @@ export function createSourceResolver(fetch: typeof globalThis.fetch) {
     if (!comment) return null
     const mapUrl = new URL(comment, scriptUrl).href
     if (mapUrl.startsWith("data:"))
-      return new Consumer(JSON.parse(decodeDataUrl(mapUrl)), scriptUrl)
+      return AnyMap(decodeDataUrl(mapUrl), scriptUrl)
     if (!WEB.test(mapUrl)) return null
-    return new Consumer(JSON.parse(await text(mapUrl)), mapUrl)
+    return AnyMap(await text(mapUrl), mapUrl)
   }
   // Per script for the panel's lifetime; a failed load is tried again next time.
-  const consumers = new Map<string, Promise<SourceMapConsumer | null>>()
+  const consumers = new Map<string, Promise<TraceMap | null>>()
   const consumerFor = (scriptUrl: string) => {
     let consumer = consumers.get(scriptUrl)
     if (!consumer) {
@@ -77,10 +75,9 @@ export function createSourceResolver(fetch: typeof globalThis.fetch) {
     const { url, line, column } = source
     if (!WEB.test(url)) return null
     try {
-      const original = (await consumerFor(url))?.originalPositionFor({
-        line,
-        column: column - 1,
-      })
+      const map = await consumerFor(url)
+      const original =
+        map && originalPositionFor(map, { line, column: column - 1 })
       if (original?.source && original.line)
         return {
           file: pathOf(original.source),

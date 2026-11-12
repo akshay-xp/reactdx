@@ -15,7 +15,10 @@
     "solid-js": "1.9.18"
   },
   "dependencies": {
-    "@reactdx/messages": "workspace:*",
+    "@jridgewell/trace-mapping": "0.3.31",
+    "@reactdx/messages": "workspace:*"
+  },
+  "devDependencies": {
     "source-map-js": "1.2.2"
   }
 }
