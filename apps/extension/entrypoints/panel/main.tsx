@@ -12,7 +12,9 @@ import type {
   TreeBatchMessage,
 } from "@reactdx/messages"
 import { Panel } from "@reactdx/panel"
+import { openInEditor } from "@reactdx/panel/editor"
 import { createInspectorStore } from "@reactdx/panel/inspection"
+import { createSourceResolver, type Sources } from "@reactdx/panel/source"
 import { applyTheme, defaultTheme, type Theme } from "@reactdx/panel/themes"
 import { createTreeStore } from "@reactdx/panel/tree"
 import { createEffect, createSignal, on } from "solid-js"
@@ -33,6 +35,38 @@ const tabId = browser.devtools.inspectedWindow.tabId
 const inspector = createInspectorStore((command) =>
   port.postMessage({ ...command, tabId }),
 )
+// Requests go only to the inspected page's own server (docs/panel.md, Sources).
+const editor = {
+  fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
+  // Firefox resolves to [result, exception]; Chrome before 151 only calls back.
+  origin: async () => {
+    const page = browser.devtools.inspectedWindow
+    if (import.meta.env.FIREFOX) {
+      const [origin] = (await page.eval("location.origin")) as unknown as [
+        string,
+      ]
+      return origin
+    }
+    return new Promise<string>((resolve) =>
+      page.eval<string>("location.origin", (...[origin]) =>
+        resolve(String(origin)),
+      ),
+    )
+  },
+  // The Clipboard API needs a focused document, which a DevTools panel often isn't.
+  copy: (text: string) => {
+    const area = document.createElement("textarea")
+    area.value = text
+    document.body.append(area)
+    area.select()
+    document.execCommand("copy")
+    area.remove()
+  },
+}
+const sources: Sources = {
+  resolve: createSourceResolver(editor.fetch),
+  open: (location) => openInEditor(location, editor),
+}
 // The mark times the first rows (e2e/perf.test.ts).
 const subscribe = (port: Browser.runtime.Port) => {
   performance.mark("reactdx:subscribe")
@@ -122,6 +156,7 @@ render(() => {
       renderers={renderers()}
       tree={tree}
       inspector={inspector}
+      sources={sources}
       stale={stale()}
       onReload={() => browser.devtools.inspectedWindow.reload({})}
     />

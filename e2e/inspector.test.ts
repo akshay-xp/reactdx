@@ -49,6 +49,11 @@ for (const { fixture, port } of fixtures)
       )
       assert.ok(props.includes('label: "Count"'), props)
       assert.ok(props.includes("State: 0"), props)
+
+      // Where Counter's first element is written (fixtures/*/Counter.jsx).
+      const source = fixture === "next" ? "Counter.jsx:15" : "Counter.jsx:13"
+      const located = await until(panel.inspector, (t) => t.includes(source))
+      assert.ok(located.includes(source), located)
       await page.click("[data-testid=counter]")
       const state = await until(panel.inspector, (t) => t.includes("State: 1"))
       assert.ok(state.includes("State: 1"), state)

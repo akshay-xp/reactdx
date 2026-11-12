@@ -6,6 +6,8 @@
     ".": "./src/Panel.tsx",
     "./tree": "./src/tree.ts",
     "./inspection": "./src/inspection.ts",
+    "./source": "./src/source.ts",
+    "./editor": "./src/editor.ts",
     "./themes": "./src/themes.ts",
     "./index.css": "./src/index.css"
   },
