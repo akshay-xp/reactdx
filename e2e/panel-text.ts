@@ -5,7 +5,11 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // The panel's visible text, whitespace-normalized, read the same way in both browsers.
 // end() presses End on each tree: a tree only renders the rows in view, so a big
 // one (Next's) shows its last rows, where the app's components are, only then.
-export type PanelText = (() => Promise<string>) & { end(): Promise<void> }
+// check(label) clicks the checkbox with that label.
+export type PanelText = (() => Promise<string>) & {
+  end(): Promise<void>
+  check(label: string): Promise<void>
+}
 
 // Text pieces are joined with spaces (the accessibility tree splits text differently
 // from the DOM), so drop the space that lands before punctuation.
@@ -41,7 +45,18 @@ export async function openPanelText(
         await frame.page().keyboard.press("End")
       }
     }
-    return Object.assign(read, { end })
+    const check = async (label: string) => {
+      await frame.evaluate((label) => {
+        const box = [
+          ...document.querySelectorAll<HTMLInputElement>(
+            "input[type=checkbox]",
+          ),
+        ].find((el) => el.closest("label")?.textContent?.trim() === label)
+        if (!box) throw new Error(`no checkbox labelled ${label}`)
+        box.click()
+      }, label)
+    }
+    return Object.assign(read, { end, check })
   }
   // Firefox runs the panel in an extension process Puppeteer can't reach, but its
   // accessibility tree is mirrored into the parent process, where chrome scope can read it.
@@ -101,6 +116,30 @@ export async function openPanelText(
       })()`,
     )
   }
+  // The checkbox's accessible, found by its name; its action 0 is a click.
+  const check = async (label: string) => {
+    const result = await chromeEval(
+      browser,
+      `(() => {
+        ${panelBrowser}
+        if (!panel) return "no panel browser"
+        const find = (node) => {
+          if (!node) return null
+          if (node.role === Ci.nsIAccessibleRole.ROLE_CHECKBUTTON && node.name === ${JSON.stringify(label)}) return node
+          for (let i = 0; i < node.childCount; i++) {
+            const found = find(node.getChildAt(i))
+            if (found) return found
+          }
+          return null
+        }
+        const box = find(service.getAccessibleFor(panel))
+        if (!box) return "no checkbox labelled " + ${JSON.stringify(label)}
+        box.doAction(0)
+        return "ok"
+      })()`,
+    )
+    if (result !== "ok") throw new Error(result ?? "check failed")
+  }
   const read = async () =>
     normalize(
       (await chromeEval(
@@ -123,7 +162,7 @@ export async function openPanelText(
         })()`,
       )) ?? "",
     )
-  return Object.assign(read, { end })
+  return Object.assign(read, { end, check })
 }
 
 export type Copy = { heading: string; commits: number[]; names: string[] }

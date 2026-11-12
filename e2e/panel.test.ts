@@ -208,3 +208,35 @@ describe("fixture:19 tree page", {
     }
   })
 })
+
+describe("fixture:18 DOM elements filter", {
+  skip:
+    process.env.E2E_FIXTURE !== undefined && process.env.E2E_FIXTURE !== "18",
+}, () => {
+  let stop: (() => void) | undefined
+  before(async () => (stop = await startFixture("fixture:18", 5218)))
+  after(() => stop?.())
+
+  test("Show DOM elements shows host rows and hides them again", async () => {
+    const { browser, panel } = await panelFor(
+      name,
+      "http://localhost:5218",
+      "after",
+    )
+    try {
+      const names = (t: string) => JSON.stringify(parseCopies(t)[0]?.names)
+      const expectNames = async (expected: string[]) => {
+        const want = JSON.stringify(expected)
+        const text = await until(panel, (t) => names(t) === want)
+        assert.equal(names(text), want, text)
+      }
+      await expectNames(["App", "Counter"])
+      await panel.check("Show DOM elements")
+      await expectNames(["App", "p", "Counter", "button"])
+      await panel.check("Show DOM elements")
+      await expectNames(["App", "Counter"])
+    } finally {
+      await browser.close()
+    }
+  })
+})
