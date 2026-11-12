@@ -35,6 +35,7 @@ The page's component tree, rebuilt from the agent's ops (`docs/messages.md`, "Tr
   - Selecting a match (`setQuery`, `step`) also expands its ancestors, so it has a row, and TreeView scrolls it into view.
 - `hovered()` / `hover(id | undefined)` (M3 #28): the row under the pointer. `main.tsx` sends a highlight or clear-highlight command on each change (`docs/messages.md`, "Tree flow").
 - `picking()` / `setPicking(on)`, `picked(id | null)` (M3 #29): `main.tsx` sends `pick-start`/`pick-stop` whenever `picking` changes (a redundant `pick-stop` after a pick is ignored by the agent). `picked` turns picking off and, for an id the mirror has, selects and reveals it (expands ancestors; TreeView scrolls it into view). `null` or an unknown id only turns picking off.
+- `reveal(id)` (M4 #35): selects a node from outside the tree (the inspector's owners) and expands its ancestors; unknown ids do nothing.
 - `clear()`: on `onNavigated`, with the renderer list; also drops collapse state, the selection, the hover and picking. The query and DOM toggle stay.
 - `test/tree.test.ts`: rows, hidden hosts, each op, the resync rules, collapse, selection, every key, shown hosts, search, step.
 
@@ -52,9 +53,11 @@ The selected node's values as the agent last sent them (`docs/messages.md`, "Ins
 
 - Empty states: "Select a component to inspect it." and, for `gone()`, "This component unmounted."
 - Header (`[data-testid=inspector-header]`, fixed above the sections): the name, the tree's badge for `memo`/`forwardRef`/`lazy`, and `key="…"`, from `tree.info(id)`.
-- Sections (`[data-testid=section]`): Props, State, then Hooks (M4 #34). The header button (`aria-expanded`, the tree's triangle) collapses one; collapsed sections stay collapsed while the panel is open. A section with nothing in it isn't shown.
+- Sections (`[data-testid=section]`): Props, State, Hooks (M4 #34), Context, Rendered by (M4 #35). The header button (`aria-expanded`, the tree's triangle) collapses one; collapsed sections stay collapsed while the panel is open. A section with nothing in it isn't shown.
 - Value rows (`[data-testid=value]`): `name:` (`text-syntax-key`), then `previewText(value)` as one text node (so both browsers' e2e readers get it whole), colored by kind (string, number, muted for undefined/function/symbol/getter/hole/unreadable, accent for null and booleans). Containers and refs get a toggle (`[data-testid=value-toggle]`) that opens them in place, indented 12 px per level; map entries read `key => value`; a paged container ends with "Show more (N left)". Circular refs don't open.
 - Hooks: each hook in call order, `name: value`, or just its name when it has no value (an effect without deps). A custom hook (`useCart: "2 items"`, its DebugValue as the value) opens to the hooks it called; paths are `Hooks.<index>...`. "Couldn't read hooks: <reason>" when the shadow render threw.
+- Context: one value row per context read, `Theme: "dark"`, paths `Context.<index>`.
+- Rendered by: the owners nearest first (`[data-testid=owner]`). One in the tree is an accent text button that calls `tree.reveal(id)` (select, expand its ancestors; `main.tsx` then inspects it); one that isn't (a Server Component) is muted text.
 - `previewText(value)` (`src/value.ts`): DevTools-console-like one-liners: `"text"` (over 50 chars cut, with the full length), `ƒ name()`, `Symbol(x)`, `{a: 1, b: "x"}` and `[1, 2]` inline up to 5 entries (nested containers as `{...}`, `Array(n)`, `Map(n)`), `Array(n)` past 5 items, a class name before an instance's braces, `<Counter key="k" />`, `<button#id.class>`, `(getter)`, `empty`, `[circular]`, `(unreadable: message)`.
 - `test/Inspector.test.tsx`, `test/value.test.ts`.
 

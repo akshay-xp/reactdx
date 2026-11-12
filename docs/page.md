@@ -85,6 +85,8 @@ Describes page values for the inspector. Carried from the M0 #7 spike (`docs/m0-
 - Live: on the existing 100 ms flush, re-sent only when the fiber `tree.fiber(id)` returns has a different `memoizedProps` or `memoizedState` from the last send (React gives a rendered fiber new ones), so commits elsewhere cost a comparison. An unmounted node gets one `data: null` and the inspection ends.
 - `expand { objectId, offset }`: posts `expanded(objectId, offset, value)` from the current inspection; ids it doesn't hold (released, forged) post nothing.
 - `unwatch` ends the inspection; a new watch starts without one (the panel asks again).
+- Contexts (M4 #35): `fiber.dependencies.firstContext` (`{ context, memoizedValue, next }`) holds every context read in the last render, whatever read it (`useContext`, `use`, a class's `contextType`, consumers). Listed once each in first-read order as `{ name, value }`, the name the context's `displayName` or `Context` (React's own host transition context, read by `useFormStatus`, is one of these). A re-send also happens when any read value changed (`Object.is`), since a memo'd consumer re-rendered by its provider keeps its props and state objects.
+- Owners (M4 #35): the `_debugOwner` chain, nearest first, at most 50 (`MAX_OWNERS`). A fiber the tree has emitted and still holds gives `{ id, name }` (`tree.known(fiber)`, either of its two fibers); others are skipped. A React 19 Server Component (`ReactComponentInfo`, no `tag`) gives `{ id: null, name }` and the chain continues through its `owner`.
 - `tree.fiber(id)`: the node's fiber as of the last commit.
 - `test/inspect-agent.test.ts`: props, class state, unknown and malformed ids, re-sends, no re-send for a sibling's commit, stop on `inspect null` and `unwatch`, expand, released ids.
 
@@ -116,7 +118,7 @@ One file per React scenario, because react-dom registers with the hook only once
 - `test/define-later.test.ts`: a hook defined with `defineProperty` after ours.
 - `test/assign-later.test.ts`: a hook set by plain assignment after ours.
 - `test/tree.test.ts`: kinds and names, watch/unwatch, splitting, mounts, unmounts, reorders, renames and Suspense (fake timers drive the flush). `test/tree-mirror.ts` applies ops like the panel and prints an outline.
-- `test/inspect.test.ts`, `test/inspect-agent.test.ts`: values and inspection (above).
+- `test/inspect.test.ts`, `test/inspect-agent.test.ts`: values and inspection (above). `test/context.test.ts`: contexts (React 19's `use` too), re-send on a context change, owners.
 - `test/agent.test.ts`: the agent's first snapshot, 100 ms batching, `get-snapshot`, unmount, a second start (fake timers).
 - `test/window.ts`: `windowLike()` inserts a fresh prototype under `globalThis` to stand in for `Window.prototype`; `mount()` renders a root. `test/fake-hook.ts`: an RDT-like hook.
 
