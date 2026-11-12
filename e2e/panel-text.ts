@@ -385,12 +385,18 @@ export async function panelFor(
 }
 
 // Selects a component once the tree lists it (a new page's tree fills in; End
-// shows a tall tree's last rows, where Next's components are). After
-// a navigation the new document's first watch can reset the tree just after the
-// click, dropping the selection, so it's made again until the inspector has it (up to 15 s).
-export async function selectListed(panel: PanelText, component: string) {
-  // Slow runners (Firefox on CI) can take seconds to settle after a navigation.
+// shows a tall tree's last rows, where Next's components are), then waits until
+// its inspector passes `check` and returns that text. A navigation can drop the
+// selection, even after it showed: the new document's first watch resets the
+// tree, and Firefox can report the navigation (which clears the tree) late. So
+// a lost selection is made again, until 15 s.
+export async function selectListed(
+  panel: PanelText,
+  component: string,
+  check: (text: string) => boolean = () => true,
+) {
   const deadline = Date.now() + 15_000
+  let text = ""
   while (Date.now() < deadline) {
     await until(
       async () => {
@@ -400,14 +406,13 @@ export async function selectListed(panel: PanelText, component: string) {
       (t) => parseCopies(t).some((c) => c.names.includes(component)),
     )
     await panel.select(component)
-    const header = await until(
+    const lost = (t: string) => t.startsWith("Select a component")
+    text = await until(
       panel.inspector,
-      (t) => t.startsWith(`${component} `),
-      2000,
+      (t) => lost(t) || (t.startsWith(`${component} `) && check(t)),
+      5000,
     )
-    if (header.startsWith(`${component} `)) return
+    if (text.startsWith(`${component} `) && check(text)) return text
   }
-  throw new Error(
-    `${component} never stayed selected: ${await panel.inspector()}`,
-  )
+  throw new Error(`${component}'s inspector never passed the check: ${text}`)
 }

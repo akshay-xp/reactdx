@@ -2,13 +2,7 @@ import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
 import type { BrowserName } from "./launch.ts"
-import {
-  openPanelText,
-  panelFor,
-  parseCopies,
-  selectListed,
-  until,
-} from "./panel-text.ts"
+import { openPanelText, panelFor, selectListed, until } from "./panel-text.ts"
 
 const name = process.env.E2E_BROWSER as BrowserName
 const only = process.env.E2E_FIXTURE
@@ -39,21 +33,9 @@ for (const { fixture, port } of fixtures)
     )
     try {
       await page.waitForSelector("[data-testid=counter]")
-      // Next's tree is taller than the panel: its components are at the end.
-      const read = async () => {
-        await panel.end()
-        return panel()
-      }
-      const listed = await until(read, (t) =>
-        parseCopies(t).some((c) => c.names.includes("Counter")),
-      )
-      assert.ok(
-        parseCopies(listed).some((c) => c.names.includes("Counter")),
-        listed,
-      )
-      await panel.select("Counter")
-      const props = await until(
-        panel.inspector,
+      const props = await selectListed(
+        panel,
+        "Counter",
         (t) => t.includes('label: "Count"') && t.includes("State: 0"),
       )
       assert.ok(props.includes('label: "Count"'), props)
@@ -68,10 +50,10 @@ for (const { fixture, port } of fixtures)
       assert.ok(state.includes("State: 1"), state)
 
       await panel.press("Show DOM elements")
-      await until(read, (t) => t.includes("button"))
-      await panel.select("button")
       const before = 'children: ["Count", ": ", 1]'
-      const shown = await until(panel.inspector, (t) => t.includes(before))
+      const shown = await selectListed(panel, "button", (t) =>
+        t.includes(before),
+      )
       assert.ok(shown.includes(before), shown)
 
       await page.click("[data-testid=counter]")
@@ -81,9 +63,8 @@ for (const { fixture, port } of fixtures)
 
       // Vite's Counter is rendered by App; Next's by the Page Server Component,
       // which isn't in the tree.
-      await panel.select("Counter")
       const owner = fixture === "next" ? "Page" : "App"
-      const owners = await until(panel.inspector, (t) =>
+      const owners = await selectListed(panel, "Counter", (t) =>
         t.includes(`Rendered by ${owner}`),
       )
       assert.ok(owners.includes(`Rendered by ${owner}`), owners)
@@ -136,11 +117,10 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
     )
     try {
       await page.waitForSelector("[data-testid=hooks]")
-      await selectListed(panel, "Hooks")
       const expected = fixture === "19" ? [...HOOKS, ...HOOKS_19] : HOOKS
-      const text = await until(panel.inspector, (t) =>
+      const text = await selectListed(panel, "Hooks", (t) =>
         expected.every((hook) => t.includes(hook)),
-      )
+      ).catch((error: Error) => error.message)
       for (const hook of expected)
         assert.ok(text.includes(hook), `${hook} in ${text}`)
     } finally {
@@ -161,8 +141,9 @@ for (const { port } of fixtures.filter((f) => f.fixture === "19"))
     const { browser, page, panel } = await panelFor(name, url, "after")
     try {
       await page.waitForSelector("[data-testid=counter]")
-      await selectListed(panel, "Counter")
-      const off = await until(panel.inspector, (t) => t.includes("State: 0"))
+      const off = await selectListed(panel, "Counter", (t) =>
+        t.includes("State: 0"),
+      )
       assert.ok(off.includes("State: 0"), off)
       assert.equal(await panel.pressed("Hook names"), false)
       // Chrome: the panel's requests. A module loads once, so a request for the
@@ -181,8 +162,7 @@ for (const { port } of fixtures.filter((f) => f.fixture === "19"))
 
       await page.goto(`${url}/hooks.html`)
       await page.waitForSelector("[data-testid=hooks]")
-      await selectListed(panel, "Hooks")
-      const hooks = await until(panel.inspector, (t) =>
+      const hooks = await selectListed(panel, "Hooks", (t) =>
         NAMED.every((n) => t.includes(n)),
       )
       for (const named of NAMED) assert.ok(hooks.includes(named), hooks)
@@ -193,8 +173,7 @@ for (const { port } of fixtures.filter((f) => f.fixture === "19"))
       await next.goto(url)
       await next.waitForSelector("[data-testid=counter]")
       const again = await openPanelText(name, browser)
-      await selectListed(again, "Counter")
-      const kept = await until(again.inspector, (t) =>
+      const kept = await selectListed(again, "Counter", (t) =>
         t.includes("State(count): 0"),
       )
       assert.ok(kept.includes("State(count): 0"), kept)
