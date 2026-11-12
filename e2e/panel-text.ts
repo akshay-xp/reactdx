@@ -177,12 +177,55 @@ export async function openPanelText(
         })()`,
       )) ?? "",
     )
-  const hover = async () => {
-    throw new Error("hover is Chrome-only")
+  // Moves the pointer to the middle of the first accessible the check (a JS
+  // expression over `node`) matches, with a native mouse move at its screen bounds
+  // (device pixels, as getBounds gives them): the panel's DOM is in another process.
+  const pointAt = async (match: string) => {
+    const result = await chromeEval(
+      browser,
+      `(() => {
+        ${panelBrowser}
+        if (!panel) return "no panel browser"
+        const find = (node) => {
+          if (!node) return null
+          if (${match}) return node
+          for (let i = 0; i < node.childCount; i++) {
+            const found = find(node.getChildAt(i))
+            if (found) return found
+          }
+          return null
+        }
+        const node = find(service.getAccessibleFor(panel))
+        if (!node) return "nothing matches " + ${json(match)}
+        const x = {}, y = {}, w = {}, h = {}
+        node.getBounds(x, y, w, h)
+        const utils = window.windowUtils
+        utils.sendNativeMouseEvent(
+          x.value + w.value / 2,
+          y.value + h.value / 2,
+          utils.NATIVE_MOUSE_MESSAGE_MOVE,
+          0, 0,
+          document.documentElement,
+          null,
+        )
+        return "ok"
+      })()`,
+    )
+    if (result !== "ok") throw new Error(result ?? "pointer move failed")
   }
-  const leave = hover
+  // A row's name is a text leaf inside a tree item.
+  const hover = (name: string) =>
+    pointAt(
+      `node.role === Ci.nsIAccessibleRole.ROLE_TEXT_LEAF && node.name === ${json(name)} && node.parent?.parent?.role === Ci.nsIAccessibleRole.ROLE_OUTLINEITEM`,
+    )
+  const leave = () =>
+    pointAt(
+      `node.name === "Search components" && node.role !== Ci.nsIAccessibleRole.ROLE_TEXT_LEAF`,
+    )
   return Object.assign(read, { end, check, hover, leave })
 }
+
+const json = JSON.stringify
 
 export type Copy = { heading: string; commits: number[]; names: string[] }
 
