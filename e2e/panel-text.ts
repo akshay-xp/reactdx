@@ -1,4 +1,4 @@
-import type { Browser } from "puppeteer"
+import type { Browser, Frame } from "puppeteer"
 import { chromeEval } from "./firefox.ts"
 import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 
@@ -11,7 +11,9 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // reads its aria-pressed,
 // selected() is the selected row's name, select(name) clicks the row with that name.
 // The text leaves out the inspector pane; inspector() reads only that.
+// frame is the panel's document (Chrome only: Firefox's is out of Puppeteer's reach).
 export type PanelText = (() => Promise<string>) & {
+  frame?: Frame
   inspector(): Promise<string>
   select(name: string): Promise<void>
   end(): Promise<void>
@@ -90,6 +92,7 @@ export async function openPanelText(
           )?.textContent ?? undefined,
       )
     return Object.assign(read, {
+      frame,
       inspector,
       select,
       end,

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Stands in for the editor in e2e/editor.test.ts: records how it was launched.
+echo "$*" >> "$REACTDX_EDITOR_LOG"
