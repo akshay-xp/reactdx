@@ -24,6 +24,8 @@ The tree streams only while a panel watches the tab. Closing the relay's `tree` 
 5. **Resync:** the panel's store (`docs/panel.md`) reports a seq gap or an unknown id; the panel sends `ResyncMessage` `{ type: "resync", tabId }` over its port, the background posts `{ type: "resync" }` to the tree port, and the relay re-posts `WATCH`.
 6. **Stop:** when the tab's last panel port closes, the background disconnects the tree port. The relay posts `UNWATCH` whenever its port disconnects (that, the background stopping, or bfcache), so the agent stops diffing.
 
+7. **Highlight** (M3 #28): when the panel's hovered row changes (`docs/panel.md`), it sends `HighlightMessage` `{ type: "highlight", tabId, id }` or `ClearHighlightMessage` `{ type: "clear-highlight", tabId }` over its port. The background strips `tabId` and posts the command to the tab's tree port without reading it. The relay keeps only what `parseTreeCommand` accepts and posts `highlight(id)` or `CLEAR_HIGHLIGHT` to the agent (`docs/page.md`, "Highlight"). Closing the panel needs no command: the unwatch that follows hides the overlay.
+
 - **bfcache:** Chrome closes the port when the page enters bfcache but delivers the disconnect only after the restore, after `pageshow` already tried to watch. So the relay closes its own port on a persisted `pagehide`.
 - **Forged commands:** a page can post `UNWATCH` itself and stop its own tree updates (it shares the world with the hook, as in M2). Forged `WATCH` only causes a resync. `e2e/forged.test.ts` leaves `UNWATCH` out.
 
@@ -86,6 +88,19 @@ Any invalid op drops the whole batch (a partial batch would desync the mirror). 
 | `key`               | `null` or string, at most 256 chars           |
 | `children`          | array of at most 10,000 positive ids          |
 
+## Tree port commands (`parseTreeCommand(data)`; M3 #28)
+
+Background to the relay's tree port. Everything the relay acts on passes through it, so a malformed command never reaches the page.
+
+| Command                       | Relay posts to the agent                                              |
+| ----------------------------- | --------------------------------------------------------------------- |
+| `{ type: "resync" }`          | `WATCH`                                                               |
+| `{ type: "highlight", id }`   | `highlight(id)`: `{ source: "reactdx-relay", type: "highlight", id }` |
+| `{ type: "clear-highlight" }` | `CLEAR_HIGHLIGHT`                                                     |
+
+- `id`: positive safe integer. Anything else (no id, a string, 0, a fraction, an unsafe integer, an unknown type, a non-object) is dropped. Extra keys are stripped.
+- `packages/messages/test/commands.test.ts`.
+
 ## Toolbar (`toolbarState(renderers)`, `toolbarIcons(icon)`)
 
 | Renderers                        | Icon          | Title                                                                         |
@@ -99,7 +114,7 @@ Any invalid op drops the whole batch (a partial batch would desync the mirror). 
 
 ## Key files
 
-- `packages/messages/src/index.ts`, `packages/messages/test/messages.test.ts`, `packages/messages/test/tree.test.ts`.
+- `packages/messages/src/index.ts`, `packages/messages/test/messages.test.ts`, `packages/messages/test/tree.test.ts`, `packages/messages/test/commands.test.ts`.
 - `apps/extension/entrypoints/hook.content.ts`, `relay.content.ts`, `background.ts`.
 - `e2e/toolbar.test.ts`, `e2e/toolbar.ts` (`docs/e2e.md`).
 

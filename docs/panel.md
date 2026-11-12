@@ -32,7 +32,8 @@ The page's component tree, rebuilt from the agent's ops (`docs/messages.md`, "Tr
   - `step(1 | -1)`: next or previous match, wrapping; from a non-match, the first or last.
   - `position()`: the selection's index among the matches from 1, or 0 if it isn't one.
   - Selecting a match (`setQuery`, `step`) also expands its ancestors, so it has a row, and TreeView scrolls it into view.
-- `clear()`: on `onNavigated`, with the renderer list; also drops collapse state and the selection. The query and DOM toggle stay.
+- `hovered()` / `hover(id | undefined)` (M3 #28): the row under the pointer. `main.tsx` sends a highlight or clear-highlight command on each change (`docs/messages.md`, "Tree flow").
+- `clear()`: on `onNavigated`, with the renderer list; also drops collapse state, the selection and the hover. The query and DOM toggle stay.
 - `test/tree.test.ts`: rows, hidden hosts, each op, the resync rules, collapse, selection, every key, shown hosts, search, step.
 
 ## Tree view (`TreeView`, `src/TreeView.tsx`, `src/virtual.ts`; M3 #26)
@@ -44,6 +45,7 @@ One per development root: `TreeView(props: { tree: TreeStore; rootId: number })`
 - Selected row: `bg-selected`, badge and key `text-fg` (dark `muted` on `selected` is 2.9:1).
 - Search matches: `data-match`, and the name (`[data-testid=name]`) in `text-accent`, except on the selected row (`text-fg`; accent on `selected` isn't a checked contrast pair).
 - Clicks and keys are handled once on the container: rows are recycled as the window moves, and the container holds focus. A click on an expandable row's toggle area toggles it; any other row click selects. Handled keys (`tree.key`) are `preventDefault`ed.
+- Hover: a delegated `onPointerOver` hovers the row under the pointer; `onPointerLeave` on the tree clears it. Pointer rather than mouse events because Biome's a11y rule asks for a focus counterpart to `onMouseOver`; keyboard selection doesn't highlight the page (not in M3's scope).
 - A selection change scrolls the selected row into view (End on 10,000 rows renders the last one). Only selection changes scroll, so a commit doesn't pull the view back.
 - Perf marks: `main.tsx` marks `reactdx:subscribe` on every subscribe; `TreeView` marks `reactdx:rows` each time its rows go from empty to non-empty. `e2e/perf.test.ts` reads them (`docs/e2e.md`).
 - `test/TreeView.test.tsx`: a 1,000-row tree keeps fewer than 100 rows in the DOM, badges, keys and toggles, text-only keys, click, toggle and keyboard, match marking.

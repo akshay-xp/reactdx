@@ -49,7 +49,15 @@ The agent tracks the component tree only between `WATCH` and `UNWATCH` message e
 - **Hidden content:** an Offscreen fiber (tag 22) with `memoizedState !== null` is suspended or hidden, so its subtree isn't emitted. A Suspense showing its fallback lists only the fallback.
 - **Per-commit diff:** every commit while watched, not once per flush, because the shortcut only holds against the previous commit: a node whose fiber has an `alternate` with the same `child` bailed out, so nothing below it changed. Otherwise its emitted children are compared with the stored list: `remove` the gone (descendants implied), `add` the new in ascending index with their subtrees, then `reorder` if the order still differs. A known child whose name changed (Fast Refresh, a late `displayName`) gets `rename`.
 - **Posting:** ops are buffered and posted on the existing 100 ms flush, split into batches of at most 2,000 (`MAX_OPS`), each with the next `seq`. A commit with no structural change posts nothing.
-- **Unwatch:** stops diffing, drops the buffer and the stored children and names.
+- **Unwatch:** stops diffing, drops the buffer and the stored children, names and fibers, and hides the highlight.
+- **`find(id)`** (M3 #28): `{ name, elements }` for an emitted node, or `undefined` (unknown or removed). `elements` are its top-level DOM elements: the first host fibers (5, 26, 27) below it, their `stateNode`; a host node gives itself; text is skipped, and so is hidden Offscreen content. The tree keeps the latest fiber per id (set on add and on each commit's visit). A bailed-out subtree shares its child fibers, so the ones kept there stay current.
+
+## Highlight (`createOverlay(doc)`, `src/overlay.ts`; M3 #28)
+
+- The agent handles `highlight` (`{ source: "reactdx-relay", type: "highlight", id }`): `show(find(id)?.elements ?? [], name)`. `clear-highlight` and `unwatch` call `hide()`. The page can post these too; an id the tree doesn't know shows nothing.
+- `show(elements, label)`: one `div` appended to `document.documentElement` on first show, with inline `position: fixed; inset: 0; pointer-events: none; z-index: 2147483647` and a closed shadow root (page CSS can't restyle it, page queries don't find the boxes). Inside: a `[data-box]` per element at its `getBoundingClientRect()`, and the label as a text node above the first box. Each show rebuilds the contents. `show([])` hides.
+- `hide()`: removes the host. Page elements' styles and layout are never touched (`e2e/highlight.test.ts` compares every computed style).
+- Not repositioned on scroll or resize while shown.
 
 ## Types
 
