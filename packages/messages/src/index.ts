@@ -236,6 +236,8 @@ export const UNWATCH = { source: "reactdx-relay", type: "unwatch" }
 // Panel to background over its port: highlight a tree node on the page, or stop.
 export type HighlightMessage = { type: "highlight"; tabId: number; id: number }
 export type ClearHighlightMessage = { type: "clear-highlight"; tabId: number }
+// Panel to background: start or stop the element picker on the page.
+export type PickMessage = { type: "pick-start" | "pick-stop"; tabId: number }
 
 // Background to the relay's tree port. The relay checks each one before acting:
 // a malformed command never reaches the page.
@@ -243,11 +245,21 @@ export type TreeCommand =
   | { type: "resync" }
   | { type: "highlight"; id: number }
   | { type: "clear-highlight" }
+  | { type: "pick-start" }
+  | { type: "pick-stop" }
+
+// Commands with no arguments.
+const BARE_COMMANDS = new Set<unknown>([
+  "resync",
+  "clear-highlight",
+  "pick-start",
+  "pick-stop",
+])
 
 export function parseTreeCommand(data: unknown): TreeCommand | undefined {
   if (typeof data !== "object" || data === null) return
   const { type, id } = data as Record<string, unknown>
-  if (type === "resync" || type === "clear-highlight") return { type }
+  if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
 }
 
@@ -260,6 +272,27 @@ export const highlight = (id: number) => ({
 export const CLEAR_HIGHLIGHT = {
   source: "reactdx-relay",
   type: "clear-highlight",
+}
+export const PICK_START = { source: "reactdx-relay", type: "pick-start" }
+export const PICK_STOP = { source: "reactdx-relay", type: "pick-stop" }
+
+// Agent to panel (relay, tree port, background): the picked component's id, or
+// null when picking ended without one (Escape, or a click on nothing React owns).
+export type PickedMessage = {
+  source: "reactdx"
+  type: "picked"
+  id: number | null
+}
+export const picked = (id: number | null): PickedMessage => ({
+  source: "reactdx",
+  type: "picked",
+  id,
+})
+export function parsePicked(data: unknown): PickedMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, id } = data as Record<string, unknown>
+  if (source !== "reactdx" || type !== "picked") return
+  if (id === null || isId(id)) return picked(id)
 }
 
 // Roots of renderers the relay hasn't seen are dropped.
