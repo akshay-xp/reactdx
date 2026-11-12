@@ -32,6 +32,10 @@ Every fixture's `Counter` renders a `Clicked` component (which renders nothing) 
 
 `fixtures/vite` also serves `/tree.html` (`src/tree.jsx`): one of each component kind (class, memo, forwardRef, lazy in Suspense, context provider and consumer, Profiler, an anonymous component, keyed items, Activity on React 19) inside StrictMode, plus wrappers the tree hides (fragments, text, DOM elements). It mirrors the unit `Kinds` app in `packages/page/test/tree.test.ts`; `e2e/panel.test.ts` checks the panel's names on `fixture:19`.
 
+## Hooks page
+
+`fixtures/vite` also serves `/hooks.html` (`src/hooks.jsx`): one `Hooks` component (`data-testid="hooks"`) calling every hook the inspector reads at its top level, inside `Theme` (`"dark"`), plus a `useCart` custom hook with a debug value. React 19's own hooks run only on React 19 (`typeof use === "function"`, the same on every render), inline: a helper function would show as a custom hook. `e2e/inspector.test.ts` lists what each row shows.
+
 ## Bench page
 
 `fixtures/vite` also serves `/bench.html` (`src/bench.jsx`): a `Bench` component over 10,000 `Cell` components (`data-testid="cell"`) and `window.__bench(mode, iterations)`, which times `flushSync` commits (`all` updates every cell, `one` the first) and returns the durations in ms. Used by `pnpm bench:hook-cost` (`docs/bench.md`) and `e2e/perf.test.ts`; checked by `pnpm test:fixtures`.

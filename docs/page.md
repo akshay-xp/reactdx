@@ -88,6 +88,19 @@ Describes page values for the inspector. Carried from the M0 #7 spike (`docs/m0-
 - `tree.fiber(id)`: the node's fiber as of the last commit.
 - `test/inspect-agent.test.ts`: props, class state, unknown and malformed ids, re-sends, no re-send for a sibling's commit, stop on `inspect null` and `unwatch`, expand, released ids.
 
+## Hooks (`inspectHooks(fiber, dispatcherRef)`, `src/hooks.ts`, `src/stack.ts`; M4 #34)
+
+The inspection's `hooks` come from a shadow render, after react-debug-tools' `inspectHooksOfFiber` (MIT, what RDT uses), rewritten here.
+
+- Only function (tag 0), forwardRef (11, `render(props, ref)`) and simple memo (15) fibers have hooks; others get no `hooks` field. A lazy or memo-wrapped type's `defaultProps` are merged into its props.
+- The agent finds the fiber's renderer (walk `return` to the HostRoot, tag 3, whose `stateNode` is in `record.roots`) and takes its `currentDispatcherRef` from the global hook's `renderers` map. React 19 keeps the dispatcher at `.H`, React 18 at `.current`.
+- The component is called once with a stub dispatcher (a Proxy: an unknown hook throws "Unsupported hook: <name>" rather than misreading the list). Each stub reads the next entry of the fiber's `memoizedState` hook list and the next `fiber.dependencies` context (`memoizedValue`), mirroring what React allocates: Transition and SyncExternalStore take 2 entries, ActionState/FormState 3; contexts, `use`, DebugValue and FormStatus (a host transition context read) none.
+- Values: State, Reducer, DeferredValue, Id, Optimistic, SyncExternalStore: the state. Ref: `.current`. Memo, Callback: the memoized value. Effect, LayoutEffect, InsertionEffect: their deps (no `value` without deps). ImperativeHandle: the ref's current handle. Transition: `isPending`. ActionState/FormState: the state (a fulfilled thenable's value). `use(context)` and `useContext`: `Context(<displayName>)` or `Context`. `use(thenable)`: `Use` with its value; thenables come from `dependencies._debugThenableState` in order, else the argument; a pending one ends the render where React would suspend (the hooks so far stand), a rejected one throws. EffectEvent: the function. `useMemoCache` (React Compiler) returns an empty cache and isn't listed.
+- Grouping: `Error.stackTraceLimit` is raised for the render. Each stub records its stack; the frames between React's one exported wrapper and the shadow render's own frame (counted against a stack taken just before the call) are the custom hook chain. Each level is a group named after its function, keyed by its call site (the frame's source line), so consecutive hooks share a group only while their chains match, and two calls of one custom hook stay apart. A DebugValue inside a group becomes the group's `value` (formatter applied); at the top level it's its own row.
+- `parseStack(stack)`: `{ functionName, source }` per frame, V8 (`at name (url:line:col)`) and Firefox (`name@url:line:col`) formats.
+- No side effects: every `console` method is a no-op during the render; stub setters do nothing; effects never run. Any throw (except the suspend) becomes `hooksError`, with props and state still sent.
+- `test/hooks.test.ts` (React 18 and 19, through the agent): built-ins in order with values, live re-send, custom hook groups, React 19 hooks, no effects/commits/logs, throw, suspend, forwardRef, memo, class. `test/stack.test.ts`.
+
 ## Types
 
 - `Hook`, `HookRecord`, `FiberRoot`; `RendererInfo` comes from `@reactdx/messages` (re-exported), so `page` depends on `messages`, never the reverse. `declare global { var __REACT_DEVTOOLS_GLOBAL_HOOK__: Hook | undefined }` types `window` and `globalThis`.

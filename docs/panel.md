@@ -52,8 +52,9 @@ The selected node's values as the agent last sent them (`docs/messages.md`, "Ins
 
 - Empty states: "Select a component to inspect it." and, for `gone()`, "This component unmounted."
 - Header (`[data-testid=inspector-header]`, fixed above the sections): the name, the tree's badge for `memo`/`forwardRef`/`lazy`, and `key="…"`, from `tree.info(id)`.
-- Sections (`[data-testid=section]`): Props, then State. The header button (`aria-expanded`, the tree's triangle) collapses one; collapsed sections stay collapsed while the panel is open. A section with nothing in it isn't shown.
+- Sections (`[data-testid=section]`): Props, State, then Hooks (M4 #34). The header button (`aria-expanded`, the tree's triangle) collapses one; collapsed sections stay collapsed while the panel is open. A section with nothing in it isn't shown.
 - Value rows (`[data-testid=value]`): `name:` (`text-syntax-key`), then `previewText(value)` as one text node (so both browsers' e2e readers get it whole), colored by kind (string, number, muted for undefined/function/symbol/getter/hole/unreadable, accent for null and booleans). Containers and refs get a toggle (`[data-testid=value-toggle]`) that opens them in place, indented 12 px per level; map entries read `key => value`; a paged container ends with "Show more (N left)". Circular refs don't open.
+- Hooks: each hook in call order, `name: value`, or just its name when it has no value (an effect without deps). A custom hook (`useCart: "2 items"`, its DebugValue as the value) opens to the hooks it called; paths are `Hooks.<index>...`. "Couldn't read hooks: <reason>" when the shadow render threw.
 - `previewText(value)` (`src/value.ts`): DevTools-console-like one-liners: `"text"` (over 50 chars cut, with the full length), `ƒ name()`, `Symbol(x)`, `{a: 1, b: "x"}` and `[1, 2]` inline up to 5 entries (nested containers as `{...}`, `Array(n)`, `Map(n)`), `Array(n)` past 5 items, a class name before an instance's braces, `<Counter key="k" />`, `<button#id.class>`, `(getter)`, `empty`, `[circular]`, `(unreadable: message)`.
 - `test/Inspector.test.tsx`, `test/value.test.ts`.
 
