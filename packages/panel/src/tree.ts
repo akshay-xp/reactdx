@@ -34,6 +34,7 @@ export function createTreeStore() {
   const [query, querySignal] = createSignal("")
   // The row under the pointer: the page highlights it.
   const [hovered, hover] = createSignal<number>()
+  const [picking, setPicking] = createSignal(false)
   // Host (DOM element) nodes are rows only while "Show DOM elements" is on.
   const visible = (node: Node | undefined) =>
     node !== undefined && (node.kind !== "host" || showHosts())
@@ -212,6 +213,13 @@ export function createTreeStore() {
     key,
     selected,
     hovered,
+    picking,
+    setPicking: (on: boolean) => setPicking(on),
+    // The page's pick ends picking; an id the mirror has is selected and revealed.
+    picked(id: number | null) {
+      setPicking(false)
+      if (id !== null && nodes.has(id)) reveal(id)
+    },
     hover: (id: number | undefined) => hover(id),
     select: (id: number) => select(id),
 
@@ -246,6 +254,7 @@ export function createTreeStore() {
       collapsed.clear()
       select(undefined)
       hover(undefined)
+      setPicking(false)
       setVersion(version() + 1)
     },
   }

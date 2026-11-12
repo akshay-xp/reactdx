@@ -258,6 +258,29 @@ test("step cycles the matches and position counts from 1", () => {
   expect(tree.selected()).toBe(3)
 })
 
+test("a pick turns picking off and selects a known node", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  expect(tree.picking()).toBe(false)
+  tree.setPicking(true)
+  expect(tree.picking()).toBe(true)
+  tree.toggle(1)
+  tree.picked(5)
+  expect(tree.picking()).toBe(false)
+  expect(tree.selected()).toBe(5)
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "2 B", "1 C"])
+
+  for (const id of [null, 999]) {
+    tree.setPicking(true)
+    tree.picked(id)
+    expect(tree.picking()).toBe(false)
+    expect(tree.selected()).toBe(5)
+  }
+  tree.setPicking(true)
+  tree.clear()
+  expect(tree.picking()).toBe(false)
+})
+
 test("clear empties the store", () => {
   const tree = createTreeStore()
   tree.apply(resync)
