@@ -138,3 +138,20 @@ test("search matches are marked", () => {
   tree.step(1)
   expect(name(nodes()[0] as Element)?.classList).toContain("text-accent")
 })
+
+test("hovering a row sets hovered; leaving the tree clears it", () => {
+  const { tree, container, nodes } = view(small)
+  const name = (i: number) =>
+    nodes()[i]?.querySelector("[data-testid=name]") as Element
+  fireEvent.pointerOver(name(1))
+  expect(tree.hovered()).toBe(3)
+  fireEvent.pointerOver(name(0))
+  expect(tree.hovered()).toBe(1)
+  fireEvent.pointerLeave(
+    container.querySelector("[data-testid=tree]") as Element,
+  )
+  expect(tree.hovered()).toBeUndefined()
+  fireEvent.pointerOver(name(1))
+  tree.clear()
+  expect(tree.hovered()).toBeUndefined()
+})

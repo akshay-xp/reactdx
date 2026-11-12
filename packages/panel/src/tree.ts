@@ -32,6 +32,8 @@ export function createTreeStore() {
   const [selected, select] = createSignal<number>()
   const [showHosts, showHostsSignal] = createSignal(false)
   const [query, querySignal] = createSignal("")
+  // The row under the pointer: the page highlights it.
+  const [hovered, hover] = createSignal<number>()
   // Host (DOM element) nodes are rows only while "Show DOM elements" is on.
   const visible = (node: Node | undefined) =>
     node !== undefined && (node.kind !== "host" || showHosts())
@@ -209,6 +211,8 @@ export function createTreeStore() {
     rows,
     key,
     selected,
+    hovered,
+    hover: (id: number | undefined) => hover(id),
     select: (id: number) => select(id),
 
     toggle,
@@ -241,6 +245,7 @@ export function createTreeStore() {
       reset()
       collapsed.clear()
       select(undefined)
+      hover(undefined)
       setVersion(version() + 1)
     },
   }

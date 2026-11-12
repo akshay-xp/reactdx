@@ -76,6 +76,13 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
       style={{ "max-height": "80vh" }}
       onScroll={measure}
       onClick={click}
+      onPointerOver={(event) => {
+        const row = (event.target as Element).closest<HTMLElement>(
+          "[data-testid=node]",
+        )
+        if (row) props.tree.hover(Number(row.dataset.id))
+      }}
+      onPointerLeave={() => props.tree.hover(undefined)}
       onKeyDown={(event) => {
         if (props.tree.key(props.rootId, event.key)) event.preventDefault()
       }}
