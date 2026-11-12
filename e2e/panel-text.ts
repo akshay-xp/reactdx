@@ -6,12 +6,13 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // end() presses End on each tree: a tree only renders the rows in view, so a big
 // one (Next's) shows its last rows, where the app's components are, only then.
 // check(label) clicks the checkbox with that label. hover(name) puts the pointer on
-// the tree row with that name; leave() moves it off the trees.
+// the tree row with that name; leave() moves it off the trees. close() closes DevTools.
 export type PanelText = (() => Promise<string>) & {
   end(): Promise<void>
   check(label: string): Promise<void>
   hover(name: string): Promise<void>
   leave(): Promise<void>
+  close(): Promise<void>
 }
 
 // Text pieces are joined with spaces (the accessibility tree splits text differently
@@ -71,7 +72,8 @@ export async function openPanelText(
     const leave = async () => {
       await frame.hover("[data-testid=search]")
     }
-    return Object.assign(read, { end, check, hover, leave })
+    const close = () => frame.page().close()
+    return Object.assign(read, { end, check, hover, leave, close })
   }
   // Firefox runs the panel in an extension process Puppeteer can't reach, but its
   // accessibility tree is mirrored into the parent process, where chrome scope can read it.
@@ -222,7 +224,17 @@ export async function openPanelText(
     pointAt(
       `node.name === "Search components" && node.role !== Ci.nsIAccessibleRole.ROLE_TEXT_LEAF`,
     )
-  return Object.assign(read, { end, check, hover, leave })
+  const close = async () => {
+    await chromeEval(
+      browser,
+      `(async () => {
+        const { require } = ChromeUtils.importESModule("resource://devtools/shared/loader/Loader.sys.mjs")
+        const { gDevTools } = require("devtools/client/framework/devtools")
+        await gDevTools.closeToolboxForTab(gBrowser.selectedTab)
+      })()`,
+    )
+  }
+  return Object.assign(read, { end, check, hover, leave, close })
 }
 
 const json = JSON.stringify

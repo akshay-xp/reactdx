@@ -127,3 +127,15 @@ test("the overlay changes no page element's computed style", {
     await browser.close()
   }
 })
+
+test("closing the panel removes the overlay", { skip }, async () => {
+  const { browser, page, panel } = await highlightPage()
+  try {
+    await panel.hover("Counter")
+    await waitFor(page, 1)
+    await panel.close()
+    await waitFor(page, 0)
+  } finally {
+    await browser.close()
+  }
+})
