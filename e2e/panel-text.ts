@@ -5,10 +5,13 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // The panel's visible text, whitespace-normalized, read the same way in both browsers.
 // end() presses End on each tree: a tree only renders the rows in view, so a big
 // one (Next's) shows its last rows, where the app's components are, only then.
-// check(label) clicks the checkbox with that label.
+// check(label) clicks the checkbox with that label. hover(name) puts the pointer on
+// the tree row with that name; leave() moves it off the trees.
 export type PanelText = (() => Promise<string>) & {
   end(): Promise<void>
   check(label: string): Promise<void>
+  hover(name: string): Promise<void>
+  leave(): Promise<void>
 }
 
 // Text pieces are joined with spaces (the accessibility tree splits text differently
@@ -56,7 +59,19 @@ export async function openPanelText(
         box.click()
       }, label)
     }
-    return Object.assign(read, { end, check })
+    const hover = async (name: string) => {
+      const rows = await frame.$$("[data-testid=name]")
+      for (const row of rows)
+        if ((await row.evaluate((el) => el.textContent)) === name)
+          return row.hover()
+      throw new Error(`no row named ${name}`)
+    }
+    // Onto the toolbar above the trees: CDP's synthetic moves out of the panel
+    // frame fire no leave events inside it.
+    const leave = async () => {
+      await frame.hover("[data-testid=search]")
+    }
+    return Object.assign(read, { end, check, hover, leave })
   }
   // Firefox runs the panel in an extension process Puppeteer can't reach, but its
   // accessibility tree is mirrored into the parent process, where chrome scope can read it.
@@ -162,7 +177,11 @@ export async function openPanelText(
         })()`,
       )) ?? "",
     )
-  return Object.assign(read, { end, check })
+  const hover = async () => {
+    throw new Error("hover is Chrome-only")
+  }
+  const leave = hover
+  return Object.assign(read, { end, check, hover, leave })
 }
 
 export type Copy = { heading: string; commits: number[]; names: string[] }

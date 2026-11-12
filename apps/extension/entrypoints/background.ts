@@ -1,5 +1,7 @@
 import {
+  type ClearHighlightMessage,
   type GetStateMessage,
+  type HighlightMessage,
   type InjectAgentMessage,
   type ResyncMessage,
   type StateReply,
@@ -71,33 +73,42 @@ export default defineBackground(() => {
   browser.runtime.onConnect.addListener((port) => {
     if (port.name === "tree") return connectTree(port)
     if (port.name !== "panel") return
-    port.onMessage.addListener((message: SubscribeMessage | ResyncMessage) => {
-      const { tabId } = message
-      if (message.type === "resync") {
-        trees.get(tabId)?.postMessage({ type: "resync" })
-        return
-      }
-      const ports = panels.get(tabId) ?? new Set()
-      panels.set(tabId, ports.add(port))
-      port.onDisconnect.addListener(() => {
-        ports.delete(port)
-        if (ports.size) return
-        panels.delete(tabId)
-        unwatch(tabId)
-      })
-      // No content script (a browser page) means no React.
-      browser.tabs
-        .sendMessage(tabId, { type: "get-state" } satisfies GetStateMessage, {
-          frameId: 0,
+    port.onMessage.addListener(
+      (
+        message:
+          | SubscribeMessage
+          | ResyncMessage
+          | HighlightMessage
+          | ClearHighlightMessage,
+      ) => {
+        // Commands go to the tab's relay, which validates them (parseTreeCommand).
+        const { tabId, ...command } = message
+        if (message.type !== "subscribe") {
+          trees.get(tabId)?.postMessage(command)
+          return
+        }
+        const ports = panels.get(tabId) ?? new Set()
+        panels.set(tabId, ports.add(port))
+        port.onDisconnect.addListener(() => {
+          ports.delete(port)
+          if (ports.size) return
+          panels.delete(tabId)
+          unwatch(tabId)
         })
-        .then(
-          (state: TabStateMessage) => port.postMessage(state),
-          () =>
-            port.postMessage({
-              type: "state",
-              renderers: [],
-            } satisfies TabStateMessage),
-        )
-    })
+        // No content script (a browser page) means no React.
+        browser.tabs
+          .sendMessage(tabId, { type: "get-state" } satisfies GetStateMessage, {
+            frameId: 0,
+          })
+          .then(
+            (state: TabStateMessage) => port.postMessage(state),
+            () =>
+              port.postMessage({
+                type: "state",
+                renderers: [],
+              } satisfies TabStateMessage),
+          )
+      },
+    )
   })
 })

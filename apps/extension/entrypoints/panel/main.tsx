@@ -1,4 +1,6 @@
 import type {
+  ClearHighlightMessage,
+  HighlightMessage,
   RendererView,
   ResyncMessage,
   SubscribeMessage,
@@ -8,7 +10,7 @@ import type {
 import { Panel } from "@reactdx/panel"
 import { applyTheme, defaultTheme, type Theme } from "@reactdx/panel/themes"
 import { createTreeStore } from "@reactdx/panel/tree"
-import { createSignal } from "solid-js"
+import { createEffect, createSignal, on } from "solid-js"
 import { render } from "solid-js/web"
 import type { Browser } from "wxt/browser"
 import "@reactdx/panel/index.css"
@@ -51,7 +53,22 @@ browser.devtools.network.onNavigated.addListener(() => {
   subscribe(port)
 })
 
-render(
-  () => <Panel renderers={renderers()} tree={tree} />,
-  document.getElementById("app") as HTMLElement,
-)
+render(() => {
+  // The hovered row is highlighted on the page, until the pointer leaves the tree.
+  createEffect(
+    on(
+      tree.hovered,
+      (id) =>
+        port.postMessage(
+          id === undefined
+            ? ({
+                type: "clear-highlight",
+                tabId,
+              } satisfies ClearHighlightMessage)
+            : ({ type: "highlight", tabId, id } satisfies HighlightMessage),
+        ),
+      { defer: true },
+    ),
+  )
+  return <Panel renderers={renderers()} tree={tree} />
+}, document.getElementById("app") as HTMLElement)

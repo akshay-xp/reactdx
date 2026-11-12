@@ -1,9 +1,12 @@
 import {
+  CLEAR_HIGHLIGHT,
   GET_SNAPSHOT,
   type GetStateMessage,
+  highlight,
   type InjectAgentMessage,
   parsePageMessage,
   parseTreeBatch,
+  parseTreeCommand,
   type RendererInfo,
   type RootInfo,
   type StateReply,
@@ -41,8 +44,12 @@ export default defineContentScript({
       if (tree) return
       tree = browser.runtime.connect({ name: "tree" })
       tree.onDisconnect.addListener(stop)
-      tree.onMessage.addListener((message: { type?: string }) => {
-        if (message.type === "resync") window.postMessage(WATCH, "*")
+      tree.onMessage.addListener((message: unknown) => {
+        const command = parseTreeCommand(message)
+        if (command?.type === "resync") window.postMessage(WATCH, "*")
+        else if (command?.type === "highlight")
+          window.postMessage(highlight(command.id), "*")
+        else if (command) window.postMessage(CLEAR_HIGHLIGHT, "*")
       })
       window.postMessage(WATCH, "*")
     }
