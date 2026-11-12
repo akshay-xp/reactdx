@@ -6,6 +6,7 @@ import {
   type InspectedMessage,
   inspected,
   MAX_OPS,
+  MAX_TREE_STRING,
   type PageMessage,
   type PickedMessage,
   parseTreeCommand,
@@ -30,6 +31,35 @@ import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
 const THROTTLE_MS = 100
+
+type ContextRead = {
+  context: { displayName?: unknown }
+  memoizedValue: unknown
+  next: ContextRead | null
+}
+
+// The contexts a fiber read in its last render, once each, in first-read order:
+// useContext, use(), a class's contextType and consumers all land in this list.
+function contextsOf(fiber: Fiber) {
+  const reads = new Map<unknown, unknown>()
+  const dependencies = (
+    fiber as unknown as {
+      dependencies: { firstContext: ContextRead | null } | null
+    }
+  ).dependencies
+  for (let at = dependencies?.firstContext ?? null; at; at = at.next)
+    if (!reads.has(at.context)) reads.set(at.context, at.memoizedValue)
+  return [...reads].map(([context, value]) => {
+    const name = (context as { displayName?: unknown }).displayName
+    return {
+      name:
+        typeof name === "string" && name
+          ? name.slice(0, MAX_TREE_STRING)
+          : "Context",
+      value,
+    }
+  })
+}
 
 // Injected only once a development renderer connects (never at document_start).
 // Reads the hook's record, so roots that committed before it arrived are kept.
@@ -166,6 +196,12 @@ export function startAgent(
     const state = (fiber.stateNode as { state?: unknown } | null)?.state
     // Class components (tag 1) keep their state on the instance.
     if (fiber.tag === 1 && state != null) data.state = serialize(state) as Value
+    const contexts = contextsOf(fiber)
+    if (contexts.length)
+      data.contexts = contexts.map(({ name, value }) => ({
+        name,
+        value: serialize(value) as Value,
+      }))
     const ref = dispatcherOf(fiber)
     const read = ref && inspectHooks(fiber as unknown as HooksFiber, ref)
     if (read) {
