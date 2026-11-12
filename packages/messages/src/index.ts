@@ -233,6 +233,35 @@ export const GET_SNAPSHOT = { source: "reactdx-relay", type: "get-snapshot" }
 export const WATCH = { source: "reactdx-relay", type: "watch" }
 export const UNWATCH = { source: "reactdx-relay", type: "unwatch" }
 
+// Panel to background over its port: highlight a tree node on the page, or stop.
+export type HighlightMessage = { type: "highlight"; tabId: number; id: number }
+export type ClearHighlightMessage = { type: "clear-highlight"; tabId: number }
+
+// Background to the relay's tree port. The relay checks each one before acting:
+// a malformed command never reaches the page.
+export type TreeCommand =
+  | { type: "resync" }
+  | { type: "highlight"; id: number }
+  | { type: "clear-highlight" }
+
+export function parseTreeCommand(data: unknown): TreeCommand | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { type, id } = data as Record<string, unknown>
+  if (type === "resync" || type === "clear-highlight") return { type }
+  if (type === "highlight" && isId(id)) return { type, id }
+}
+
+// Content script to agent: draw or remove the highlight overlay.
+export const highlight = (id: number) => ({
+  source: "reactdx-relay",
+  type: "highlight",
+  id,
+})
+export const CLEAR_HIGHLIGHT = {
+  source: "reactdx-relay",
+  type: "clear-highlight",
+}
+
 // Roots of renderers the relay hasn't seen are dropped.
 export const tabState = (
   renderers: Map<number, RendererInfo>,
