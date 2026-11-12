@@ -107,7 +107,7 @@ export async function openPanelText(
   }
   // Firefox runs the panel in an extension process Puppeteer can't reach, but its
   // accessibility tree is mirrored into the parent process, where chrome scope can read it.
-  const selected = await chromeEval(
+  const toolId = await chromeEval(
     browser,
     `(async () => {
       const { require } = ChromeUtils.importESModule("resource://devtools/shared/loader/Loader.sys.mjs")
@@ -127,13 +127,13 @@ export async function openPanelText(
       return null
     })()`,
   )
-  if (!selected) throw new Error("no ReactDX tab in Firefox DevTools")
+  if (!toolId) throw new Error("no ReactDX tab in Firefox DevTools")
   // The panel's <browser> and the accessibility service, in chrome scope.
   const panelBrowser = `
     const { require } = ChromeUtils.importESModule("resource://devtools/shared/loader/Loader.sys.mjs")
     const { gDevTools } = require("devtools/client/framework/devtools")
     const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab)
-    const iframe = toolbox?.doc.getElementById(${JSON.stringify(`toolbox-panel-iframe-${selected}`)})
+    const iframe = toolbox?.doc.getElementById(${JSON.stringify(`toolbox-panel-iframe-${toolId}`)})
     const panel = iframe?.contentDocument?.querySelector("browser")
     const service = Cc["@mozilla.org/accessibilityService;1"].getService(Ci.nsIAccessibilityService)`
   // Focus goes through each tree's accessible (the panel's DOM is in another
@@ -163,30 +163,6 @@ export async function openPanelText(
       })()`,
     )
   }
-  // The checkbox's accessible, found by its name; its action 0 is a click.
-  const check = async (label: string) => {
-    const result = await chromeEval(
-      browser,
-      `(() => {
-        ${panelBrowser}
-        if (!panel) return "no panel browser"
-        const find = (node) => {
-          if (!node) return null
-          if (node.role === Ci.nsIAccessibleRole.ROLE_CHECKBUTTON && node.name === ${JSON.stringify(label)}) return node
-          for (let i = 0; i < node.childCount; i++) {
-            const found = find(node.getChildAt(i))
-            if (found) return found
-          }
-          return null
-        }
-        const box = find(service.getAccessibleFor(panel))
-        if (!box) return "no checkbox labelled " + ${JSON.stringify(label)}
-        box.doAction(0)
-        return "ok"
-      })()`,
-    )
-    if (result !== "ok") throw new Error(result ?? "check failed")
-  }
   const read = async () =>
     normalize(
       (await chromeEval(
@@ -209,15 +185,20 @@ export async function openPanelText(
         })()`,
       )) ?? "",
     )
-  // Moves the pointer to the middle of the first accessible the check (a JS
-  // expression over `node`) matches, with a native mouse move at its screen bounds
-  // (device pixels, as getBounds gives them): the panel's DOM is in another process.
-  const pointAt = async (match: string) => {
+  // Runs `action` (JS returning a string) on the first accessible `match` (a JS
+  // expression over `node`) accepts. Throws when none matches, unless `required`
+  // is false, which returns null instead.
+  const onAccessible = async (
+    match: string,
+    action: string,
+    required = true,
+  ) => {
+    const missing = `nothing matches ${match}`
     const result = await chromeEval(
       browser,
       `(() => {
         ${panelBrowser}
-        if (!panel) return "no panel browser"
+        if (!panel) return ${json(missing)}
         const find = (node) => {
           if (!node) return null
           if (${match}) return node
@@ -228,22 +209,39 @@ export async function openPanelText(
           return null
         }
         const node = find(service.getAccessibleFor(panel))
-        if (!node) return "nothing matches " + ${json(match)}
-        const x = {}, y = {}, w = {}, h = {}
-        node.getBounds(x, y, w, h)
-        const utils = window.windowUtils
-        utils.sendNativeMouseEvent(
-          x.value + w.value / 2,
-          y.value + h.value / 2,
-          utils.NATIVE_MOUSE_MESSAGE_MOVE,
-          0, 0,
-          document.documentElement,
-          null,
-        )
-        return "ok"
+        if (!node) return ${json(missing)}
+        ${action}
       })()`,
     )
-    if (result !== "ok") throw new Error(result ?? "pointer move failed")
+    if (result === missing && !required) return null
+    if (result === missing) throw new Error(missing)
+    return result
+  }
+  // A checkbox's action 0 is a click.
+  const check = async (label: string) => {
+    await onAccessible(
+      `node.role === ${role("CHECKBUTTON")} && node.name === ${json(label)}`,
+      `node.doAction(0); return "ok"`,
+    )
+  }
+  // A native mouse move to the middle of the accessible's screen bounds (device
+  // pixels, as getBounds gives them): the panel's DOM is in another process.
+  const pointAt = async (match: string) => {
+    await onAccessible(
+      match,
+      `const x = {}, y = {}, w = {}, h = {}
+      node.getBounds(x, y, w, h)
+      const utils = window.windowUtils
+      utils.sendNativeMouseEvent(
+        x.value + w.value / 2,
+        y.value + h.value / 2,
+        utils.NATIVE_MOUSE_MESSAGE_MOVE,
+        0, 0,
+        document.documentElement,
+        null,
+      )
+      return "ok"`,
+    )
   }
   // A row's name is a text leaf inside a tree item.
   const hover = (name: string) =>
@@ -264,9 +262,38 @@ export async function openPanelText(
       })()`,
     )
   }
-  const press = async (): Promise<never> => {
-    throw new Error("press is Chrome-only")
+  const role = (name: string) => `Ci.nsIAccessibleRole.ROLE_${name}`
+  const button = (name: string) =>
+    `(node.role === ${role("PUSHBUTTON")} || node.role === ${role("TOGGLE_BUTTON")}) && node.name === ${json(name)}`
+  const press = async (name: string) => {
+    await onAccessible(button(name), `node.doAction(0); return "ok"`)
   }
+  const pressed = async (name: string) =>
+    (await onAccessible(
+      button(name),
+      `const state = {}, extra = {}
+      node.getState(state, extra)
+      return String((state.value & Ci.nsIAccessibleStates.STATE_PRESSED) !== 0)`,
+    )) === "true"
+  // The selected tree item's first text leaf: its name (the toggle has no text).
+  const selected = async () =>
+    (await onAccessible(
+      `node.role === ${role("OUTLINEITEM")} && (() => {
+        const state = {}, extra = {}
+        node.getState(state, extra)
+        return (state.value & Ci.nsIAccessibleStates.STATE_SELECTED) !== 0
+      })()`,
+      `const leaf = (at) => {
+        if (at.role === ${role("TEXT_LEAF")}) return at
+        for (let i = 0; i < at.childCount; i++) {
+          const found = leaf(at.getChildAt(i))
+          if (found) return found
+        }
+        return null
+      }
+      return leaf(node)?.name ?? null`,
+      false,
+    )) ?? undefined
   return Object.assign(read, {
     end,
     check,
@@ -274,8 +301,8 @@ export async function openPanelText(
     leave,
     close,
     press,
-    pressed: press,
-    selected: press,
+    pressed,
+    selected,
   })
 }
 
