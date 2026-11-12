@@ -8,6 +8,7 @@ import {
   treeBatch,
 } from "@reactdx/messages"
 import type { FiberRoot, HookRecord } from "./hook.ts"
+import { createOverlay } from "./overlay.ts"
 import { createTree } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
@@ -62,6 +63,14 @@ export function startAgent(
     send(ops)
   }
 
+  let overlay: ReturnType<typeof createOverlay> | undefined
+  // The page can post this too; an id the tree doesn't know finds nothing.
+  const highlight = (id: number) => {
+    const found = tree.find(id)
+    overlay ??= createOverlay(document)
+    overlay.show(found?.elements ?? [], found?.name ?? "")
+  }
+
   let pending = false
   record.listeners.add((rendererId, root) => {
     const entry = info(root)
@@ -80,7 +89,10 @@ export function startAgent(
     if (data?.source !== "reactdx-relay") return
     if (data.type === "get-snapshot") snapshot()
     else if (data.type === "watch") watch()
+    else if (data.type === "highlight") highlight(data.id)
+    else if (data.type === "clear-highlight") overlay?.hide()
     else if (data.type === "unwatch") {
+      overlay?.hide()
       watching = false
       buffer.length = 0
       tree.clear()
