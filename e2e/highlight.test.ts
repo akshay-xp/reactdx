@@ -97,3 +97,33 @@ test("hovering a row highlights its component; leaving removes it", {
     await browser.close()
   }
 })
+
+// Every page element's computed style, the overlay's host left out.
+const styles = (page: Page) =>
+  page.evaluate(() => {
+    const hosts = new Set(
+      (window as unknown as Shadows).__shadows.map((root) => root.host),
+    )
+    return [...document.querySelectorAll("*")]
+      .filter((el) => !hosts.has(el))
+      .map((el) => {
+        const style = getComputedStyle(el)
+        return [...style].map(
+          (prop) => `${prop}:${style.getPropertyValue(prop)}`,
+        )
+      })
+  })
+
+test("the overlay changes no page element's computed style", {
+  skip,
+}, async () => {
+  const { browser, page, panel } = await highlightPage()
+  try {
+    const before = await styles(page)
+    await panel.hover("Counter")
+    await waitFor(page, 1)
+    assert.deepEqual(await styles(page), before)
+  } finally {
+    await browser.close()
+  }
+})
