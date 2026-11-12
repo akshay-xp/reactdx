@@ -185,22 +185,31 @@ test("End and Home select the last and first rows and scroll to them", {
   }
 })
 
-// Selects a Cell by clicking its row in the panel; resolves with the ms until the
-// inspector shows `shows`.
-const selectCell = (panel: Awaited<ReturnType<typeof benchPanel>>["panel"]) =>
+// Selects `Cell key="<key>"` by clicking its row in the panel; resolves with the
+// ms until the inspector shows its hooks (a new selection clears the last one's).
+const selectCell = (
+  panel: Awaited<ReturnType<typeof benchPanel>>["panel"],
+  key = 0,
+) =>
   panel.evaluate(
-    (shows) =>
-      new Promise<number>((resolve) => {
+    (key) =>
+      new Promise<{ ms: number; cleared: boolean }>((resolve) => {
         const row = [...document.querySelectorAll("[data-testid=node]")].find(
-          (n) => n.textContent === 'Cell key="0"',
+          (n) => n.textContent === `Cell key="${key}"`,
         )
         const inspector = () =>
           document.querySelector("[data-testid=inspector]")?.textContent ?? ""
+        const shown = () =>
+          inspector().includes(`key="${key}"`) &&
+          inspector().includes("State: 0")
         const start = performance.now()
+        // The timing counts only if the last selection's hooks went first.
+        let cleared = false
         new MutationObserver((_, observer) => {
-          if (!inspector().includes(shows)) return
+          if (!inspector().includes("State: 0")) cleared = true
+          if (!shown()) return
           observer.disconnect()
-          resolve(performance.now() - start)
+          resolve({ ms: performance.now() - start, cleared })
         }).observe(document.body, {
           childList: true,
           subtree: true,
@@ -210,15 +219,25 @@ const selectCell = (panel: Awaited<ReturnType<typeof benchPanel>>["panel"]) =>
           row?.querySelector("[data-testid=name]") as HTMLElement | null
         )?.click()
       }),
-    "State: 0",
+    key,
   )
 
+// The median of five selections: one timing on a shared CI runner varies from
+// tens to over a hundred ms.
 test("a selected Cell's hooks show within 100 ms", { skip }, async (t) => {
   const { browser, panel } = await benchPanel()
   try {
-    const elapsed = await selectCell(panel)
-    t.diagnostic(`${elapsed.toFixed(0)} ms`)
-    assert.ok(elapsed < 100, `${elapsed} ms`)
+    const times: number[] = []
+    for (const key of [0, 1, 2, 3, 4]) {
+      const { ms, cleared } = await selectCell(panel, key)
+      assert.ok(cleared, `Cell ${key}: the last hooks never cleared`)
+      times.push(ms)
+    }
+    const median = [...times].sort((a, b) => a - b)[2] as number
+    t.diagnostic(
+      `median ${median.toFixed(0)} ms of ${times.map((ms) => ms.toFixed(0)).join(", ")}`,
+    )
+    assert.ok(median < 100, `${median} ms (${times.join(", ")})`)
   } finally {
     await browser.close()
   }
