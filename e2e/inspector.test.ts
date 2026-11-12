@@ -2,7 +2,13 @@ import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
 import type { BrowserName } from "./launch.ts"
-import { panelFor, parseCopies, until } from "./panel-text.ts"
+import {
+  openPanelText,
+  type PanelText,
+  panelFor,
+  parseCopies,
+  until,
+} from "./panel-text.ts"
 
 const name = process.env.E2E_BROWSER as BrowserName
 const only = process.env.E2E_FIXTURE
@@ -140,6 +146,70 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
       )
       for (const hook of expected)
         assert.ok(text.includes(hook), `${hook} in ${text}`)
+    } finally {
+      await browser.close()
+    }
+  })
+
+// Selects a component once the tree lists it (a new page's tree fills in).
+async function selectListed(panel: PanelText, component: string) {
+  await until(panel, (t) =>
+    parseCopies(t).some((c) => c.names.includes(component)),
+  )
+  await panel.select(component)
+}
+
+// Hook names are opt-in: off, the parser chunk (hook-names) never loads.
+const NAMED = [
+  "State(one): 1",
+  "Ref(box): {a: 1}",
+  "Ref(handle)",
+  'useCart(cart): "2 items"',
+]
+for (const { port } of fixtures.filter((f) => f.fixture === "19"))
+  test("19: Hook names, off by default, name hooks and stay on", async () => {
+    const url = `http://localhost:${port}`
+    const { browser, page, panel } = await panelFor(name, url, "after")
+    try {
+      await page.waitForSelector("[data-testid=counter]")
+      await selectListed(panel, "Counter")
+      const off = await until(panel.inspector, (t) => t.includes("State: 0"))
+      assert.ok(off.includes("State: 0"), off)
+      assert.equal(await panel.pressed("Hook names"), false)
+      // Chrome: the panel's requests. A module loads once, so a request for the
+      // parser after the press also proves it hadn't loaded before.
+      const requested: string[] = []
+      panel.frame?.page().on("request", (r) => requested.push(r.url()))
+      const parser = () => requested.some((url) => url.includes("hook-names"))
+      if (name === "chrome") assert.equal(parser(), false)
+
+      await panel.press("Hook names")
+      const on = await until(panel.inspector, (t) =>
+        t.includes("State(count): 0"),
+      )
+      assert.ok(on.includes("State(count): 0"), on)
+      if (name === "chrome") assert.equal(parser(), true)
+
+      await page.goto(`${url}/hooks.html`)
+      await page.waitForSelector("[data-testid=hooks]")
+      await selectListed(panel, "Hooks")
+      const hooks = await until(panel.inspector, (t) =>
+        NAMED.every((n) => t.includes(n)),
+      )
+      for (const named of NAMED) assert.ok(hooks.includes(named), hooks)
+
+      // A new DevTools on a new tab: the setting comes back from storage.
+      await panel.close()
+      const next = await browser.newPage()
+      await next.goto(url)
+      await next.waitForSelector("[data-testid=counter]")
+      const again = await openPanelText(name, browser)
+      await selectListed(again, "Counter")
+      const kept = await until(again.inspector, (t) =>
+        t.includes("State(count): 0"),
+      )
+      assert.ok(kept.includes("State(count): 0"), kept)
+      assert.equal(await again.pressed("Hook names"), true)
     } finally {
       await browser.close()
     }

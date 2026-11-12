@@ -23,9 +23,10 @@ function useCart() {
 }
 
 function Hooks() {
-  React.useState(1)
+  // Assigned, destructured and plain, for hook names (e2e/inspector.test.ts).
+  const [one, setOne] = React.useState(1)
   React.useReducer((state) => state, "r")
-  React.useRef({ a: 1 })
+  const box = React.useRef({ a: 1 })
   React.useMemo(() => 3, [])
   React.useCallback(() => {}, [])
   React.useEffect(() => {}, [1])
@@ -38,7 +39,8 @@ function Hooks() {
   React.useSyncExternalStore(store.subscribe, store.get)
   React.useId()
   React.useContext(Theme)
-  useCart()
+  const cart = useCart()
+  void [one, setOne, box, cart]
   // Inline: a helper function would show as a custom hook.
   if (modern) {
     React.use(done)

@@ -14,6 +14,7 @@ import type {
 import { Panel } from "@reactdx/panel"
 import { openInEditor } from "@reactdx/panel/editor"
 import { createInspectorStore } from "@reactdx/panel/inspection"
+import { createHookNamer } from "@reactdx/panel/names"
 import { createSourceResolver, type Sources } from "@reactdx/panel/source"
 import { applyTheme, defaultTheme, type Theme } from "@reactdx/panel/themes"
 import { createTreeStore } from "@reactdx/panel/tree"
@@ -66,6 +67,19 @@ const editor = {
 const sources: Sources = {
   resolve: createSourceResolver(editor.fetch),
   open: (location) => openInEditor(location, editor),
+  hookName: createHookNamer(editor.fetch),
+}
+// Off until storage says otherwise; kept across panel opens.
+const [hookNames, setHookNames] = createSignal(false)
+browser.storage.local
+  .get("hookNames")
+  .then((stored) => setHookNames(stored.hookNames === true))
+const settings = {
+  hookNames,
+  setHookNames: (on: boolean) => {
+    setHookNames(on)
+    browser.storage.local.set({ hookNames: on })
+  },
 }
 // The mark times the first rows (e2e/perf.test.ts).
 const subscribe = (port: Browser.runtime.Port) => {
@@ -157,6 +171,7 @@ render(() => {
       tree={tree}
       inspector={inspector}
       sources={sources}
+      settings={settings}
       stale={stale()}
       onReload={() => browser.devtools.inspectedWindow.reload({})}
     />
