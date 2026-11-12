@@ -11,6 +11,7 @@ type Fiber = {
   sibling: Fiber | null
   alternate: Fiber | null
   return: Fiber | null
+  memoizedProps: unknown
   memoizedState: unknown
   stateNode: unknown
 }
@@ -233,6 +234,8 @@ export function createTree() {
         return
       }
     },
+    // The node's fiber as of the last commit.
+    fiber: (id: number) => fibers.get(id),
     // A node's name and its top-level DOM elements (itself, for a host node).
     find(id: number) {
       const fiber = fibers.get(id)

@@ -1,15 +1,22 @@
 import {
+  type ExpandedMessage,
+  type InspectedData,
+  type InspectedMessage,
+  inspected,
   MAX_OPS,
   type PageMessage,
   type PickedMessage,
+  parseTreeCommand,
   picked,
   type RootInfo,
   snapshotMessage,
   type TreeBatchMessage,
   type TreeOp,
   treeBatch,
+  type Value,
 } from "@reactdx/messages"
 import type { FiberRoot, HookRecord } from "./hook.ts"
+import { createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
 import { createTree } from "./tree.ts"
 
@@ -20,7 +27,14 @@ const THROTTLE_MS = 100
 // Reads the hook's record, so roots that committed before it arrived are kept.
 export function startAgent(
   target: EventTarget,
-  post: (message: PageMessage | TreeBatchMessage | PickedMessage) => void,
+  post: (
+    message:
+      | PageMessage
+      | TreeBatchMessage
+      | PickedMessage
+      | InspectedMessage
+      | ExpandedMessage,
+  ) => void,
 ) {
   const scope = target as unknown as Record<symbol, unknown>
   const record = scope[Symbol.for("reactdx")] as HookRecord | undefined
@@ -108,6 +122,27 @@ export function startAgent(
     overlay?.hide()
   }
 
+  // The node the panel inspects, and the inspector holding what was sent for it.
+  let selected:
+    | { id: number; values: ReturnType<typeof createInspector> }
+    | undefined
+  const describe = (id: number): InspectedData | null => {
+    const fiber = tree.fiber(id)
+    if (!fiber || !selected) return null
+    const { serialize } = selected.values
+    const props = serialize(fiber.memoizedProps) as Value
+    const state = (fiber.stateNode as { state?: unknown } | null)?.state
+    // Class components (tag 1) keep their state on the instance.
+    return fiber.tag === 1 && state != null
+      ? { props, state: serialize(state) as Value }
+      : { props }
+  }
+  const inspect = (id: number | null) => {
+    selected?.values.release()
+    selected = id === null ? undefined : { id, values: createInspector() }
+    if (id !== null) post(inspected(id, describe(id)))
+  }
+
   let pending = false
   record.listeners.add((rendererId, root) => {
     const entry = info(root)
@@ -130,7 +165,10 @@ export function startAgent(
     else if (data.type === "clear-highlight") overlay?.hide()
     else if (data.type === "pick-start") startPicking()
     else if (data.type === "pick-stop") stopPicking()
-    else if (data.type === "unwatch") {
+    else if (data.type === "inspect") {
+      const command = parseTreeCommand(data)
+      if (command?.type === "inspect") inspect(command.id)
+    } else if (data.type === "unwatch") {
       stopPicking()
       watching = false
       buffer.length = 0
