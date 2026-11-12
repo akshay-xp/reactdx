@@ -30,9 +30,13 @@ export default defineContentScript({
     let roots: RootInfo[] = []
     let agentRequested = false
     let agentSeen = false
+    // Run at document_start, the page is still loading. Firefox also injects into
+    // tabs already open at install, after their React loaded without the hook.
+    const stale = document.readyState !== "loading"
     const state = (): TabStateMessage => ({
       type: "state",
       renderers: tabState(renderers, roots),
+      stale,
     })
 
     // While a panel watches, tree batches flow over this port. It closes when the

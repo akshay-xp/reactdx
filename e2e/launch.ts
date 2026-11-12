@@ -37,7 +37,8 @@ async function launchChrome(
     headless: false,
     devtools: openDevtools,
     pipe: true,
-    enableExtensions: extensions,
+    // Empty: nothing at launch, but browser.installExtension works later.
+    enableExtensions: extensions.length ? extensions : true,
     userDataDir,
   })
   if (userDataDir)

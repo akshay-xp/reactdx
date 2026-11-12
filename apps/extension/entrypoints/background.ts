@@ -4,6 +4,7 @@ import {
   type HighlightMessage,
   type InjectAgentMessage,
   type ResyncMessage,
+  STALE_TITLE,
   type StateReply,
   type SubscribeMessage,
   type TabStateMessage,
@@ -18,6 +19,9 @@ type Port = Browser.runtime.Port
 // Holds only open ports, never page data: the content script owns the tab's
 // state. Browsers reset per-tab icons and titles on a new document, so a page
 // without React keeps the manifest's "no React" default.
+// Pages content scripts run in. Browser pages (chrome://, about:) never get them.
+const isWebPage = (url?: string) => /^(https?|file):/.test(url ?? "")
+
 export default defineBackground(() => {
   const panels = new Map<number, Set<Port>>()
   // Each watched tab's relay port, which carries its tree batches.
@@ -70,6 +74,14 @@ export default defineBackground(() => {
     trees.delete(tabId)
   }
 
+  // Open tabs loaded without ReactDX's hook: say a reload is needed, until the
+  // next page load resets the title.
+  browser.runtime.onInstalled.addListener(async () => {
+    for (const tab of await browser.tabs.query({}))
+      if (tab.id !== undefined && isWebPage(tab.url))
+        browser.action.setTitle({ tabId: tab.id, title: STALE_TITLE })
+  })
+
   browser.runtime.onConnect.addListener((port) => {
     if (port.name === "tree") return connectTree(port)
     if (port.name !== "panel") return
@@ -102,11 +114,16 @@ export default defineBackground(() => {
           })
           .then(
             (state: TabStateMessage) => port.postMessage(state),
+            // No relay: a browser page, or (Chrome) a tab open since before the
+            // install, which a reload fixes.
             () =>
-              port.postMessage({
-                type: "state",
-                renderers: [],
-              } satisfies TabStateMessage),
+              browser.tabs.get(tabId).then((tab) =>
+                port.postMessage({
+                  type: "state",
+                  renderers: [],
+                  stale: isWebPage(tab.url),
+                } satisfies TabStateMessage),
+              ),
           )
       },
     )

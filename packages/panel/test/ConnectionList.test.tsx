@@ -1,5 +1,5 @@
 import { type RendererView, treeBatch } from "@reactdx/messages"
-import { render } from "@solidjs/testing-library"
+import { fireEvent, render } from "@solidjs/testing-library"
 import { expect, test } from "vitest"
 import { ConnectionList } from "../src/ConnectionList"
 import { createTreeStore } from "../src/tree"
@@ -22,6 +22,23 @@ test("no React", () => {
     <ConnectionList tree={createTreeStore()} renderers={[]} />
   ))
   expect(container.textContent).toBe("No React on this page")
+})
+
+test("a page open since before the install asks for a reload", () => {
+  let reloads = 0
+  const { container } = render(() => (
+    <ConnectionList
+      tree={createTreeStore()}
+      renderers={[]}
+      stale
+      onReload={() => reloads++}
+    />
+  ))
+  expect(container.textContent).toBe(
+    "This page was open before ReactDX was installed or updated. Reload it to inspect React.Reload page",
+  )
+  fireEvent.click(container.querySelector("button") as Element)
+  expect(reloads).toBe(1)
 })
 
 test("only production React", () => {

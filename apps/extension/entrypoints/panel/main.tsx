@@ -23,6 +23,7 @@ apply(defaultTheme(getTheme()))
 onThemeChanged((kind) => apply(defaultTheme(kind)))
 
 const [renderers, setRenderers] = createSignal<RendererView[]>([])
+const [stale, setStale] = createSignal(false)
 const tree = createTreeStore()
 const tabId = browser.devtools.inspectedWindow.tabId
 // The mark times the first rows (e2e/perf.test.ts).
@@ -38,8 +39,10 @@ function connect() {
   const next = browser.runtime.connect({ name: "panel" })
   next.onMessage.addListener(
     (message: TabStateMessage | TreeBatchMessage | PickedMessage) => {
-      if (message.type === "state") setRenderers(message.renderers)
-      else if (message.type === "picked") tree.picked(message.id)
+      if (message.type === "state") {
+        setRenderers(message.renderers)
+        setStale(message.stale ?? false)
+      } else if (message.type === "picked") tree.picked(message.id)
       else if (tree.apply(message))
         next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)
     },
@@ -54,6 +57,7 @@ function connect() {
 // A new document starts empty: show only what it reports.
 browser.devtools.network.onNavigated.addListener(() => {
   setRenderers([])
+  setStale(false)
   tree.clear()
   subscribe(port)
 })
@@ -86,5 +90,12 @@ render(() => {
       { defer: true },
     ),
   )
-  return <Panel renderers={renderers()} tree={tree} />
+  return (
+    <Panel
+      renderers={renderers()}
+      tree={tree}
+      stale={stale()}
+      onReload={() => browser.devtools.inspectedWindow.reload({})}
+    />
+  )
 }, document.getElementById("app") as HTMLElement)
