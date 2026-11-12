@@ -92,7 +92,9 @@ for (const { fixture, port, opens } of fixtures)
       // can re-render the row.
       await frame.click(button)
       if (opens) {
-        const text = await until(launched, (t) => t.includes(opens))
+        // A fresh Next server compiles its 404 page for Vite's endpoint first,
+        // which takes seconds, before Next's own endpoint is asked.
+        const text = await until(launched, (t) => t.includes(opens), 20_000)
         assert.ok(text.includes(opens), `log never contained ${opens}: ${text}`)
       } else {
         const inspector = await until(panel.inspector, (t) =>
