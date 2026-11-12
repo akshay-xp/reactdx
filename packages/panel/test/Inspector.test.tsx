@@ -1,4 +1,5 @@
 import {
+  expanded,
   inspected,
   type TreeKind,
   treeBatch,
@@ -106,4 +107,100 @@ test("a section header collapses and expands it", () => {
   expect(rows(container)).toEqual([])
   fireEvent.click(header)
   expect(rows(container)).toEqual(["a: 1"])
+})
+
+const toggle = (container: Element, name: string) => {
+  const row = [...container.querySelectorAll("[data-testid=value]")].find(
+    (el) => el.textContent?.startsWith(`${name}:`),
+  )
+  return row?.querySelector("[data-testid=value-toggle]") ?? null
+}
+
+test("an inline object opens in place without asking the page", () => {
+  const { container, inspector, select, sent } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ user: object({ name: "Ada" }, { id: 2 }) }),
+    }),
+  )
+  const button = toggle(container, "user")
+  expect(button).not.toBeNull()
+  fireEvent.click(button as Element)
+  expect(rows(container)).toEqual(['user: {name: "Ada"}', 'name: "Ada"'])
+  expect(sent.filter((c) => c.type === "expand")).toEqual([])
+  fireEvent.click(button as Element)
+  expect(rows(container)).toEqual(['user: {name: "Ada"}'])
+})
+
+test("a ref asks the page and shows its contents when they arrive", () => {
+  const { container, inspector, select, sent } = setup()
+  select()
+  const ref: Value = {
+    type: "ref",
+    id: 9,
+    preview: { type: "object", className: "Object", size: 1 },
+  }
+  inspector.receive(inspected(3, { props: object({ deep: ref }) }))
+  fireEvent.click(toggle(container, "deep") as Element)
+  expect(sent.at(-1)).toEqual({ type: "expand", objectId: 9, offset: 0 })
+  inspector.receiveExpanded(expanded(9, 0, object({ c: 1 }, { id: 9 })))
+  expect(rows(container)).toEqual(["deep: {...}", "c: 1"])
+})
+
+test("a paged value shows more on request", () => {
+  const { container, inspector, select, sent } = setup()
+  select()
+  const list: Value = {
+    type: "array",
+    id: 4,
+    length: 250,
+    items: [1, 2],
+    nextOffset: 2,
+  }
+  inspector.receive(inspected(3, { props: object({ list }) }))
+  fireEvent.click(toggle(container, "list") as Element)
+  expect(rows(container)).toEqual(["list: Array(250)", "0: 1", "1: 2"])
+  const more = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "Show more (248 left)",
+  )
+  fireEvent.click(more as Element)
+  expect(sent.at(-1)).toEqual({ type: "expand", objectId: 4, offset: 2 })
+  inspector.receiveExpanded(
+    expanded(4, 2, { type: "array", id: 4, length: 250, items: [3] }),
+  )
+  expect(rows(container)).toEqual(["list: Array(250)", "0: 1", "1: 2", "2: 3"])
+})
+
+test("map entries read key => value; circular refs don't open", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        map: { type: "map", id: 5, size: 1, entries: [["k", 1]] },
+        self: { type: "ref", id: 1, circular: true },
+      }),
+    }),
+  )
+  expect(toggle(container, "self")).toBeNull()
+  fireEvent.click(toggle(container, "map") as Element)
+  expect(rows(container)).toEqual([
+    "map: Map(1)",
+    '"k" => 1',
+    "self: [circular]",
+  ])
+})
+
+test("an open value stays open across a re-send", () => {
+  const { container, inspector, select } = setup()
+  select()
+  const send = (name: string) =>
+    inspector.receive(
+      inspected(3, { props: object({ user: object({ name }, { id: 2 }) }) }),
+    )
+  send("Ada")
+  fireEvent.click(toggle(container, "user") as Element)
+  send("Grace")
+  expect(rows(container)).toEqual(['user: {name: "Grace"}', 'name: "Grace"'])
 })

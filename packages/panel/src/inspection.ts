@@ -90,6 +90,12 @@ export function createInspectorStore(
       setOpen(map)
     },
     expansion: (objectId: number) => expansions().get(objectId),
-    more: expand,
+    // The next page of a loaded container, appended to it when it arrives.
+    more(value: Container) {
+      if (value.nextOffset === undefined) return
+      if (!expansions().has(value.id))
+        setExpansions(new Map(expansions()).set(value.id, value))
+      expand(value.id, value.nextOffset)
+    },
   }
 }

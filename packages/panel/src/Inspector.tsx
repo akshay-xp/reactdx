@@ -1,4 +1,4 @@
-import type { Value } from "@reactdx/messages"
+import type { Container, Value } from "@reactdx/messages"
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import type { InspectorStore } from "./inspection"
 import { BADGES, TRIANGLE } from "./TreeView"
@@ -28,11 +28,50 @@ function tone(value: Value) {
   }
 }
 
-// A container's own entries as name/value pairs (an object's props).
-const entriesOf = (value: Value | undefined): [string, Value][] =>
-  value !== null && typeof value === "object" && value.type === "object"
-    ? Object.entries(value.props)
-    : []
+type Entry = { name: string; value: Value; arrow?: boolean }
+
+const isContainer = (value: Value): value is Container =>
+  value !== null &&
+  typeof value === "object" &&
+  "id" in value &&
+  value.type !== "ref"
+
+// A container's loaded entries, and how many are still on the page.
+function entriesOf(value: Container): { entries: Entry[]; left: number } {
+  const named = (props: Record<string, Value> = {}) =>
+    Object.entries(props).map(([name, item]) => ({ name, value: item }))
+  const indexed = (items: Value[]) =>
+    items.map((item, i) => ({ name: String(i), value: item }))
+  switch (value.type) {
+    case "object": {
+      const entries = named(value.props)
+      return { entries, left: value.size - entries.length }
+    }
+    case "array":
+    case "typed-array":
+      return {
+        entries: [
+          ...indexed(value.items),
+          ...named(value.type === "array" ? value.props : undefined),
+        ],
+        left: value.length - value.items.length,
+      }
+    case "map":
+      return {
+        entries: value.entries.map(([key, item]) => ({
+          name: previewText(key),
+          value: item,
+          arrow: true,
+        })),
+        left: value.size - value.entries.length,
+      }
+    case "set":
+      return {
+        entries: indexed(value.values),
+        left: value.size - value.values.length,
+      }
+  }
+}
 
 // The selected node's values (docs/panel.md, Inspector). Page data is text only.
 export function Inspector(props: {
@@ -51,16 +90,28 @@ export function Inspector(props: {
     setCollapsed(next)
   }
   const section = (name: string, value: Value | undefined) => (
-    <Show when={entriesOf(value).length > 0}>
-      <Section
-        name={name}
-        open={!collapsed().has(name)}
-        onToggle={() => toggle(name)}
-      >
-        <For each={entriesOf(value)}>
-          {([key, item]) => <ValueRow name={key} value={item} />}
-        </For>
-      </Section>
+    <Show
+      when={
+        value !== undefined &&
+        isContainer(value) &&
+        entriesOf(value).entries.length > 0 &&
+        value
+      }
+    >
+      {(container) => (
+        <Section
+          name={name}
+          open={!collapsed().has(name)}
+          onToggle={() => toggle(name)}
+        >
+          <Children
+            inspector={props.inspector}
+            value={container()}
+            path={name}
+            depth={0}
+          />
+        </Section>
+      )}
     </Show>
   )
   return (
@@ -132,16 +183,112 @@ function Triangle(props: { open: boolean }) {
   )
 }
 
-function ValueRow(props: { name: string; value: Value }) {
+// A container's rows, with what was loaded for it since (more pages).
+function Children(props: {
+  inspector: InspectorStore
+  value: Container
+  path: string
+  depth: number
+}) {
+  const loaded = () =>
+    (props.inspector.expansion(props.value.id) as Container | undefined) ??
+    props.value
+  const list = () => entriesOf(loaded())
   return (
-    <div
-      data-testid="value"
-      class="flex items-center whitespace-nowrap pr-2 pl-6"
-    >
-      <span class="text-syntax-key">{`${props.name}:`}</span>{" "}
-      <span class={`truncate ${tone(props.value)}`}>
-        {previewText(props.value)}
-      </span>
-    </div>
+    <>
+      <For each={list().entries}>
+        {(entry) => (
+          <ValueRow
+            inspector={props.inspector}
+            entry={entry}
+            path={`${props.path}.${entry.name}`}
+            depth={props.depth}
+          />
+        )}
+      </For>
+      <Show when={list().left > 0 && loaded().nextOffset !== undefined}>
+        <button
+          type="button"
+          class="text-accent hover:underline"
+          style={{ "padding-left": `${(props.depth + 2) * 12}px` }}
+          onClick={() => props.inspector.more(loaded())}
+        >
+          {`Show more (${list().left} left)`}
+        </button>
+      </Show>
+    </>
+  )
+}
+
+function ValueRow(props: {
+  inspector: InspectorStore
+  entry: Entry
+  path: string
+  depth: number
+}) {
+  const value = () => props.entry.value
+  // A value the page sent as a ref (past its depth limit) loads when opened.
+  const ref = () => {
+    const v = value()
+    return v !== null &&
+      typeof v === "object" &&
+      v.type === "ref" &&
+      "preview" in v
+      ? v.id
+      : undefined
+  }
+  // What opening shows: the value itself, or what the page sent for the ref.
+  const target = () => {
+    const v = value()
+    if (isContainer(v)) return v
+    const id = ref()
+    return id === undefined
+      ? undefined
+      : (props.inspector.expansion(id) as Container | undefined)
+  }
+  const openable = () => isContainer(value()) || ref() !== undefined
+  const open = () => props.inspector.isOpen(props.path)
+  const toggle = () =>
+    open()
+      ? props.inspector.close(props.path)
+      : props.inspector.open(props.path, ref())
+  return (
+    <>
+      <div
+        data-testid="value"
+        class="flex items-center whitespace-nowrap pr-2"
+        style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
+      >
+        <span class="flex w-3 shrink-0 justify-center">
+          <Show when={openable()}>
+            <button
+              type="button"
+              data-testid="value-toggle"
+              aria-label={open() ? "Collapse" : "Expand"}
+              aria-expanded={open()}
+              class="flex h-3 w-3 items-center justify-center text-muted"
+              onClick={toggle}
+            >
+              <span style={TRIANGLE} classList={{ "rotate-90": open() }} />
+            </button>
+          </Show>
+        </span>
+        <span class="text-syntax-key">
+          {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
+        </span>
+        {props.entry.arrow ? " => " : " "}
+        <span class={`truncate ${tone(value())}`}>{previewText(value())}</span>
+      </div>
+      <Show when={open() && target()}>
+        {(container) => (
+          <Children
+            inspector={props.inspector}
+            value={container()}
+            path={props.path}
+            depth={props.depth + 1}
+          />
+        )}
+      </Show>
+    </>
   )
 }

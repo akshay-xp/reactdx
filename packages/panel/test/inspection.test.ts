@@ -1,4 +1,9 @@
-import { expanded, inspected, type Value } from "@reactdx/messages"
+import {
+  type Container,
+  expanded,
+  inspected,
+  type Value,
+} from "@reactdx/messages"
 import { expect, test } from "vitest"
 import { createInspectorStore, type InspectorCommand } from "../src/inspection"
 
@@ -67,7 +72,7 @@ test("more pages are appended to the expansion", () => {
     nextOffset: 2,
   }
   store.receiveExpanded(expanded(9, 0, first))
-  store.more(9, 2)
+  store.more(first as Container)
   expect(sent.at(-1)).toEqual({ type: "expand", objectId: 9, offset: 2 })
   store.receiveExpanded(
     expanded(9, 2, { type: "array", id: 9, length: 3, items: [3] }),
