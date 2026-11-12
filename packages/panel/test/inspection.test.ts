@@ -1,6 +1,6 @@
 import { expanded, inspected, type Value } from "@reactdx/messages"
 import { expect, test } from "vitest"
-import { createInspectorStore, type InspectorCommand } from "../src/inspector"
+import { createInspectorStore, type InspectorCommand } from "../src/inspection"
 
 const object = (props: Record<string, Value>, extra = {}): Value => ({
   type: "object",
