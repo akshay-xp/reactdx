@@ -2,6 +2,7 @@ import {
   CLEAR_HIGHLIGHT,
   highlight,
   PICK_START,
+  PICK_STOP,
   picked,
   type TreeBatchMessage,
   UNWATCH,
@@ -101,4 +102,32 @@ test("a pick swallows the click and posts the owner's id", () => {
   } finally {
     document.removeEventListener("click", listener)
   }
+})
+
+test("Escape cancels picking and hides the highlight", () => {
+  send(WATCH)
+  const before = children()
+  send(PICK_START)
+  button().dispatchEvent(new PointerEvent("pointermove", { bubbles: true }))
+  expect(children()).toBe(before + 1)
+  globalThis.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
+  expect(posted.at(-1)).toEqual(picked(null))
+  expect(children()).toBe(before)
+  expect(click(button())).toBe(true)
+})
+
+test.each([
+  ["pick-stop", PICK_STOP],
+  ["unwatch", UNWATCH],
+])("%s ends picking without a pick", (_, stop) => {
+  send(WATCH)
+  send(PICK_START)
+  const count = posted.length
+  send(stop)
+  expect(click(button())).toBe(true)
+  expect(
+    posted
+      .slice(count)
+      .filter((m) => (m as { type?: string }).type === "picked"),
+  ).toEqual([])
 })

@@ -88,13 +88,23 @@ export function startAgent(
     stopPicking()
     post(picked(owner(event) ?? null))
   }
+  const escaped = (event: Event) => {
+    if ((event as KeyboardEvent).key !== "Escape") return
+    stopPicking()
+    post(picked(null))
+  }
+  const picking: [string, (event: Event) => void][] = [
+    ["pointermove", pointing],
+    ["click", clicked],
+    ["keydown", escaped],
+  ]
   const startPicking = () => {
-    target.addEventListener("pointermove", pointing, true)
-    target.addEventListener("click", clicked, true)
+    for (const [type, listener] of picking)
+      target.addEventListener(type, listener, true)
   }
   const stopPicking = () => {
-    target.removeEventListener("pointermove", pointing, true)
-    target.removeEventListener("click", clicked, true)
+    for (const [type, listener] of picking)
+      target.removeEventListener(type, listener, true)
     overlay?.hide()
   }
 
@@ -119,8 +129,9 @@ export function startAgent(
     else if (data.type === "highlight") highlight(data.id)
     else if (data.type === "clear-highlight") overlay?.hide()
     else if (data.type === "pick-start") startPicking()
+    else if (data.type === "pick-stop") stopPicking()
     else if (data.type === "unwatch") {
-      overlay?.hide()
+      stopPicking()
       watching = false
       buffer.length = 0
       tree.clear()
