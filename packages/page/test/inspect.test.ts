@@ -208,3 +208,33 @@ test("DOM nodes are described, not walked", () => {
     className: "icon",
   })
 })
+
+test("object keys are paged like collections", () => {
+  const { serialize, expand } = createInspector()
+  const value = Object.fromEntries(
+    Array.from({ length: 250 }, (_, i) => [`k${i}`, i]),
+  )
+  const result = serialize(value)
+  expect(Object.keys(at(result, "props") as object)).toHaveLength(100)
+  expect(at(result, "nextOffset")).toBe(100)
+  expect(at(result, "size")).toBe(250)
+  const last = expand(at(result, "id") as number, 200)
+  expect(Object.keys(at(last, "props") as object)).toEqual(
+    Array.from({ length: 50 }, (_, i) => `k${200 + i}`),
+  )
+  expect(at(last, "nextOffset")).toBeUndefined()
+})
+
+test("symbol keys, array extras and holes are kept", () => {
+  const { serialize } = createInspector()
+  expect(at(serialize({ [Symbol("s")]: 1 }), "props")).toEqual({
+    "Symbol(s)": 1,
+  })
+  const list = Object.assign([1, 2], { extra: "x" })
+  expect(serialize(list)).toMatchObject({
+    items: [1, 2],
+    props: { extra: "x" },
+  })
+  // biome-ignore lint/suspicious/noSparseArray: the hole is the point
+  expect(at(serialize([1, , 3]), "items")).toEqual([1, { type: "hole" }, 3])
+})

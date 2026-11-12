@@ -67,6 +67,33 @@ function leaf(value: object) {
   if (value instanceof Promise) return { type: "promise" }
 }
 
+// Own keys, symbols included, read without running getters.
+const keysOf = (value: object) =>
+  Reflect.ownKeys(Object.getOwnPropertyDescriptors(value))
+
+const isIndex = (key: string | symbol) =>
+  typeof key === "string" && String(Number(key) >>> 0) === key
+
+function* indexes(length: number) {
+  for (let i = 0; i < length; i++) yield i
+}
+
+// Through descriptors, so getters (app code) never run.
+function propsOf(
+  value: object,
+  keys: (string | symbol)[],
+  child: (item: unknown) => unknown,
+) {
+  const descriptors = Object.getOwnPropertyDescriptors(value)
+  const props: Record<string, unknown> = {}
+  for (const key of keys) {
+    const descriptor = descriptors[key as string] as PropertyDescriptor
+    props[String(key)] =
+      "value" in descriptor ? child(descriptor.value) : { type: "getter" }
+  }
+  return props
+}
+
 function preview(value: object) {
   if (Array.isArray(value)) return { type: "array", length: value.length }
   if (value instanceof Map) return { type: "map", size: value.size }
@@ -74,7 +101,7 @@ function preview(value: object) {
   return {
     type: "object",
     className: className(value),
-    size: Object.keys(Object.getOwnPropertyDescriptors(value)).length,
+    size: keysOf(value).length,
   }
 }
 
@@ -100,7 +127,17 @@ export function createInspector() {
       const { items, nextOffset } = pageOf(iterable, offset)
       return { items: items.map(map), ...(nextOffset && { nextOffset }) }
     }
-    if (Array.isArray(value)) return paged(value, child)
+    if (Array.isArray(value)) {
+      const extras = keysOf(value).filter(
+        (key) => key !== "length" && !isIndex(key),
+      )
+      return {
+        ...paged(indexes(value.length), (i) =>
+          i in value ? child(value[i]) : { type: "hole" },
+        ),
+        ...(extras.length && { props: propsOf(value, extras, child) }),
+      }
+    }
     if (value instanceof Map) {
       const { items, ...rest } = paged(value.entries(), ([key, item]) => [
         child(key),
@@ -112,14 +149,11 @@ export function createInspector() {
       const { items, ...rest } = paged(value.values(), child)
       return { values: items, ...rest }
     }
-    // Through descriptors, so getters (app code) never run.
-    const props: Record<string, unknown> = {}
-    for (const [key, descriptor] of Object.entries(
-      Object.getOwnPropertyDescriptors(value),
-    ))
-      props[key] =
-        "value" in descriptor ? child(descriptor.value) : { type: "getter" }
-    return { props }
+    const { items, nextOffset } = pageOf(keysOf(value), offset)
+    return {
+      props: propsOf(value, items, child),
+      ...(nextOffset && { nextOffset }),
+    }
   }
 
   function object(value: object, depth: number, offset: number) {
