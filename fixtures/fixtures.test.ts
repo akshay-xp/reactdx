@@ -76,6 +76,20 @@ for (const [script, port, version] of [
       assert.deepEqual(new Set(await cells(page)), new Set(["2"]))
       await page.close()
     })
+
+    test("the bench button mounts and unmounts one extra component", async () => {
+      const page = await browser.newPage()
+      await openBench(page, port)
+      await page.click("[data-testid=extra]")
+      await page.waitForSelector("[data-testid=extra-on]", { timeout: 2000 })
+      await page.click("[data-testid=extra]")
+      await page.waitForSelector("[data-testid=extra-on]", {
+        hidden: true,
+        timeout: 2000,
+      })
+      assert.equal((await cells(page)).length, 10000)
+      await page.close()
+    })
   })
 }
 
