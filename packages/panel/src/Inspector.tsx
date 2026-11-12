@@ -9,7 +9,12 @@ import {
   Switch,
 } from "solid-js"
 import type { InspectorStore } from "./inspection"
-import { label, type Sources } from "./source"
+import {
+  label,
+  locationText,
+  type SourceLocation,
+  type Sources,
+} from "./source"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
 import { previewText } from "./value"
@@ -95,6 +100,11 @@ export function Inspector(props: {
   // The last resolution stays shown while a re-send's equal source resolves.
   const location = () =>
     props.inspector.data()?.source ? resolved.latest : undefined
+  // The location last copied because no dev server opened it.
+  const [copied, setCopied] = createSignal<string>()
+  const open = async (at: SourceLocation) => {
+    if ((await props.sources.open(at)) === "copied") setCopied(locationText(at))
+  }
   const info = () => {
     const id = props.tree.selected()
     return id === undefined ? undefined : props.tree.info(id)
@@ -162,12 +172,27 @@ export function Inspector(props: {
                   data-testid="source"
                   class="flex h-7 shrink-0 items-center gap-2 border-border border-b px-2 font-mono text-muted"
                 >
-                  <span
-                    class="truncate"
-                    title={`${at().file}:${at().line}:${at().column}`}
-                  >
+                  <span class="truncate" title={locationText(at())}>
                     {label(at())}
                   </span>
+                  <button
+                    type="button"
+                    class="shrink-0 cursor-pointer text-accent hover:underline"
+                    onClick={() => open(at())}
+                  >
+                    Open in editor
+                  </button>
+                  <Show when={copied() === locationText(at())}>
+                    <span class="shrink-0">Copied</span>
+                    <Show when={at().file.startsWith("/")}>
+                      <a
+                        class="shrink-0 text-accent hover:underline"
+                        href={`vscode://file${locationText(at())}`}
+                      >
+                        VS Code
+                      </a>
+                    </Show>
+                  </Show>
                 </div>
               )}
             </Show>

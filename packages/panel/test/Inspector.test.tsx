@@ -372,3 +372,60 @@ test("no source row without a source or a resolved one", async () => {
   await settled()
   expect(container.querySelector("[data-testid=source]")).toBeNull()
 })
+
+test("Open in editor opens the resolved location; a copy offers VS Code for an absolute path", async () => {
+  const opened: (typeof counterAt)[] = []
+  let result: "opened" | "copied" = "opened"
+  // Each frame maps one line up, so another frame is another location.
+  const sources: Sources = {
+    resolve: async (source) => ({ ...counterAt, line: source.line - 1 }),
+    open: async (location) => {
+      opened.push(location)
+      return result
+    },
+  }
+  const { getByRole, queryByText, queryByRole, inspector, select } = setup(
+    "function",
+    null,
+    sources,
+  )
+  select()
+  inspector.receive(inspected(3, { props: object({}), source: frame }))
+  await settled()
+  fireEvent.click(getByRole("button", { name: "Open in editor" }))
+  await settled()
+  expect(opened).toEqual([counterAt])
+  expect(queryByText("Copied")).toBeNull()
+  result = "copied"
+  fireEvent.click(getByRole("button", { name: "Open in editor" }))
+  await settled()
+  expect(queryByText("Copied")).not.toBeNull()
+  expect(queryByRole("link", { name: "VS Code" })?.getAttribute("href")).toBe(
+    "vscode://file/a/src/Counter.jsx:13:7",
+  )
+  // Another source clears it.
+  inspector.receive(
+    inspected(3, { props: object({}), source: { ...frame, line: 20 } }),
+  )
+  await settled()
+  expect(queryByText("Copied")).toBeNull()
+})
+
+test("a copied relative path offers no VS Code link", async () => {
+  const sources: Sources = {
+    resolve: async () => ({ ...counterAt, file: "src/Counter.jsx" }),
+    open: async () => "copied",
+  }
+  const { getByRole, queryByText, queryByRole, inspector, select } = setup(
+    "function",
+    null,
+    sources,
+  )
+  select()
+  inspector.receive(inspected(3, { props: object({}), source: frame }))
+  await settled()
+  fireEvent.click(getByRole("button", { name: "Open in editor" }))
+  await settled()
+  expect(queryByText("Copied")).not.toBeNull()
+  expect(queryByRole("link", { name: "VS Code" })).toBeNull()
+})

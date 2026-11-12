@@ -10,6 +10,10 @@ export type Sources = {
   open(location: SourceLocation): Promise<"opened" | "copied">
 }
 
+// The full form: what's copied, and the header's title.
+export const locationText = ({ file, line, column }: SourceLocation) =>
+  `${file}:${line}:${column}`
+
 // The header's short form: the file's name and the line.
 export const label = ({ file, line }: SourceLocation) =>
   `${file.slice(file.lastIndexOf("/") + 1)}:${line}`
