@@ -34,7 +34,7 @@ Every fixture's `Counter` renders a `Clicked` component (which renders nothing) 
 
 ## Hooks page
 
-`fixtures/vite` also serves `/hooks.html` (`src/hooks.jsx`): one `Hooks` component (`data-testid="hooks"`) calling every hook the inspector reads at its top level, inside `Theme` (`"dark"`), plus a `useCart` custom hook with a debug value. React 19's own hooks run only on React 19 (`typeof use === "function"`, the same on every render), inline: a helper function would show as a custom hook. `e2e/inspector.test.ts` lists what each row shows.
+`fixtures/vite` also serves `/hooks.html` (`src/hooks.jsx`): one `Hooks` component (`data-testid="hooks"`) calling every hook the inspector reads at its top level, inside `Theme` (`"dark"`), plus a `useCart` custom hook with a debug value. For hook names it assigns `const [one, setOne] = useState(1)`, `const box = useRef({ a: 1 })`, `const handle = useRef(null)` and `const cart = useCart()`, read in one `void [...]` (lint's unused-variable rule). React 19's own hooks run only on React 19 (`typeof use === "function"`, the same on every render), inline: a helper function would show as a custom hook. `e2e/inspector.test.ts` lists what each row shows.
 
 ## Bench page
 
