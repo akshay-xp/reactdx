@@ -113,7 +113,7 @@ function propsOf(
   const props: Record<string, unknown> = {}
   for (const key of keys) {
     const descriptor = descriptors[key as string] as PropertyDescriptor
-    props[String(key)] =
+    props[bounded(String(key))] =
       "value" in descriptor ? child(descriptor.value) : { type: "getter" }
   }
   return props
@@ -162,9 +162,9 @@ export function createInspector() {
       return { items: items.map(map), ...(nextOffset && { nextOffset }) }
     }
     if (Array.isArray(value)) {
-      const extras = keysOf(value).filter(
-        (key) => key !== "length" && !isIndex(key),
-      )
+      const extras = keysOf(value)
+        .filter((key) => key !== "length" && !isIndex(key))
+        .slice(0, PAGE)
       return {
         ...paged(indexes(value.length), (i) =>
           i in value ? child(value[i]) : { type: "hole" },

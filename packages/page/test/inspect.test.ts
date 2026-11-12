@@ -1,3 +1,4 @@
+import { parseValue } from "@reactdx/messages"
 import React from "react"
 import { expect, test } from "vitest"
 import { createInspector } from "../src/inspect.ts"
@@ -305,4 +306,24 @@ test("release() drops every described object", () => {
   inspector.release()
   expect(inspector.expand(ref)).toBeUndefined()
   expect(at(inspector.serialize({ x: 1 }), "id")).toBe(1)
+})
+
+test("everything it sends passes the panel's checks", () => {
+  const { serialize } = createInspector()
+  const list = Object.assign(
+    [1],
+    Object.fromEntries(Array.from({ length: 150 }, (_, i) => [`x${i}`, i])),
+  )
+  const value = {
+    ["k".repeat(2000)]: 1,
+    list,
+    deep: { a: { b: { c: 1 } } },
+    map: new Map([[{ k: 1 }, new Set([1])]]),
+    bytes: new Uint8Array(3),
+    fn() {},
+    when: new Date(0),
+    [Symbol("s".repeat(300))]: /x/g,
+  }
+  const result = serialize(value)
+  expect(parseValue(result)).toEqual(result)
 })
