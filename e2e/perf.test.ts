@@ -108,3 +108,56 @@ test("a mounted component's row shows within 100 ms of its batch", {
     await browser.close()
   }
 })
+
+test("the 10k tree scrolls with under 100 DOM rows and no long task", {
+  skip,
+}, async (t) => {
+  const { browser, panel } = await benchPanel()
+  try {
+    const run = await panel.evaluate(async () => {
+      const frame = () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        )
+      const settle = () => new Promise((resolve) => setTimeout(resolve, 200))
+      const tasks: number[] = []
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) tasks.push(entry.duration)
+      }).observe({ type: "longtask" })
+      // Proves the observer sees this frame's long tasks. Its own task: one in the
+      // task that registered the observer isn't reported.
+      await settle()
+      setTimeout(() => {
+        const start = performance.now()
+        while (performance.now() - start < 80);
+      })
+      await settle()
+      const observed = tasks.splice(0).length > 0
+
+      const tree = document.querySelector("[data-testid=tree]") as HTMLElement
+      const count = () => document.querySelectorAll("[data-testid=node]").length
+      let most = count()
+      let steps = 0
+      while (tree.scrollTop + tree.clientHeight < tree.scrollHeight) {
+        tree.scrollTop += tree.clientHeight
+        await frame()
+        most = Math.max(most, count())
+        steps++
+      }
+      await settle()
+      const last = [...document.querySelectorAll("[data-testid=node]")].at(-1)
+      return { observed, tasks, most, steps, last: last?.textContent }
+    })
+    t.diagnostic(JSON.stringify({ ...run, tasks: run.tasks.length }))
+    assert.ok(run.observed, "the long-task observer saw no planted task")
+    assert.ok(run.steps > 100, `${run.steps} scroll steps`)
+    assert.ok(run.most < 100, `${run.most} rows in the DOM`)
+    assert.equal(run.last, 'Cell key="9999"')
+    assert.deepEqual(
+      run.tasks.filter((ms) => ms > 50),
+      [],
+    )
+  } finally {
+    await browser.close()
+  }
+})
