@@ -210,6 +210,12 @@ export function createTreeStore() {
     },
 
     rows,
+    // A node's name, kind and key, for the inspector's header.
+    info(id: number) {
+      version()
+      const node = nodes.get(id)
+      return node && { name: node.name, kind: node.kind, key: node.key }
+    },
     key,
     selected,
     hovered,

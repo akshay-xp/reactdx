@@ -12,10 +12,11 @@ import {
 import type { TreeStore } from "./tree"
 import { ROW_HEIGHT, windowOf } from "./virtual"
 
-const BADGES = new Set<TreeKind>(["memo", "forwardRef", "lazy"])
+// Kinds worth a badge: the rest are plain components or DOM elements.
+export const BADGES = new Set<TreeKind>(["memo", "forwardRef", "lazy"])
 
 // A right-pointing CSS triangle: no text, so nothing for text readers to pick up.
-const TRIANGLE = {
+export const TRIANGLE = {
   "border-left": "4px solid currentColor",
   "border-top": "4px solid transparent",
   "border-bottom": "4px solid transparent",
