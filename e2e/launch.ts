@@ -13,36 +13,45 @@ export const reactdxBuild = (name: BrowserName) =>
 
 // DevTools pages only exist in a headed browser, so both launch headed with DevTools open.
 // The panel helpers need the ReactDX build among the extensions (the default).
+// `devtools: false` (Chrome) keeps DevTools closed, which Chrome needs to prerender.
 export function launchWithExtension(
   name: BrowserName,
   extensions = [reactdxBuild(name)],
-  options: { devtoolsTheme?: "light" | "dark" } = {},
+  options: { devtoolsTheme?: "light" | "dark"; devtools?: boolean } = {},
 ): Promise<{
   browser: Browser
   panelCreated(): Promise<boolean>
 }> {
   return name === "chrome"
-    ? launchChrome(extensions, options.devtoolsTheme)
+    ? launchChrome(extensions, options.devtoolsTheme, options.devtools ?? true)
     : launchFirefox(extensions)
 }
 
 async function launchChrome(
   extensions: string[],
-  devtoolsTheme?: "light" | "dark",
+  devtoolsTheme: "light" | "dark" | undefined,
+  openDevtools: boolean,
 ) {
   const userDataDir = devtoolsTheme && themedProfile(devtoolsTheme)
   const browser = await puppeteer.launch({
     headless: false,
-    devtools: true,
+    devtools: openDevtools,
     pipe: true,
-    enableExtensions: extensions,
+    // Empty: nothing at launch, but browser.installExtension works later.
+    enableExtensions: extensions.length ? extensions : true,
     userDataDir,
   })
   if (userDataDir)
     browser.on("disconnected", () =>
-      rmSync(userDataDir, { recursive: true, force: true }),
+      // Chrome can still be writing into the profile as it exits (ENOTEMPTY).
+      rmSync(userDataDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 200,
+      }),
     )
-  if (!extensions.includes(reactdxBuild("chrome")))
+  if (!openDevtools || !extensions.includes(reactdxBuild("chrome")))
     return { browser, panelCreated: async () => false }
   const devtools = await browser.waitForTarget(
     (target) => target.url().endsWith("/devtools.html"),

@@ -211,7 +211,16 @@ export const toolbarIcons = (icon: ToolbarIcon) =>
 
 // Content script to background, and background to panel: everything the tab's
 // document has, so the background needs no state of its own.
-export type TabStateMessage = { type: "state"; renderers: RendererView[] }
+// `stale`: the page loaded before ReactDX was installed or updated, so React never
+// saw the hook and only a reload can connect it.
+export type TabStateMessage = {
+  type: "state"
+  renderers: RendererView[]
+  stale?: boolean
+}
+
+// Toolbar title for tabs that were open when ReactDX was installed or updated.
+export const STALE_TITLE = "ReactDX: reload this page to check for React"
 
 // Background to content script: answer with the current TabStateMessage.
 export type GetStateMessage = { type: "get-state" }

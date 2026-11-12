@@ -8,13 +8,32 @@ const build = (bundleType: number) =>
   bundleType === 1 ? "development" : "production"
 
 // Page data is only ever a text node: never markup.
+// `stale`: the page loaded before ReactDX was installed or updated, so React never
+// saw its hook; only a reload can connect it.
 export function ConnectionList(props: {
   renderers: RendererView[]
   tree: TreeStore
+  stale?: boolean
+  onReload?: () => void
 }) {
   const development = () => props.renderers.some((r) => r.bundleType === 1)
   return (
     <Switch>
+      <Match when={props.renderers.length === 0 && props.stale}>
+        <div class="flex flex-col items-start gap-2 p-2">
+          <p class="text-muted">
+            This page was open before ReactDX was installed or updated. Reload
+            it to inspect React.
+          </p>
+          <button
+            type="button"
+            class="rounded-md bg-surface px-2 py-0.5 text-fg hover:bg-selected"
+            onClick={() => props.onReload?.()}
+          >
+            Reload page
+          </button>
+        </div>
+      </Match>
       <Match when={props.renderers.length === 0}>
         <p class="p-2 text-muted">No React on this page</p>
       </Match>

@@ -30,9 +30,13 @@ export default defineContentScript({
     let roots: RootInfo[] = []
     let agentRequested = false
     let agentSeen = false
+    // Run at document_start, the page is still loading. Firefox also injects into
+    // tabs already open at install, after their React loaded without the hook.
+    const stale = document.readyState !== "loading"
     const state = (): TabStateMessage => ({
       type: "state",
       renderers: tabState(renderers, roots),
+      stale,
     })
 
     // While a panel watches, tree batches flow over this port. It closes when the
@@ -60,9 +64,19 @@ export default defineContentScript({
       })
       window.postMessage(WATCH, "*")
     }
+    // A prerendered document (Chrome loads pages it expects you to open, unless
+    // DevTools is open) isn't in its tab yet, so the background can't act on what
+    // it says. Hold every message until the document is shown.
+    const shown = new Promise<void>((resolve) => {
+      if (!(document as { prerendering?: boolean }).prerendering) resolve()
+      else
+        document.addEventListener("prerenderingchange", () => resolve(), {
+          once: true,
+        })
+    })
     const send = () =>
-      browser.runtime
-        .sendMessage(state())
+      shown
+        .then(() => browser.runtime.sendMessage(state()))
         .then((reply?: StateReply) => reply?.watch && watch())
 
     window.addEventListener("message", (event) => {
@@ -85,9 +99,11 @@ export default defineContentScript({
         renderers.set(id, { version, bundleType, rendererPackageName })
         if (bundleType === 1 && !agentRequested) {
           agentRequested = true
-          browser.runtime.sendMessage({
-            type: "inject-agent",
-          } satisfies InjectAgentMessage)
+          shown.then(() =>
+            browser.runtime.sendMessage({
+              type: "inject-agent",
+            } satisfies InjectAgentMessage),
+          )
         }
       }
       send()
