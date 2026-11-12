@@ -112,10 +112,35 @@ export function createTreeStore() {
     return rows
   }
 
+  const toggle = (id: number) => {
+    if (!collapsed.delete(id)) collapsed.add(id)
+    setVersion(version() + 1)
+  }
+
+  // The nearest non-host ancestor, or undefined at the top of a root.
+  const parentOf = (id: number) => {
+    let parent = nodes.get(id)?.parentId
+    while (parent && nodes.get(parent)?.kind === "host")
+      parent = nodes.get(parent)?.parentId
+    return parent || undefined
+  }
+
   // Moves the selection within one root's rows; false for keys it doesn't handle.
   const key = (rootId: number, name: string): boolean => {
     const list = rows(rootId)
     const at = list.findIndex((row) => row.id === selected())
+    const current = list[at]
+    if (current && name === "ArrowLeft") {
+      const parent = parentOf(current.id)
+      if (current.expandable && current.expanded) toggle(current.id)
+      else if (parent) select(parent)
+      return true
+    }
+    if (current && name === "ArrowRight") {
+      if (current.expandable && !current.expanded) toggle(current.id)
+      else if (current.expandable) select((list[at + 1] as Row).id)
+      return true
+    }
     const last = list.length - 1
     const to = {
       ArrowUp: Math.max(at - 1, 0),
@@ -147,10 +172,7 @@ export function createTreeStore() {
     selected,
     select: (id: number) => select(id),
 
-    toggle(id: number) {
-      if (!collapsed.delete(id)) collapsed.add(id)
-      setVersion(version() + 1)
-    },
+    toggle,
 
     clear() {
       reset()

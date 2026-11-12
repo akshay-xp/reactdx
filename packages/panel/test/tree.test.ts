@@ -155,6 +155,31 @@ test("Up, Down, Home and End move through the root's rows", () => {
   expect(tree.selected()).toBe(1)
 })
 
+test("Left collapses or goes to the parent; Right expands or goes to the first child", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  const press = (key: string) => {
+    expect(tree.key(1, key)).toBe(true)
+    return tree.selected()
+  }
+  tree.select(5)
+  expect(press("ArrowLeft")).toBe(3)
+  expect(press("ArrowLeft")).toBe(3)
+  expect(tree.rows(1)[1]?.expanded).toBe(false)
+  expect(press("ArrowLeft")).toBe(1)
+  expect(press("ArrowLeft")).toBe(1)
+  expect(names(tree.rows(1))).toEqual(["0 App"])
+  expect(press("ArrowLeft")).toBe(1)
+
+  expect(press("ArrowRight")).toBe(1)
+  expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "1 C"])
+  expect(press("ArrowRight")).toBe(3)
+  expect(press("ArrowRight")).toBe(3)
+  expect(tree.rows(1)[1]?.expanded).toBe(true)
+  expect(press("ArrowRight")).toBe(5)
+  expect(press("ArrowRight")).toBe(5)
+})
+
 test("clear empties the store", () => {
   const tree = createTreeStore()
   tree.apply(resync)
