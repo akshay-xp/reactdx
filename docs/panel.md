@@ -6,9 +6,9 @@ Solid UI rendered in the DevTools panel. The browser glue (`browser.devtools.*`)
 
 - `Panel(props: { renderers: RendererView[]; tree: TreeStore })` renders `ConnectionList` in the themed `<main>`. `apps/extension/entrypoints/panel/main.tsx` connects a `runtime` port named `panel`, subscribes with `browser.devtools.inspectedWindow.tabId`, sets a signal from each `TabStateMessage`, and applies each tree batch to the store (`docs/messages.md`, "Tree flow").
 - States: no renderers: "No React on this page". Only production: "Production build of React <versions>. ReactDX inspects development builds." Otherwise one `[data-testid=renderer]` per copy (`React <version> <development|production> <rendererPackageName>`) with `[data-testid=root]` rows ("Root N", "N commits", `data-commits`). Production copies are listed with their roots (Next's dev overlay) but get no agent.
-- Under each development root, its component rows (`[data-testid=node]`, name as text, `padding-left` 12px per depth). Production roots list no components.
+- Under each development root, a `TreeView` of its components. Production roots list no components.
 - Page data is only ever a Solid text node, never markup (unit test and `e2e/forged.test.ts` check an `<img onerror>` version renders as text).
-- `test/ConnectionList.test.tsx` (Vitest `panel` project): each state, component rows under development roots only, text-only, no Tailwind palette classes.
+- `test/ConnectionList.test.tsx` (Vitest `panel` project): each state, component rows under development roots only, text-only, no Tailwind palette classes or arbitrary values (so `TreeView`'s `max-height: 80vh` is an inline style).
 - Reconnect: `main.tsx` `connect()` opens the `panel` port and subscribes; when the port drops (the background stopped), it connects again, which wakes the background and asks the relay for current state.
 - Reset: `browser.devtools.network.onNavigated` clears the list and subscribes again on the current port, so a new document shows only what it reports ("No React on this page" until its React connects).
 
@@ -17,9 +17,28 @@ Solid UI rendered in the DevTools panel. The browser glue (`browser.devtools.*`)
 The page's component tree, rebuilt from the agent's ops (`docs/messages.md`, "Tree batches"). Exported as `@reactdx/panel/tree`.
 
 - `apply(batch)` applies `reset`, `add`, `remove` (with descendants), `reorder` and `rename`, and bumps a Solid `version` signal. It returns true when the panel must ask for a resync: the first time a batch has the wrong `seq` or an op names an unknown id (an `add` under an unknown parent, a `reorder` of one, a `remove` or `rename` of an unknown node). After that it ignores batches until one starting with `reset`, so a burst of bad batches asks once.
-- `rows(rootId)`: `Row = { id, name, depth }`, depth-first. Host (DOM element) nodes are hidden: their children take their place and depth.
-- `clear()`: on `onNavigated`, with the renderer list.
-- `test/tree.test.ts`: rows, hidden hosts, each op, the resync rules.
+- `rows(rootId)`: `Row = { id, name, depth, kind, key, expandable, expanded }`, depth-first. Host (DOM element) nodes are hidden: their children take their place and depth. `expandable` means it has a non-host descendant through hosts. Collapsed nodes' descendants aren't listed; everything starts expanded.
+- `toggle(id)`: collapses or expands.
+- `selected()` / `select(id)`: one selection for the panel (ids are unique per document). After each batch it's cleared only if its node is gone, so it survives commits and a resync that re-adds the id (ids persist across watches, `docs/page.md`).
+- `key(rootId, key): boolean`: moves the selection within that root's rows; true when the key is handled. A selection in another root counts as none.
+  - `ArrowUp`/`ArrowDown`: previous/next row, clamped; with none selected, the first row.
+  - `Home`/`End`: first/last row.
+  - `ArrowLeft`: collapses an expanded row, else selects the nearest non-host ancestor.
+  - `ArrowRight`: expands a collapsed row, else selects its first child; nothing on a leaf.
+- `clear()`: on `onNavigated`, with the renderer list; also drops collapse state and the selection.
+- `test/tree.test.ts`: rows, hidden hosts, each op, the resync rules, collapse, selection, every key.
+
+## Tree view (`TreeView`, `src/TreeView.tsx`, `src/virtual.ts`; M3 #26)
+
+One per development root: `TreeView(props: { tree: TreeStore; rootId: number })`.
+
+- Virtual list: a scroll container (`[data-testid=tree]`, `role="tree"`, focusable, `max-height: 80vh`) holding a spacer of `rows × ROW_HEIGHT` (20px) and only the window of rows `windowOf(scrollTop, height, count)` returns: the rows in view plus `OVERSCAN` (10) each side. `scrollTop` and `clientHeight` are read on mount, `scroll` and window `resize`. Fixed row height keeps the window arithmetic and unit-testable without layout (`test/virtual.test.ts`).
+- Rows (`[data-testid=node]`, `role="treeitem"`, `aria-level`, `aria-selected`, `aria-expanded` when expandable, `data-id`): a toggle (`[data-toggle]` area, `[data-testid=toggle]` CSS-border triangle, rotated when expanded; no text so the e2e text readers don't take it for a name), the name, a `[data-testid=badge]` for `memo`/`forwardRef`/`lazy`, and `[data-testid=key]` as one text node `key="…"`. All page data is text nodes.
+- Selected row: `bg-selected`, badge and key `text-fg` (dark `muted` on `selected` is 2.9:1).
+- Clicks and keys are handled once on the container: rows are recycled as the window moves, and the container holds focus. A click on an expandable row's toggle area toggles it; any other row click selects. Handled keys (`tree.key`) are `preventDefault`ed.
+- A selection change scrolls the selected row into view (End on 10,000 rows renders the last one). Only selection changes scroll, so a commit doesn't pull the view back.
+- Perf marks: `main.tsx` marks `reactdx:subscribe` on every subscribe; `TreeView` marks `reactdx:rows` each time its rows go from empty to non-empty. `e2e/perf.test.ts` reads them (`docs/e2e.md`).
+- `test/TreeView.test.tsx`: a 1,000-row tree keeps fewer than 100 rows in the DOM, badges, keys and toggles, text-only keys, click, toggle and keyboard.
 
 ## Themes (`src/themes.ts`, `src/index.css`)
 

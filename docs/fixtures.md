@@ -33,7 +33,9 @@ Every fixture's `Counter` renders a `Clicked` component (which renders nothing) 
 
 ## Bench page
 
-`fixtures/vite` also serves `/bench.html` (`src/bench.jsx`): 10,000 `Cell` components (`data-testid="cell"`) and `window.__bench(mode, iterations)`, which times `flushSync` commits (`all` updates every cell, `one` the first) and returns the durations in ms. Used by `pnpm bench:hook-cost` (`docs/bench.md`); checked by `pnpm test:fixtures`.
+`fixtures/vite` also serves `/bench.html` (`src/bench.jsx`): a `Bench` component over 10,000 `Cell` components (`data-testid="cell"`) and `window.__bench(mode, iterations)`, which times `flushSync` commits (`all` updates every cell, `one` the first) and returns the durations in ms. Used by `pnpm bench:hook-cost` (`docs/bench.md`) and `e2e/perf.test.ts`; checked by `pnpm test:fixtures`.
+
+- `[data-testid=extra]` button: mounts or unmounts `Extra` (renders `[data-testid=extra-on]`) before the cells, for the panel's commit-latency test. The cells are built once at module level, so the toggle doesn't re-render them.
 
 ## How each fixture picks its React
 
