@@ -154,6 +154,9 @@ importers:
       '@reactdx/messages':
         specifier: workspace:*
         version: link:../messages
+      acorn:
+        specifier: 8.19.0
+        version: 8.19.0
       solid-js:
         specifier: 1.9.18
         version: 1.9.18

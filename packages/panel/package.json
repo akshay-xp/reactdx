@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@jridgewell/trace-mapping": "0.3.31",
-    "@reactdx/messages": "workspace:*"
+    "@reactdx/messages": "workspace:*",
+    "acorn": "8.19.0"
   },
   "devDependencies": {
     "source-map-js": "1.2.2"
