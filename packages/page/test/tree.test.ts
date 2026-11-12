@@ -12,6 +12,7 @@ import type { Root } from "react-dom/client"
 import { afterEach, beforeAll, expect, test, vi } from "vitest"
 import { startAgent } from "../src/agent.ts"
 import { type HookRecord, installHook } from "../src/hook.ts"
+import { createTree } from "../src/tree.ts"
 import { mirror } from "./tree-mirror.ts"
 import { windowLike } from "./window.ts"
 
@@ -465,4 +466,62 @@ test("production renderers' roots stay out of the tree", async () => {
     "Child",
     "span",
   ])
+})
+
+let setCount: (count: number) => void = () => {}
+function Clicked() {
+  return null
+}
+function Counter() {
+  const [count, set] = React.useState(0)
+  setCount = set
+  return h(
+    React.Fragment,
+    null,
+    h("button", null, "Count"),
+    count % 2 === 1 && h(Clicked),
+  )
+}
+function Page() {
+  return h(React.Fragment, null, h("p", null, "v"), h(Counter))
+}
+
+test("find gives a node's name and top-level DOM elements", async () => {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() => root.render(h(Page)))
+  await React.act(() => setCount(1))
+  const record = (globalThis as unknown as Record<symbol, HookRecord>)[
+    Symbol.for("reactdx")
+  ] as HookRecord
+  const fiberRoot = [...record.roots.values()]
+    .flatMap((set) => [...set])
+    .find(
+      (r) =>
+        (r as unknown as { containerInfo: Element }).containerInfo ===
+        container,
+    )
+  if (!fiberRoot) throw new Error("no fiber root")
+
+  const tree = createTree()
+  const ops: TreeOp[] = []
+  tree.full(fiberRoot, 1, ops)
+  const id = (name: string) =>
+    adds(ops).find((op) => op.name === name)?.id as number
+  const button = container.querySelector("button")
+  const p = container.querySelector("p")
+  expect(tree.find(id("Counter"))).toEqual({
+    name: "Counter",
+    elements: [button],
+  })
+  expect(tree.find(id("Page"))?.elements).toEqual([p, button])
+  expect(tree.find(id("button"))?.elements).toEqual([button])
+  expect(tree.find(id("Clicked"))).toEqual({ name: "Clicked", elements: [] })
+  expect(tree.find(9999)).toBeUndefined()
+
+  await React.act(() => setCount(2))
+  tree.commit(fiberRoot, 1, [])
+  expect(tree.find(id("Clicked"))).toBeUndefined()
+  expect(tree.find(id("Counter"))?.elements).toEqual([button])
 })

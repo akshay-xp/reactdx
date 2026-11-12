@@ -11,6 +11,7 @@ type Fiber = {
   sibling: Fiber | null
   alternate: Fiber | null
   memoizedState: unknown
+  stateNode: unknown
 }
 
 type Named = {
@@ -98,6 +99,8 @@ export function createTree() {
   const children = new Map<number, number[]>()
   // Last name sent per id: Fast Refresh or a late displayName renames a mounted fiber.
   const names = new Map<number, string>()
+  // The latest fiber per emitted id, for find().
+  const fibers = new Map<number, Fiber>()
   const label = (fiber: Fiber) =>
     bounded(nameOf(fiber, kindOf(fiber) as TreeKind))
 
@@ -120,6 +123,7 @@ export function createTree() {
     const kind = kindOf(fiber) as TreeKind
     const name = label(fiber)
     names.set(id, name)
+    fibers.set(id, fiber)
     ops.push({
       op: "add",
       id,
@@ -152,6 +156,7 @@ export function createTree() {
     for (const child of children.get(id) ?? []) forget(child)
     children.delete(id)
     names.delete(id)
+    fibers.delete(id)
   }
 
   // Brings a known node's stored children in line with this commit.
@@ -179,6 +184,7 @@ export function createTree() {
     kids.forEach((kid, index) => {
       const id = next[index] as number
       if (known.has(id)) {
+        fibers.set(id, kid)
         const name = label(kid)
         if (name !== names.get(id)) {
           names.set(id, name)
@@ -205,6 +211,21 @@ export function createTree() {
     clear() {
       children.clear()
       names.clear()
+      fibers.clear()
+    },
+    // A node's name and its top-level DOM elements (itself, for a host node).
+    find(id: number) {
+      const fiber = fibers.get(id)
+      if (!fiber) return
+      const elements: Element[] = []
+      const collect = (at: Fiber) => {
+        if (kindOf(at) === "host") elements.push(at.stateNode as Element)
+        else if (!isHidden(at))
+          for (let child = at.child; child; child = child.sibling)
+            collect(child)
+      }
+      collect(fiber)
+      return { name: names.get(id) as string, elements }
     },
     commit(root: FiberRoot, rootId: number, ops: TreeOp[]) {
       const host = root.current as unknown as Fiber
