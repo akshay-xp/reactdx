@@ -132,7 +132,8 @@ export function startAgent(
   }
 
   // Picking listens on the window in the capture phase, ahead of the page's own
-  // handlers (React's sit on its root container), and swallows only the click.
+  // handlers (React's sit on its root container), and swallows the whole press:
+  // pages act on pointerdown and mousedown too (menus, drags, focus).
   const owner = (event: Event) =>
     event.target instanceof Element ? tree.owner(event.target) : undefined
   const pointing = (event: Event) => {
@@ -140,9 +141,12 @@ export function startAgent(
     if (id) highlight(id)
     else overlay?.hide()
   }
-  const clicked = (event: Event) => {
+  const swallow = (event: Event) => {
     event.preventDefault()
     event.stopImmediatePropagation()
+  }
+  const clicked = (event: Event) => {
+    swallow(event)
     stopPicking()
     post(picked(owner(event) ?? null))
   }
@@ -153,6 +157,10 @@ export function startAgent(
   }
   const picking: [string, (event: Event) => void][] = [
     ["pointermove", pointing],
+    ["pointerdown", swallow],
+    ["mousedown", swallow],
+    ["pointerup", swallow],
+    ["mouseup", swallow],
     ["click", clicked],
     ["keydown", escaped],
   ]

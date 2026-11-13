@@ -56,40 +56,48 @@ export function ConnectionList(props: {
           data-testid="split"
           class="flex min-h-0 flex-1 flex-col sm:flex-row"
         >
-          <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+          <div class="flex min-h-0 min-w-0 flex-1 flex-col">
             <Toolbar tree={props.tree} />
-            <ul>
-              <For each={props.renderers}>
-                {(renderer) => (
-                  <li data-testid="renderer" class="border-border border-b p-2">
-                    <h2>
-                      <span class="font-mono">React {renderer.version}</span>{" "}
-                      <span class="text-muted">
-                        {build(renderer.bundleType)}
-                      </span>{" "}
-                      <span class="font-mono text-muted">
-                        {renderer.rendererPackageName}
-                      </span>
-                    </h2>
-                    <ul class="pl-4">
-                      <For each={renderer.roots}>
-                        {(root) => (
-                          <li data-testid="root" data-commits={root.commits}>
-                            <span>Root {root.id}</span>
-                            <span class="pl-2 text-muted">
-                              {root.commits} commits
-                            </span>
-                            <Show when={renderer.bundleType === 1}>
-                              <TreeView tree={props.tree} rootId={root.id} />
-                            </Show>
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                  </li>
-                )}
-              </For>
-            </ul>
+            {/* The one scroller for every copy's trees, both ways; each TreeView
+                renders the rows in this pane's view. The content is as wide as
+                its widest row, so rows and the selection span it. */}
+            <div data-testid="trees" class="min-h-0 flex-1 overflow-auto">
+              <ul class="w-max min-w-full">
+                <For each={props.renderers}>
+                  {(renderer) => (
+                    <li
+                      data-testid="renderer"
+                      class="border-border border-b p-2"
+                    >
+                      <h2>
+                        <span class="font-mono">React {renderer.version}</span>{" "}
+                        <span class="text-muted">
+                          {build(renderer.bundleType)}
+                        </span>{" "}
+                        <span class="font-mono text-muted">
+                          {renderer.rendererPackageName}
+                        </span>
+                      </h2>
+                      <ul class="pl-4">
+                        <For each={renderer.roots}>
+                          {(root) => (
+                            <li data-testid="root" data-commits={root.commits}>
+                              <span>Root {root.id}</span>
+                              <span class="pl-2 text-muted">
+                                {root.commits} commits
+                              </span>
+                              <Show when={renderer.bundleType === 1}>
+                                <TreeView tree={props.tree} rootId={root.id} />
+                              </Show>
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </div>
           </div>
           <aside
             data-testid="inspector"

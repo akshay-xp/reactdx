@@ -22,20 +22,37 @@ export const TRIANGLE = {
   "border-bottom": "4px solid transparent",
 }
 
-// One root's tree. Only the rows in view (plus overscan) are in the DOM.
+// One root's tree. Only the rows in the pane's view (plus overscan) are in the
+// DOM. The tree doesn't scroll: the pane around it does ([data-testid=trees]; the
+// page's own scroller outside one).
 export function TreeView(props: { tree: TreeStore; rootId: number }) {
-  let scroller!: HTMLDivElement
+  let box!: HTMLDivElement
+  let pane: Element | undefined
   const rows = createMemo(() => props.tree.rows(props.rootId))
-  const [scrollTop, setScrollTop] = createSignal(0)
+  // The view's top in the tree's coordinates, and its height.
+  const [top, setTop] = createSignal(0)
   const [height, setHeight] = createSignal(0)
+  const offset = (pane: Element) =>
+    box.getBoundingClientRect().top - pane.getBoundingClientRect().top
   const measure = () => {
-    setScrollTop(scroller.scrollTop)
-    setHeight(scroller.clientHeight)
+    if (!pane) return
+    setTop(-offset(pane))
+    setHeight(pane.clientHeight)
   }
   onMount(() => {
+    const view = box.closest("[data-testid=trees]") ?? document.documentElement
+    pane = view
     measure()
-    addEventListener("resize", measure)
-    onCleanup(() => removeEventListener("resize", measure))
+    view.addEventListener("scroll", measure)
+    // The pane's height follows the panel's size; the box moves when trees
+    // above it change.
+    const observer = new ResizeObserver(measure)
+    observer.observe(view)
+    observer.observe(box)
+    onCleanup(() => {
+      view.removeEventListener("scroll", measure)
+      observer.disconnect()
+    })
   })
   const selected = (id: number) => props.tree.selected() === id
   // Dark muted on selected is 2.9:1 (docs/panel.md, Themes).
@@ -52,33 +69,53 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
     else props.tree.select(id)
   }
   // Times the first rows after a subscribe (e2e/perf.test.ts).
-  // The box grows with its rows (up to its max-height) and its height decides the
-  // window, so measure again when the count changes: rows can arrive after mount.
-  createEffect(on(() => rows().length, measure, { defer: true }))
   const shown = createMemo(() => rows().length > 0)
   createEffect(() => shown() && performance.mark("reactdx:rows"))
-  // Only on selection changes: a commit mustn't scroll back to the selection.
+  // Only on selection changes and reveals: a commit mustn't scroll back to the
+  // selection.
   createEffect(
-    on(props.tree.selected, (id) => {
+    on([props.tree.selected, props.tree.reveals], ([id]) => {
       const index = rows().findIndex((row) => row.id === id)
-      if (index === -1) return
-      const top = index * ROW_HEIGHT
-      if (top < scroller.scrollTop) scroller.scrollTop = top
-      else if (top + ROW_HEIGHT > scroller.scrollTop + scroller.clientHeight)
-        scroller.scrollTop = top + ROW_HEIGHT - scroller.clientHeight
+      // Before mount there's no layout to scroll.
+      if (index === -1 || !pane) return
+      // A row's clearance from the pane's edges: macOS draws the horizontal
+      // scrollbar over the content, so a row right at the bottom hides under it.
+      const margin = Math.min(ROW_HEIGHT, (pane.clientHeight - ROW_HEIGHT) / 2)
+      const top = offset(pane) + index * ROW_HEIGHT
+      if (top < margin) pane.scrollTop += top - margin
+      else if (top + ROW_HEIGHT + margin > pane.clientHeight)
+        pane.scrollTop += top + ROW_HEIGHT + margin - pane.clientHeight
+      measure()
+      // Next frame, after the scroll has applied and the window has rendered:
+      // bring the row's toggle and name into view sideways (deep rows start off
+      // to the right).
+      requestAnimationFrame(() => {
+        const row = box.querySelector(`[data-id="${id}"]`)
+        const start = row?.querySelector("[data-toggle]")
+        const end = row?.lastElementChild
+        if (!pane || !start || !end) return
+        const left = pane.getBoundingClientRect().left
+        const from = start.getBoundingClientRect().left - left
+        // The content's end (name, badge or key), a row's height from the right
+        // edge: macOS draws the vertical scrollbar over the content.
+        const to = end.getBoundingClientRect().right - left + ROW_HEIGHT
+        // Whole pixels, rounded outward: the scroll snaps to device pixels.
+        // Content that fits is shown whole; wider content shows its start.
+        if (from < 0 || to - from > pane.clientWidth)
+          pane.scrollLeft += Math.floor(from)
+        else if (to > pane.clientWidth)
+          pane.scrollLeft += Math.ceil(to - pane.clientWidth)
+      })
     }),
   )
-  const range = () => windowOf(scrollTop(), height(), rows().length)
+  const range = () => windowOf(top(), height(), rows().length)
 
   return (
     <div
-      ref={scroller}
+      ref={box}
       data-testid="tree"
       role="tree"
       tabIndex={0}
-      class="overflow-y-auto"
-      style={{ "max-height": "80vh" }}
-      onScroll={measure}
       onClick={click}
       onPointerOver={(event) => {
         const row = (event.target as Element).closest<HTMLElement>(
@@ -95,7 +132,10 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
         class="relative"
         style={{ height: `${rows().length * ROW_HEIGHT}px` }}
       >
+        {/* As wide as the widest row in the window (and at least the pane's
+            content), so every row and the selection's background span it. */}
         <div
+          class="w-max min-w-full"
           style={{ transform: `translateY(${range().start * ROW_HEIGHT}px)` }}
         >
           <For each={rows().slice(range().start, range().end)}>

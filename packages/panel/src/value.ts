@@ -38,9 +38,18 @@ const isContainer = (value: Value): value is Container =>
 const nested = (value: Value) =>
   isContainer(value) ? shape(value as Preview) : previewText(value)
 
+// Names read alphabetically: case ignored, numbers in order (a2 before a10).
+export const byName = (a: string, b: string) =>
+  a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+
+// An object's keys in reading order. Arrays, maps and sets keep theirs: order is
+// part of their value.
+export const sortedEntries = <T>(props: Record<string, T>) =>
+  Object.entries(props).sort(([a], [b]) => byName(a, b))
+
 function inline(value: Container): string {
   if (value.type === "object") {
-    const entries = Object.entries(value.props).slice(0, INLINE)
+    const entries = sortedEntries(value.props).slice(0, INLINE)
     const more = value.size > entries.length ? ", ..." : ""
     const body = entries.map(([key, item]) => `${key}: ${nested(item)}`)
     return `${prefix(value.className)}{${body.join(", ")}${more}}`

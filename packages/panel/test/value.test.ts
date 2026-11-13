@@ -35,6 +35,8 @@ test.each<[Value, string]>([
   [{ type: "symbol", description: null }, "Symbol()"],
   [object({ a: 1, b: "x" }), '{a: 1, b: "x"}'],
   [object({}), "{}"],
+  // Keys read alphabetically, ignoring case, numbers in order.
+  [object({ b: 1, B2: 2, a10: 3, a2: 4 }), "{a2: 4, a10: 3, b: 1, B2: 2}"],
   [object({ a: 1, b: object({}) }), "{a: 1, b: {...}}"],
   [
     object({ a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 }),

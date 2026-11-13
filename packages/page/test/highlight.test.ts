@@ -104,6 +104,33 @@ test("a pick swallows the click and posts the owner's id", () => {
   }
 })
 
+test("a pick swallows the whole press, not just the click", () => {
+  const press = ["pointerdown", "mousedown", "pointerup", "mouseup"]
+  const reached: string[] = []
+  const listener = (event: Event) => reached.push(event.type)
+  for (const type of press) document.addEventListener(type, listener)
+  const fire = (type: string) =>
+    button().dispatchEvent(
+      new (type.startsWith("pointer") ? PointerEvent : MouseEvent)(type, {
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+  try {
+    send(WATCH)
+    send(PICK_START)
+    // Default prevented too: a mousedown would otherwise move focus.
+    expect(press.map(fire)).toEqual([false, false, false, false])
+    click(button())
+    expect(reached).toEqual([])
+    // Picking ended with the click: the page gets its presses again.
+    expect(press.map(fire)).toEqual([true, true, true, true])
+    expect(reached).toEqual(press)
+  } finally {
+    for (const type of press) document.removeEventListener(type, listener)
+  }
+})
+
 test("Escape cancels picking and hides the highlight", () => {
   send(WATCH)
   const before = children()

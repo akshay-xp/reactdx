@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
 import type { BrowserName } from "./launch.ts"
+import { selectListed } from "./panel-text.ts"
 import { overlayPage, styles, waitForOverlays } from "./shadows.ts"
 
 const name = process.env.E2E_BROWSER as BrowserName
@@ -30,6 +31,26 @@ test("hovering a row highlights its component; leaving removes it", {
         `${side}: ${JSON.stringify(shown)}`,
       )
     assert.equal(shown.label, "Counter")
+    await panel.leave()
+    await waitForOverlays(page, 0)
+  } finally {
+    await browser.close()
+  }
+})
+
+// Chrome: the owner button is in the panel's document (Firefox's is out of reach).
+test("hovering an owner in Rendered by highlights it; leaving removes it", {
+  skip: skip || name !== "chrome",
+}, async () => {
+  const { browser, page, panel } = await overlayPage(name, URL_18)
+  try {
+    await selectListed(panel, "Counter", (t) => t.includes("Rendered by"))
+    const owner = await panel.frame?.waitForSelector(
+      "button[data-testid=owner]",
+    )
+    await owner?.hover()
+    const shown = await waitForOverlays(page, 1)
+    assert.equal(shown.label, "App")
     await panel.leave()
     await waitForOverlays(page, 0)
   } finally {

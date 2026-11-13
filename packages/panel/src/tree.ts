@@ -1,5 +1,5 @@
 import type { TreeBatchMessage, TreeKind, TreeOp } from "@reactdx/messages"
-import { createSignal } from "solid-js"
+import { batch, createSignal } from "solid-js"
 
 export type Row = {
   id: number
@@ -159,13 +159,19 @@ export function createTreeStore() {
     return out
   }
 
-  // Selects a node and expands its ancestors, so its row exists.
-  const reveal = (id: number) => {
-    for (let at = nodes.get(id)?.parentId; at; at = nodes.get(at)?.parentId)
-      collapsed.delete(at)
-    select(id)
-    setVersion(version() + 1)
-  }
+  // Selects a node and expands its ancestors, so its row exists. One batch: the
+  // selection's watchers (TreeView scrolls to the row) see the expanded rows.
+  // Counts reveals, so revealing the selected node again (a second pick of it)
+  // still scrolls to it: the selection itself doesn't change.
+  const [reveals, setReveals] = createSignal(0)
+  const reveal = (id: number) =>
+    batch(() => {
+      for (let at = nodes.get(id)?.parentId; at; at = nodes.get(at)?.parentId)
+        collapsed.delete(at)
+      select(id)
+      setVersion(version() + 1)
+      setReveals(reveals() + 1)
+    })
 
   // Moves the selection within one root's rows; false for keys it doesn't handle.
   const key = (rootId: number, name: string): boolean => {
@@ -218,6 +224,7 @@ export function createTreeStore() {
     },
     key,
     selected,
+    reveals,
     hovered,
     picking,
     setPicking: (on: boolean) => setPicking(on),

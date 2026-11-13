@@ -18,7 +18,7 @@ import {
 import { IconButton } from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
-import { previewText } from "./value"
+import { byName, previewText, sortedEntries } from "./value"
 
 // Text color per kind of value, from the theme's syntax tokens.
 function tone(value: Value) {
@@ -54,7 +54,7 @@ const isContainer = (value: Value): value is Container =>
 // A container's loaded entries, and how many are still on the page.
 function entriesOf(value: Container): { entries: Entry[]; left: number } {
   const named = (props: Record<string, Value> = {}) =>
-    Object.entries(props).map(([name, item]) => ({ name, value: item }))
+    sortedEntries(props).map(([name, item]) => ({ name, value: item }))
   const indexed = (items: Value[]) =>
     items.map((item, i) => ({ name: String(i), value: item }))
   switch (value.type) {
@@ -259,7 +259,11 @@ export function Inspector(props: {
                   open={!collapsed().has("Context")}
                   onToggle={() => toggle("Context")}
                 >
-                  <For each={props.inspector.data()?.contexts}>
+                  <For
+                    each={[...(props.inspector.data()?.contexts ?? [])].sort(
+                      (a, b) => byName(a.name, b.name),
+                    )}
+                  >
                     {(context, index) => (
                       <ValueRow
                         inspector={props.inspector}
@@ -279,7 +283,7 @@ export function Inspector(props: {
                 >
                   <For each={props.inspector.data()?.owners}>
                     {(owner) => (
-                      <div class="whitespace-nowrap pr-2 pl-6">
+                      <div class="flex min-h-5 items-center whitespace-nowrap pr-2 pl-6">
                         {owner.id === null ? (
                           <span data-testid="owner" class="text-muted">
                             {owner.name}
@@ -289,9 +293,15 @@ export function Inspector(props: {
                             type="button"
                             data-testid="owner"
                             class="text-accent hover:underline"
-                            onClick={() =>
-                              props.tree.reveal(owner.id as number)
+                            onPointerEnter={() =>
+                              props.tree.hover(owner.id as number)
                             }
+                            onPointerLeave={() => props.tree.hover(undefined)}
+                            onClick={() => {
+                              // Selecting replaces this list: no leave event.
+                              props.tree.hover(undefined)
+                              props.tree.reveal(owner.id as number)
+                            }}
                           >
                             {owner.name}
                           </button>
@@ -410,7 +420,7 @@ function HookRows(props: {
                 <>
                   <div
                     data-testid="value"
-                    class="flex items-center whitespace-nowrap pr-2"
+                    class="flex min-h-5 items-center whitespace-nowrap pr-2"
                     style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
                   >
                     <Toggle
@@ -455,7 +465,7 @@ function HookRows(props: {
             <Match when={hook.value === undefined}>
               <div
                 data-testid="value"
-                class="whitespace-nowrap pr-2 text-syntax-key"
+                class="flex min-h-5 items-center whitespace-nowrap pr-2 text-syntax-key"
                 style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
               >
                 {label()}
@@ -522,7 +532,7 @@ function ValueRow(props: {
     <>
       <div
         data-testid="value"
-        class="flex items-center whitespace-nowrap pr-2"
+        class="flex min-h-5 items-center whitespace-nowrap pr-2"
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
       >
         <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>

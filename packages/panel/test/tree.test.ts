@@ -1,4 +1,5 @@
 import { type TreeKind, type TreeOp, treeBatch } from "@reactdx/messages"
+import { createEffect, createMemo, createRoot, on } from "solid-js"
 import { expect, test } from "vitest"
 import { createTreeStore } from "../src/tree"
 
@@ -279,6 +280,39 @@ test("a pick turns picking off and selects a known node", () => {
   tree.setPicking(true)
   tree.clear()
   expect(tree.picking()).toBe(false)
+})
+
+test("when a reveal's selection lands, its row is already there", () => {
+  // TreeView scrolls on the selection change, by the row's index.
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.toggle(1)
+  const seen: boolean[] = []
+  const dispose = createRoot((dispose) => {
+    // As TreeView reads them.
+    const rows = createMemo(() => tree.rows(1))
+    createEffect(
+      on(
+        tree.selected,
+        (id) => seen.push(rows().some((row) => row.id === id)),
+        { defer: true },
+      ),
+    )
+    return dispose
+  })
+  tree.reveal(5)
+  dispose()
+  expect(seen).toEqual([true])
+})
+
+test("each reveal counts, even of the node already selected", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.reveal(5)
+  const first = tree.reveals()
+  tree.reveal(5)
+  expect(tree.selected()).toBe(5)
+  expect(tree.reveals()).toBe(first + 1)
 })
 
 test("clear empties the store", () => {

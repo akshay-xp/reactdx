@@ -97,8 +97,6 @@ const HOOKS = [
   "Id: ",
   'Context(Theme): "dark"',
   'useCart: "2 items"',
-  // The Context section.
-  'Context Theme: "dark"',
 ]
 const HOOKS_19 = [
   "Use: 5",
@@ -117,7 +115,12 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
     )
     try {
       await page.waitForSelector("[data-testid=hooks]")
-      const expected = fixture === "19" ? [...HOOKS, ...HOOKS_19] : HOOKS
+      // The Context section, alphabetical: 19's form status context (named
+      // Context) reads before Theme.
+      const expected =
+        fixture === "19"
+          ? [...HOOKS, ...HOOKS_19, "Context Context: {", '} Theme: "dark"']
+          : [...HOOKS, 'Context Theme: "dark"']
       const text = await selectListed(panel, "Hooks", (t) =>
         expected.every((hook) => t.includes(hook)),
       ).catch((error: Error) => error.message)
@@ -178,6 +181,58 @@ for (const { port } of fixtures.filter((f) => f.fixture === "19"))
       )
       assert.ok(kept.includes("State(count): 0"), kept)
       assert.equal(await again.pressed("Hook names"), true)
+    } finally {
+      await browser.close()
+    }
+  })
+
+// Chrome: layout, read from the panel's document. Next's tree is deeper than the
+// pane is wide, so the pane scrolls sideways.
+for (const { port } of fixtures.filter((f) => f.fixture === "next"))
+  test("next: the selection spans a wide tree; inspector rows are as tall as tree rows", {
+    skip: name !== "chrome",
+  }, async () => {
+    const { browser, panel } = await panelFor(
+      name,
+      `http://localhost:${port}`,
+      "after",
+    )
+    try {
+      await selectListed(panel, "Counter", (t) => t.includes("State: 0"))
+      const layout = await panel.frame?.evaluate(() => {
+        const pane = document.querySelector("[data-testid=trees]") as Element
+        const row = document.querySelector(
+          "[data-testid=node][aria-selected=true]",
+        ) as Element
+        const height = (el: Element) => el.getBoundingClientRect().height
+        const rows = [
+          ...document.querySelectorAll(
+            "[data-testid=inspector] [data-testid=value], [data-testid=inspector] [data-testid=owner]",
+          ),
+        ].map(
+          (el) =>
+            (el.closest("[data-testid=value]") ?? el.parentElement) as Element,
+        )
+        return {
+          wide: pane.scrollWidth > pane.clientWidth,
+          // The row's right edge in the pane's content, against the content's
+          // width less the copy's 8 px padding (scrollWidth is a whole pixel).
+          spans:
+            row.getBoundingClientRect().right -
+              pane.getBoundingClientRect().left +
+              pane.scrollLeft +
+              9 >=
+            pane.scrollWidth,
+          rows: rows.length > 0,
+          short: rows.filter((el) => height(el) < height(row)).length,
+        }
+      })
+      assert.deepEqual(layout, {
+        wide: true,
+        spans: true,
+        rows: true,
+        short: 0,
+      })
     } finally {
       await browser.close()
     }

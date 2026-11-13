@@ -28,6 +28,7 @@ const panel = {
     name: "panel",
     include: ["packages/{panel,messages}/test/**/*.test.{ts,tsx}"],
     environment: "jsdom",
+    setupFiles: ["packages/panel/test/setup.ts"],
   },
 }
 
