@@ -97,8 +97,6 @@ const HOOKS = [
   "Id: ",
   'Context(Theme): "dark"',
   'useCart: "2 items"',
-  // The Context section.
-  'Context Theme: "dark"',
 ]
 const HOOKS_19 = [
   "Use: 5",
@@ -117,7 +115,12 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
     )
     try {
       await page.waitForSelector("[data-testid=hooks]")
-      const expected = fixture === "19" ? [...HOOKS, ...HOOKS_19] : HOOKS
+      // The Context section, alphabetical: 19's form status context (named
+      // Context) reads before Theme.
+      const expected =
+        fixture === "19"
+          ? [...HOOKS, ...HOOKS_19, "Context Context: {", '} Theme: "dark"']
+          : [...HOOKS, 'Context Theme: "dark"']
       const text = await selectListed(panel, "Hooks", (t) =>
         expected.every((hook) => t.includes(hook)),
       ).catch((error: Error) => error.message)
