@@ -53,6 +53,7 @@ describe("themes", () => {
       "syntax-key",
       "syntax-string",
       "syntax-number",
+      "highlight",
     ])
     expect(defaultTheme("light").colors).toEqual({
       bg: "#ffffff",
@@ -67,6 +68,7 @@ describe("themes", () => {
       "syntax-key": "#0b57d0",
       "syntax-string": "#a8461b",
       "syntax-number": "#6a3fb8",
+      highlight: "#fde293",
     })
     expect(defaultTheme("dark").colors).toEqual({
       bg: "#282828",
@@ -81,6 +83,7 @@ describe("themes", () => {
       "syntax-key": "#7cacf8",
       "syntax-string": "#f2a275",
       "syntax-number": "#b39dff",
+      highlight: "#594500",
     })
   })
 
@@ -95,6 +98,16 @@ describe("themes", () => {
           ).toBeGreaterThanOrEqual(4.5)
         }
       }
+    }
+  })
+
+  // Search matches paint fg on the highlight background (::highlight).
+  it("keeps fg at 4.5:1 contrast on highlight", () => {
+    for (const theme of themes) {
+      const ratio = contrast(theme.colors.fg, theme.colors.highlight)
+      expect(Math.floor(ratio * 100) / 100, theme.id).toBeGreaterThanOrEqual(
+        4.5,
+      )
     }
   })
 

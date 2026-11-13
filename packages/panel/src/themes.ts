@@ -13,6 +13,8 @@ export const colorTokens = [
   "syntax-key",
   "syntax-string",
   "syntax-number",
+  // Search matches' background (::highlight(reactdx-search)), under fg text.
+  "highlight",
 ] as const
 
 export type ColorToken = (typeof colorTokens)[number]
@@ -48,6 +50,7 @@ export const themes: Theme[] = [
       "syntax-key": "#0b57d0",
       "syntax-string": "#a8461b",
       "syntax-number": "#6a3fb8",
+      highlight: "#fde293",
     },
   },
   {
@@ -67,6 +70,7 @@ export const themes: Theme[] = [
       "syntax-key": "#7cacf8",
       "syntax-string": "#f2a275",
       "syntax-number": "#b39dff",
+      highlight: "#594500",
     },
   },
 ]
