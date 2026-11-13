@@ -173,6 +173,41 @@ test("object keys and contexts read alphabetically; hooks, arrays and maps keep 
   ])
 })
 
+const search = (container: Element, text: string) =>
+  fireEvent.input(
+    container.querySelector("[data-testid=inspector-search]") as Element,
+    { target: { value: text } },
+  )
+
+test("search hides rows whose name and value don't match; clearing restores them", () => {
+  const { container, inspector, select, getByLabelText } = setup("class")
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ label: "Count", step: 1 }),
+      state: object({ ticks: 2 }),
+    }),
+  )
+  expect(getByLabelText("Search values")).toBeTruthy()
+  // Matches the value, case ignored.
+  search(container, "count")
+  expect(rows(container)).toEqual(['label: "Count"'])
+  expect(sections(container)).toEqual(["Props"])
+  search(container, "step")
+  expect(rows(container)).toEqual(["step: 1"])
+  search(container, "zzz")
+  expect(rows(container)).toEqual([])
+  expect(container.textContent).toContain("No matches")
+
+  fireEvent.keyDown(getByLabelText("Search values"), { key: "Escape" })
+  expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
+  expect(sections(container)).toEqual(["Props", "State"])
+  search(container, "zzz")
+  fireEvent.click(getByLabelText("Clear value search"))
+  expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
+  expect((getByLabelText("Search values") as HTMLInputElement).value).toBe("")
+})
+
 test("empty sections aren't shown", () => {
   const { container, inspector, select } = setup("class")
   select()

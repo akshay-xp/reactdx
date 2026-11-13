@@ -9,13 +9,14 @@ import {
   Switch,
 } from "solid-js"
 import type { InspectorStore } from "./inspection"
+import { matches } from "./search"
 import {
   label,
   locationText,
   type SourceLocation,
   type Sources,
 } from "./source"
-import { IconButton } from "./Toolbar"
+import { IconButton, SearchField } from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
 import { byName, previewText, sortedEntries } from "./value"
@@ -88,6 +89,11 @@ function entriesOf(value: Container): { entries: Entry[]; left: number } {
   }
 }
 
+// Whether a row shows under the search query: its name or value text matches.
+function entryShows(entry: Entry, query: string) {
+  return matches(entry.name, query) || matches(previewText(entry.value), query)
+}
+
 // Panel settings, kept by the extension (storage.local).
 export type Settings = {
   hookNames(): boolean
@@ -125,6 +131,8 @@ export function Inspector(props: {
     const id = props.tree.selected()
     return id === undefined ? undefined : props.tree.info(id)
   }
+  // The search query, kept across selections: outside the Switch below.
+  const [query, setQuery] = createSignal("")
   // Collapsed sections, kept while the panel is open.
   const [collapsed, setCollapsed] = createSignal(new Set<string>())
   const toggle = (name: string) => {
@@ -132,15 +140,12 @@ export function Inspector(props: {
     if (!next.delete(name)) next.add(name)
     setCollapsed(next)
   }
+  const shown = (value: Value | undefined) =>
+    value !== undefined &&
+    isContainer(value) &&
+    entriesOf(value).entries.some((entry) => entryShows(entry, query()))
   const section = (name: string, value: Value | undefined) => (
-    <Show
-      when={
-        value !== undefined &&
-        isContainer(value) &&
-        entriesOf(value).entries.length > 0 &&
-        value
-      }
-    >
+    <Show when={shown(value) && (value as Container)}>
       {(container) => (
         <Section
           name={name}
@@ -152,11 +157,27 @@ export function Inspector(props: {
             value={container()}
             path={name}
             depth={0}
+            query={query()}
           />
         </Section>
       )}
     </Show>
   )
+  // Alphabetical, and only those that show under the query.
+  const contexts = () =>
+    [...(props.inspector.data()?.contexts ?? [])]
+      .sort((a, b) => byName(a.name, b.name))
+      .filter((context) => entryShows(context, query()))
+  const anyShown = () => {
+    const data = props.inspector.data()
+    return (
+      shown(data?.props) ||
+      shown(data?.state) ||
+      Boolean(data?.hooks?.length || data?.hooksError) ||
+      contexts().length > 0 ||
+      Boolean(data?.owners?.length)
+    )
+  }
   return (
     <Switch>
       <Match when={!info()}>
@@ -224,7 +245,20 @@ export function Inspector(props: {
                 </div>
               )}
             </Show>
+            <div class="flex h-10 shrink-0 items-center border-border border-b px-2">
+              <SearchField
+                label="Search values"
+                testid="inspector-search"
+                clearLabel="Clear value search"
+                value={query()}
+                onInput={setQuery}
+                onKeyDown={(event) => event.key === "Escape" && setQuery("")}
+              />
+            </div>
             <div class="overflow-y-auto">
+              <Show when={query() !== "" && !anyShown()}>
+                <p class="p-2 text-muted">No matches</p>
+              </Show>
               {section("Props", props.inspector.data()?.props)}
               {section("State", props.inspector.data()?.state)}
               <Show
@@ -253,23 +287,20 @@ export function Inspector(props: {
                   />
                 </Section>
               </Show>
-              <Show when={props.inspector.data()?.contexts?.length}>
+              <Show when={contexts().length}>
                 <Section
                   name="Context"
                   open={!collapsed().has("Context")}
                   onToggle={() => toggle("Context")}
                 >
-                  <For
-                    each={[...(props.inspector.data()?.contexts ?? [])].sort(
-                      (a, b) => byName(a.name, b.name),
-                    )}
-                  >
+                  <For each={contexts()}>
                     {(context, index) => (
                       <ValueRow
                         inspector={props.inspector}
                         entry={context}
                         path={`Context.${index()}`}
                         depth={0}
+                        query={query()}
                       />
                     )}
                   </For>
@@ -358,6 +389,7 @@ function Children(props: {
   value: Container
   path: string
   depth: number
+  query: string
 }) {
   const loaded = () =>
     (props.inspector.expansion(props.value.id) as Container | undefined) ??
@@ -365,13 +397,16 @@ function Children(props: {
   const list = () => entriesOf(loaded())
   return (
     <>
-      <For each={list().entries}>
+      <For
+        each={list().entries.filter((entry) => entryShows(entry, props.query))}
+      >
         {(entry) => (
           <ValueRow
             inspector={props.inspector}
             entry={entry}
             path={`${props.path}.${entry.name}`}
             depth={props.depth}
+            query={props.query}
           />
         )}
       </For>
@@ -460,6 +495,7 @@ function HookRows(props: {
                 entry={{ name: label(), value: hook.value as Value }}
                 path={path()}
                 depth={props.depth}
+                query=""
               />
             </Match>
             <Match when={hook.value === undefined}>
@@ -501,6 +537,7 @@ function ValueRow(props: {
   entry: Entry
   path: string
   depth: number
+  query: string
 }) {
   const value = () => props.entry.value
   // A value the page sent as a ref (past its depth limit) loads when opened.
@@ -551,6 +588,7 @@ function ValueRow(props: {
             value={container()}
             path={props.path}
             depth={props.depth + 1}
+            query={props.query}
           />
         )}
       </Show>

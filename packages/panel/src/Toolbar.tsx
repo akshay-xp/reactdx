@@ -15,46 +15,22 @@ export function Toolbar(props: { tree: TreeStore }) {
         <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
         <circle cx="12" cy="12" r="5" />
       </IconButton>
-      <label class="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md bg-surface pr-0.5 pl-2 text-muted focus-within:ring-1 focus-within:ring-accent">
-        <svg
-          aria-hidden="true"
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-        >
-          <circle cx="11" cy="11" r="7" />
-          <path d="m20 20-3.5-3.5" />
-        </svg>
-        <input
-          type="search"
-          data-testid="search"
-          aria-label="Search components"
-          placeholder="Search components"
-          class="min-w-0 flex-1 bg-transparent text-fg outline-none [&::-webkit-search-cancel-button]:hidden"
-          value={props.tree.query()}
-          onInput={(event) => props.tree.setQuery(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return
-            event.preventDefault()
-            props.tree.step(event.shiftKey ? -1 : 1)
-          }}
-        />
-        <Show when={props.tree.query() !== ""}>
-          <span data-testid="search-count" class="shrink-0">
-            {`${props.tree.position()} of ${props.tree.matches().length}`}
-          </span>
-          <IconButton
-            label="Clear search"
-            onClick={() => props.tree.setQuery("")}
-          >
-            <path d="M6 6l12 12M18 6 6 18" />
-          </IconButton>
-        </Show>
-      </label>
+      <SearchField
+        label="Search components"
+        testid="search"
+        clearLabel="Clear search"
+        value={props.tree.query()}
+        onInput={(text) => props.tree.setQuery(text)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return
+          event.preventDefault()
+          props.tree.step(event.shiftKey ? -1 : 1)
+        }}
+      >
+        <span data-testid="search-count" class="shrink-0">
+          {`${props.tree.position()} of ${props.tree.matches().length}`}
+        </span>
+      </SearchField>
       <IconButton
         label="Show DOM elements"
         testid="show-dom"
@@ -64,6 +40,52 @@ export function Toolbar(props: { tree: TreeStore }) {
         <path d="m8 7-5 5 5 5M16 7l5 5-5 5" />
       </IconButton>
     </search>
+  )
+}
+
+// A search box laid out like SnapQL's: an icon, the input, and while it holds
+// text, `children` (a count) and a clear button.
+export function SearchField(props: {
+  label: string
+  testid: string
+  clearLabel: string
+  value: string
+  onInput: (text: string) => void
+  onKeyDown?: (event: KeyboardEvent) => void
+  children?: JSX.Element
+}) {
+  return (
+    <label class="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md bg-surface pr-0.5 pl-2 text-muted focus-within:ring-1 focus-within:ring-accent">
+      <svg
+        aria-hidden="true"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
+      <input
+        type="search"
+        data-testid={props.testid}
+        aria-label={props.label}
+        placeholder={props.label}
+        class="min-w-0 flex-1 bg-transparent text-fg outline-none [&::-webkit-search-cancel-button]:hidden"
+        value={props.value}
+        onInput={(event) => props.onInput(event.currentTarget.value)}
+        onKeyDown={(event) => props.onKeyDown?.(event)}
+      />
+      <Show when={props.value !== ""}>
+        {props.children}
+        <IconButton label={props.clearLabel} onClick={() => props.onInput("")}>
+          <path d="M6 6l12 12M18 6 6 18" />
+        </IconButton>
+      </Show>
+    </label>
   )
 }
 
