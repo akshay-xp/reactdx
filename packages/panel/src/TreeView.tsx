@@ -71,9 +71,10 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
   // Times the first rows after a subscribe (e2e/perf.test.ts).
   const shown = createMemo(() => rows().length > 0)
   createEffect(() => shown() && performance.mark("reactdx:rows"))
-  // Only on selection changes: a commit mustn't scroll back to the selection.
+  // Only on selection changes and reveals: a commit mustn't scroll back to the
+  // selection.
   createEffect(
-    on(props.tree.selected, (id) => {
+    on([props.tree.selected, props.tree.reveals], ([id]) => {
       const index = rows().findIndex((row) => row.id === id)
       // Before mount there's no layout to scroll.
       if (index === -1 || !pane) return
@@ -91,16 +92,19 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
       requestAnimationFrame(() => {
         const row = box.querySelector(`[data-id="${id}"]`)
         const start = row?.querySelector("[data-toggle]")
-        const name = row?.querySelector("[data-testid=name]")
-        if (!pane || !start || !name) return
+        const end = row?.lastElementChild
+        if (!pane || !start || !end) return
         const left = pane.getBoundingClientRect().left
         const from = start.getBoundingClientRect().left - left
-        const to = name.getBoundingClientRect().right - left
+        // The content's end (name, badge or key), a row's height from the right
+        // edge: macOS draws the vertical scrollbar over the content.
+        const to = end.getBoundingClientRect().right - left + ROW_HEIGHT
         // Whole pixels, rounded outward: the scroll snaps to device pixels.
-        if (from < 0) pane.scrollLeft += Math.floor(from)
+        // Content that fits is shown whole; wider content shows its start.
+        if (from < 0 || to - from > pane.clientWidth)
+          pane.scrollLeft += Math.floor(from)
         else if (to > pane.clientWidth)
-          // A name wider than the pane keeps its start in view.
-          pane.scrollLeft += Math.ceil(Math.min(from, to - pane.clientWidth))
+          pane.scrollLeft += Math.ceil(to - pane.clientWidth)
       })
     }),
   )

@@ -305,6 +305,16 @@ test("when a reveal's selection lands, its row is already there", () => {
   expect(seen).toEqual([true])
 })
 
+test("each reveal counts, even of the node already selected", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.reveal(5)
+  const first = tree.reveals()
+  tree.reveal(5)
+  expect(tree.selected()).toBe(5)
+  expect(tree.reveals()).toBe(first + 1)
+})
+
 test("clear empties the store", () => {
   const tree = createTreeStore()
   tree.apply(resync)
