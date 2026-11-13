@@ -58,12 +58,12 @@ async function launchChrome(
       timeout,
     })
   // On CI, Chrome sometimes opens DevTools without ever loading ReactDX's
-  // devtools page (Chrome's own target list has none). Reloading DevTools loads it.
+  // devtools page (Chrome's own target list has none). A new tab's DevTools loads
+  // it. Reloading DevTools did too, but could detach the tab's frame mid-goto.
   const devtools = await devtoolsPage(10_000).catch(async () => {
-    const frontend = await browser.waitForTarget((t) =>
-      t.url().startsWith(DEVTOOLS),
-    )
-    await (await frontend.asPage())?.reload()
+    const [stale] = await browser.pages()
+    await browser.newPage()
+    await stale?.close()
     return devtoolsPage(20_000)
   })
   return {
