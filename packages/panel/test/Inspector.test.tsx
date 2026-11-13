@@ -396,6 +396,45 @@ test("Rendered by lists owners; tree nodes are buttons that select", () => {
   expect(tree.selected()).toBe(2)
 })
 
+test("hovering an owner in the tree highlights it, like its tree row; a click clears it", () => {
+  const { container, inspector, select, tree } = setup()
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 2,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "App",
+        key: null,
+        index: 1,
+      },
+    ]),
+  )
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      owners: [
+        { id: 2, name: "App" },
+        { id: null, name: "Page" },
+      ],
+    }),
+  )
+  const [app, page] = container.querySelectorAll("[data-testid=owner]")
+  fireEvent.pointerEnter(app as Element)
+  expect(tree.hovered()).toBe(2)
+  fireEvent.pointerLeave(app as Element)
+  expect(tree.hovered()).toBeUndefined()
+  fireEvent.pointerEnter(page as Element)
+  expect(tree.hovered()).toBeUndefined()
+  // A click selects the owner, replacing this list: no leave event will come.
+  fireEvent.pointerEnter(app as Element)
+  fireEvent.click(app as Element)
+  expect(tree.hovered()).toBeUndefined()
+})
+
 test("no owners, no Rendered by", () => {
   const { container, inspector, select } = setup()
   select()

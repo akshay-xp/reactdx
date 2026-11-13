@@ -293,9 +293,15 @@ export function Inspector(props: {
                             type="button"
                             data-testid="owner"
                             class="text-accent hover:underline"
-                            onClick={() =>
-                              props.tree.reveal(owner.id as number)
+                            onPointerEnter={() =>
+                              props.tree.hover(owner.id as number)
                             }
+                            onPointerLeave={() => props.tree.hover(undefined)}
+                            onClick={() => {
+                              // Selecting replaces this list: no leave event.
+                              props.tree.hover(undefined)
+                              props.tree.reveal(owner.id as number)
+                            }}
                           >
                             {owner.name}
                           </button>
