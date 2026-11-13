@@ -1,15 +1,17 @@
 import type { CallSite, Container, HookValue, Value } from "@reactdx/messages"
 import {
+  createEffect,
   createResource,
   createSignal,
   For,
   type JSX,
   Match,
+  onCleanup,
   Show,
   Switch,
 } from "solid-js"
 import type { InspectorStore } from "./inspection"
-import { matches } from "./search"
+import { matches, searchRanges } from "./search"
 import {
   label,
   locationText,
@@ -147,6 +149,30 @@ function hookShows(
         descendantShows(inspector, value, query))) ||
     (hook.hooks ?? []).some((sub) => hookShows(inspector, sub, labelOf, query))
   )
+}
+
+// Paints the query's matches in `root` (the CSS Custom Highlight API: no DOM
+// change, so a value stays one text node), again whenever rows render.
+const HIGHLIGHT = "reactdx-search"
+function paintMatches(root: HTMLElement, query: () => string) {
+  // jsdom has no CSS.highlights.
+  if (typeof CSS === "undefined" || !("highlights" in CSS)) return
+  const paint = () => {
+    const ranges = searchRanges(root, query())
+    if (ranges.length) CSS.highlights.set(HIGHLIGHT, new Highlight(...ranges))
+    else CSS.highlights.delete(HIGHLIGHT)
+  }
+  const observer = new MutationObserver(paint)
+  observer.observe(root, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  })
+  createEffect(paint)
+  onCleanup(() => {
+    observer.disconnect()
+    CSS.highlights.delete(HIGHLIGHT)
+  })
 }
 
 // Panel settings, kept by the extension (storage.local).
@@ -336,7 +362,7 @@ export function Inspector(props: {
                 onKeyDown={(event) => event.key === "Escape" && setQuery("")}
               />
             </div>
-            <div class="overflow-y-auto">
+            <div class="overflow-y-auto" ref={(el) => paintMatches(el, query)}>
               <Show when={query() !== "" && !anyShown()}>
                 <p class="p-2 text-muted">No matches</p>
               </Show>
@@ -400,13 +426,18 @@ export function Inspector(props: {
                     {(owner) => (
                       <div class="flex min-h-5 items-center whitespace-nowrap pr-2 pl-6">
                         {owner.id === null ? (
-                          <span data-testid="owner" class="text-muted">
+                          <span
+                            data-testid="owner"
+                            data-search-text
+                            class="text-muted"
+                          >
                             {owner.name}
                           </span>
                         ) : (
                           <button
                             type="button"
                             data-testid="owner"
+                            data-search-text
                             class="text-accent hover:underline"
                             onPointerEnter={() =>
                               props.tree.hover(owner.id as number)
@@ -569,12 +600,15 @@ function HookRows(props: {
                             : props.inspector.open(path())
                         }
                       />
-                      <span class="text-syntax-key">
+                      <span data-search-text class="text-syntax-key">
                         {hook.value === undefined ? label() : `${label()}:`}
                       </span>
                       <Show when={hook.value !== undefined}>
                         {" "}
-                        <span class={`truncate ${tone(hook.value as Value)}`}>
+                        <span
+                          data-search-text
+                          class={`truncate ${tone(hook.value as Value)}`}
+                        >
                           {previewText(hook.value as Value)}
                         </span>
                       </Show>
@@ -607,6 +641,7 @@ function HookRows(props: {
               <Match when={hook.value === undefined}>
                 <div
                   data-testid="value"
+                  data-search-text
                   class="flex min-h-5 items-center whitespace-nowrap pr-2 text-syntax-key"
                   style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
                 >
@@ -685,11 +720,13 @@ function ValueRow(props: {
         <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>
           <Toggle open={shownOpen()} onClick={toggle} />
         </Show>
-        <span class="text-syntax-key">
+        <span data-search-text class="text-syntax-key">
           {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
         </span>
         {props.entry.arrow ? " => " : " "}
-        <span class={`truncate ${tone(value())}`}>{previewText(value())}</span>
+        <span data-search-text class={`truncate ${tone(value())}`}>
+          {previewText(value())}
+        </span>
       </div>
       <Show when={shownOpen() && target()}>
         {(container) => (
