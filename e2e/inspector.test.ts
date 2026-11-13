@@ -182,3 +182,49 @@ for (const { port } of fixtures.filter((f) => f.fixture === "19"))
       await browser.close()
     }
   })
+
+// Chrome: layout, read from the panel's document. Next's tree is deeper than the
+// pane is wide, so the tree scrolls sideways.
+for (const { port } of fixtures.filter((f) => f.fixture === "next"))
+  test("next: the selection spans a wide tree; inspector rows are as tall as tree rows", {
+    skip: name !== "chrome",
+  }, async () => {
+    const { browser, panel } = await panelFor(
+      name,
+      `http://localhost:${port}`,
+      "after",
+    )
+    try {
+      await selectListed(panel, "Counter", (t) => t.includes("State: 0"))
+      const layout = await panel.frame?.evaluate(() => {
+        const tree = document.querySelector("[data-testid=tree]") as Element
+        const row = document.querySelector(
+          "[data-testid=node][aria-selected=true]",
+        ) as Element
+        const height = (el: Element) => el.getBoundingClientRect().height
+        const rows = [
+          ...document.querySelectorAll(
+            "[data-testid=inspector] [data-testid=value], [data-testid=inspector] [data-testid=owner]",
+          ),
+        ].map(
+          (el) =>
+            (el.closest("[data-testid=value]") ?? el.parentElement) as Element,
+        )
+        return {
+          wide: tree.scrollWidth > tree.clientWidth,
+          // scrollWidth is rounded to a whole pixel.
+          spans: row.getBoundingClientRect().width + 1 >= tree.scrollWidth,
+          rows: rows.length > 0,
+          short: rows.filter((el) => height(el) < height(row)).length,
+        }
+      })
+      assert.deepEqual(layout, {
+        wide: true,
+        spans: true,
+        rows: true,
+        short: 0,
+      })
+    } finally {
+      await browser.close()
+    }
+  })

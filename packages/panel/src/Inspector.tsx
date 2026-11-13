@@ -279,7 +279,7 @@ export function Inspector(props: {
                 >
                   <For each={props.inspector.data()?.owners}>
                     {(owner) => (
-                      <div class="whitespace-nowrap pr-2 pl-6">
+                      <div class="flex min-h-5 items-center whitespace-nowrap pr-2 pl-6">
                         {owner.id === null ? (
                           <span data-testid="owner" class="text-muted">
                             {owner.name}
@@ -410,7 +410,7 @@ function HookRows(props: {
                 <>
                   <div
                     data-testid="value"
-                    class="flex items-center whitespace-nowrap pr-2"
+                    class="flex min-h-5 items-center whitespace-nowrap pr-2"
                     style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
                   >
                     <Toggle
@@ -455,7 +455,7 @@ function HookRows(props: {
             <Match when={hook.value === undefined}>
               <div
                 data-testid="value"
-                class="whitespace-nowrap pr-2 text-syntax-key"
+                class="flex min-h-5 items-center whitespace-nowrap pr-2 text-syntax-key"
                 style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
               >
                 {label()}
@@ -522,7 +522,7 @@ function ValueRow(props: {
     <>
       <div
         data-testid="value"
-        class="flex items-center whitespace-nowrap pr-2"
+        class="flex min-h-5 items-center whitespace-nowrap pr-2"
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
       >
         <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>

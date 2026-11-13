@@ -98,7 +98,10 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
         class="relative"
         style={{ height: `${rows().length * ROW_HEIGHT}px` }}
       >
+        {/* As wide as the widest row in the window, so every row (and the
+            selection's background) spans a tree that scrolls sideways. */}
         <div
+          class="w-max min-w-full"
           style={{ transform: `translateY(${range().start * ROW_HEIGHT}px)` }}
         >
           <For each={rows().slice(range().start, range().end)}>
