@@ -89,9 +89,46 @@ function entriesOf(value: Container): { entries: Entry[]; left: number } {
   }
 }
 
-// Whether a row shows under the search query: its name or value text matches.
-function entryShows(entry: Entry, query: string) {
-  return matches(entry.name, query) || matches(previewText(entry.value), query)
+// A value's children the panel holds: an inline container (or what was loaded
+// for it since), or what the page sent for an opened ref. Never asks the page.
+function loadedOf(inspector: InspectorStore, value: Value) {
+  if (value === null || typeof value !== "object") return undefined
+  if (isContainer(value))
+    return (inspector.expansion(value.id) as Container | undefined) ?? value
+  return value.type === "ref" && "preview" in value
+    ? (inspector.expansion(value.id) as Container | undefined)
+    : undefined
+}
+
+// Whether any loaded descendant of a value shows under the query. `seen`
+// guards circular refs.
+function descendantShows(
+  inspector: InspectorStore,
+  value: Value,
+  query: string,
+  seen = new Set<number>(),
+): boolean {
+  const loaded = loadedOf(inspector, value)
+  if (!query || !loaded || seen.has(loaded.id)) return false
+  seen.add(loaded.id)
+  return entriesOf(loaded).entries.some((entry) =>
+    entryShows(inspector, entry, query, seen),
+  )
+}
+
+// Whether a row shows under the search query: its name or value text matches,
+// or a loaded descendant's does.
+function entryShows(
+  inspector: InspectorStore,
+  entry: Entry,
+  query: string,
+  seen = new Set<number>(),
+): boolean {
+  return (
+    matches(entry.name, query) ||
+    matches(previewText(entry.value), query) ||
+    descendantShows(inspector, entry.value, query, seen)
+  )
 }
 
 // Panel settings, kept by the extension (storage.local).
@@ -143,13 +180,16 @@ export function Inspector(props: {
   const shown = (value: Value | undefined) =>
     value !== undefined &&
     isContainer(value) &&
-    entriesOf(value).entries.some((entry) => entryShows(entry, query()))
+    entriesOf(value).entries.some((entry) =>
+      entryShows(props.inspector, entry, query()),
+    )
   const section = (name: string, value: Value | undefined) => (
     <Show when={shown(value) && (value as Container)}>
       {(container) => (
         <Section
           name={name}
           open={!collapsed().has(name)}
+          forced={query() !== ""}
           onToggle={() => toggle(name)}
         >
           <Children
@@ -167,7 +207,7 @@ export function Inspector(props: {
   const contexts = () =>
     [...(props.inspector.data()?.contexts ?? [])]
       .sort((a, b) => byName(a.name, b.name))
-      .filter((context) => entryShows(context, query()))
+      .filter((context) => entryShows(props.inspector, context, query()))
   const anyShown = () => {
     const data = props.inspector.data()
     return (
@@ -270,6 +310,7 @@ export function Inspector(props: {
                 <Section
                   name="Hooks"
                   open={!collapsed().has("Hooks")}
+                  forced={query() !== ""}
                   onToggle={() => toggle("Hooks")}
                 >
                   <Show when={props.inspector.data()?.hooksError}>
@@ -291,6 +332,7 @@ export function Inspector(props: {
                 <Section
                   name="Context"
                   open={!collapsed().has("Context")}
+                  forced={query() !== ""}
                   onToggle={() => toggle("Context")}
                 >
                   <For each={contexts()}>
@@ -310,6 +352,7 @@ export function Inspector(props: {
                 <Section
                   name="Rendered by"
                   open={!collapsed().has("Rendered by")}
+                  forced={query() !== ""}
                   onToggle={() => toggle("Rendered by")}
                 >
                   <For each={props.inspector.data()?.owners}>
@@ -353,21 +396,24 @@ export function Inspector(props: {
 function Section(props: {
   name: string
   open: boolean
+  // Shown open regardless (while searching), without changing `open`.
+  forced: boolean
   onToggle: () => void
   children: JSX.Element
 }) {
+  const open = () => props.open || props.forced
   return (
     <section data-testid="section" class="border-border border-b py-1">
       <button
         type="button"
-        aria-expanded={props.open}
+        aria-expanded={open()}
         class="flex w-full items-center gap-1 px-2 py-0.5 font-medium text-muted hover:text-fg"
         onClick={props.onToggle}
       >
-        <Triangle open={props.open} />
+        <Triangle open={open()} />
         {props.name}
       </button>
-      <Show when={props.open}>
+      <Show when={open()}>
         <div class="pb-1 font-mono">{props.children}</div>
       </Show>
     </section>
@@ -398,7 +444,9 @@ function Children(props: {
   return (
     <>
       <For
-        each={list().entries.filter((entry) => entryShows(entry, props.query))}
+        each={list().entries.filter((entry) =>
+          entryShows(props.inspector, entry, props.query),
+        )}
       >
         {(entry) => (
           <ValueRow
@@ -561,6 +609,9 @@ function ValueRow(props: {
   }
   const openable = () => isContainer(value()) || ref() !== undefined
   const open = () => props.inspector.isOpen(props.path)
+  // While searching, open to a match inside, without changing what's open.
+  const shownOpen = () =>
+    open() || descendantShows(props.inspector, value(), props.query)
   const toggle = () =>
     open()
       ? props.inspector.close(props.path)
@@ -573,7 +624,7 @@ function ValueRow(props: {
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
       >
         <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>
-          <Toggle open={open()} onClick={toggle} />
+          <Toggle open={shownOpen()} onClick={toggle} />
         </Show>
         <span class="text-syntax-key">
           {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
@@ -581,7 +632,7 @@ function ValueRow(props: {
         {props.entry.arrow ? " => " : " "}
         <span class={`truncate ${tone(value())}`}>{previewText(value())}</span>
       </div>
-      <Show when={open() && target()}>
+      <Show when={shownOpen() && target()}>
         {(container) => (
           <Children
             inspector={props.inspector}

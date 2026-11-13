@@ -269,6 +269,54 @@ test("a ref asks the page and shows its contents when they arrive", () => {
   expect(rows(container)).toEqual(["deep: {...}", "c: 1"])
 })
 
+test("search reaches loaded values, expanding their ancestors only while it filters", () => {
+  const { container, inspector, select, sent, getByRole } = setup()
+  select()
+  const ref: Value = {
+    type: "ref",
+    id: 9,
+    preview: { type: "object", className: "Object", size: 1 },
+  }
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        a: object({ b: object({ c: "needle" }, { id: 6 }) }, { id: 5 }),
+        deep: ref,
+        other: 1,
+      }),
+    }),
+  )
+  // A ref the page already sent, closed again: loaded, so searched.
+  fireEvent.click(toggle(container, "deep") as Element)
+  inspector.receiveExpanded(
+    expanded(9, 0, object({ hidden: "pin" }, { id: 9 })),
+  )
+  fireEvent.click(toggle(container, "deep") as Element)
+  const before = sent.length
+
+  search(container, "needle")
+  expect(rows(container)).toEqual([
+    "a: {b: {...}}",
+    'b: {c: "needle"}',
+    'c: "needle"',
+  ])
+  search(container, "pin")
+  expect(rows(container)).toEqual(["deep: {...}", 'hidden: "pin"'])
+  expect(sent.length).toBe(before)
+
+  // Clearing restores the user's state: everything closed.
+  search(container, "")
+  expect(rows(container)).toEqual(["a: {b: {...}}", "deep: {...}", "other: 1"])
+
+  // A collapsed section opens while filtering, and is collapsed again after.
+  fireEvent.click(getByRole("button", { name: "Props" }))
+  expect(rows(container)).toEqual([])
+  search(container, "other")
+  expect(rows(container)).toEqual(["other: 1"])
+  search(container, "")
+  expect(rows(container)).toEqual([])
+})
+
 test("a paged value shows more on request", () => {
   const { container, inspector, select, sent } = setup()
   select()
