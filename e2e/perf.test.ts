@@ -154,12 +154,15 @@ test("the 10k tree scrolls with under 100 DOM rows and no long task", {
       await settle()
       const observed = tasks.splice(0).length > 0
 
-      const tree = document.querySelector("[data-testid=tree]") as HTMLElement
+      const pane = document.querySelector("[data-testid=trees]") as HTMLElement
       const count = () => document.querySelectorAll("[data-testid=node]").length
       let most = count()
       let steps = 0
-      while (tree.scrollTop + tree.clientHeight < tree.scrollHeight) {
-        tree.scrollTop += tree.clientHeight
+      // Until the scroll stops moving: the headings' fractional heights can leave
+      // the bottom half a pixel short of scrollHeight.
+      for (let last = -1; pane.scrollTop !== last; ) {
+        last = pane.scrollTop
+        pane.scrollTop += pane.clientHeight
         await frame()
         most = Math.max(most, count())
         steps++
@@ -182,25 +185,29 @@ test("the 10k tree scrolls with under 100 DOM rows and no long task", {
   }
 })
 
-test("a long tree is the only scroller: nothing around it scrolls", {
+test("the trees pane is the only scroller: not the tree, not the toolbar", {
   skip,
 }, async () => {
   const { browser, panel } = await benchPanel()
   try {
     const layout = await panel.evaluate(() => {
-      const tree = document.querySelector("[data-testid=tree]") as HTMLElement
-      const scrolling: string[] = []
-      for (let el = tree.parentElement; el; el = el.parentElement)
-        if (el.scrollHeight > el.clientHeight)
-          scrolling.push(`${el.tagName}.${el.className}`)
+      const pane = document.querySelector("[data-testid=trees]") as HTMLElement
+      const scrolls = (el: Element) =>
+        el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth
+      const scrolling = [...document.querySelectorAll("[data-testid=split] *")]
+        .filter((el) => !el.closest("[data-testid=inspector]") && scrolls(el))
+        .map((el) => el.getAttribute("data-testid") ?? el.tagName)
       return {
         scrolling,
-        treeScrolls: tree.scrollHeight > tree.clientHeight,
-        // In the pane: its bottom isn't past the panel's.
-        inView: tree.getBoundingClientRect().bottom <= innerHeight,
+        toolbarOutside: !pane.querySelector("[data-testid=search]"),
+        inView: pane.getBoundingClientRect().bottom <= innerHeight,
       }
     })
-    assert.deepEqual(layout, { scrolling: [], treeScrolls: true, inView: true })
+    assert.deepEqual(layout, {
+      scrolling: ["trees"],
+      toolbarOutside: true,
+      inView: true,
+    })
   } finally {
     await browser.close()
   }
