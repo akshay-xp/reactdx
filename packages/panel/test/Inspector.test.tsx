@@ -173,6 +173,43 @@ test("object keys and contexts read alphabetically; hooks, arrays and maps keep 
   ])
 })
 
+const search = (container: Element, text: string) =>
+  fireEvent.input(
+    container.querySelector("[data-testid=inspector-search]") as Element,
+    { target: { value: text } },
+  )
+
+test("search hides rows whose name and value don't match; clearing restores them", () => {
+  const { container, inspector, select, getByLabelText } = setup("class")
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ label: "Count", step: 1 }),
+      state: object({ ticks: 2 }),
+    }),
+  )
+  expect(getByLabelText("Search keys and values")).toBeTruthy()
+  // Matches the value, case ignored.
+  search(container, "count")
+  expect(rows(container)).toEqual(['label: "Count"'])
+  expect(sections(container)).toEqual(["Props"])
+  search(container, "step")
+  expect(rows(container)).toEqual(["step: 1"])
+  search(container, "zzz")
+  expect(rows(container)).toEqual([])
+  expect(container.textContent).toContain("No matches")
+
+  fireEvent.keyDown(getByLabelText("Search keys and values"), { key: "Escape" })
+  expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
+  expect(sections(container)).toEqual(["Props", "State"])
+  search(container, "zzz")
+  fireEvent.click(getByLabelText("Clear value search"))
+  expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
+  expect(
+    (getByLabelText("Search keys and values") as HTMLInputElement).value,
+  ).toBe("")
+})
+
 test("empty sections aren't shown", () => {
   const { container, inspector, select } = setup("class")
   select()
@@ -232,6 +269,103 @@ test("a ref asks the page and shows its contents when they arrive", () => {
   expect(sent.at(-1)).toEqual({ type: "expand", objectId: 9, offset: 0 })
   inspector.receiveExpanded(expanded(9, 0, object({ c: 1 }, { id: 9 })))
   expect(rows(container)).toEqual(["deep: {...}", "c: 1"])
+})
+
+test("search reaches loaded values, expanding their ancestors only while it filters", () => {
+  const { container, inspector, select, sent, getByRole } = setup()
+  select()
+  const ref: Value = {
+    type: "ref",
+    id: 9,
+    preview: { type: "object", className: "Object", size: 1 },
+  }
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        a: object({ b: object({ c: "needle" }, { id: 6 }) }, { id: 5 }),
+        deep: ref,
+        other: 1,
+      }),
+    }),
+  )
+  // A ref the page already sent, closed again: loaded, so searched.
+  fireEvent.click(toggle(container, "deep") as Element)
+  inspector.receiveExpanded(
+    expanded(9, 0, object({ hidden: "pin" }, { id: 9 })),
+  )
+  fireEvent.click(toggle(container, "deep") as Element)
+  const before = sent.length
+
+  search(container, "needle")
+  expect(rows(container)).toEqual([
+    "a: {b: {...}}",
+    'b: {c: "needle"}',
+    'c: "needle"',
+  ])
+  search(container, "pin")
+  expect(rows(container)).toEqual(["deep: {...}", 'hidden: "pin"'])
+  expect(sent.length).toBe(before)
+
+  // Clearing restores the user's state: everything closed.
+  search(container, "")
+  expect(rows(container)).toEqual(["a: {b: {...}}", "deep: {...}", "other: 1"])
+
+  // A collapsed section opens while filtering, and is collapsed again after.
+  fireEvent.click(getByRole("button", { name: "Props" }))
+  expect(rows(container)).toEqual([])
+  search(container, "other")
+  expect(rows(container)).toEqual(["other: 1"])
+  search(container, "")
+  expect(rows(container)).toEqual([])
+})
+
+test("the search query is kept for the next component", () => {
+  const { container, inspector, select, tree, getByLabelText } = setup()
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 4,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "Other",
+        key: null,
+        index: 1,
+      },
+    ]),
+  )
+  select()
+  inspector.receive(inspected(3, { props: object({ label: "Count" }) }))
+  search(container, "count")
+  tree.select(4)
+  inspector.inspect(4)
+  inspector.receive(inspected(4, { props: object({ count: 1, other: 2 }) }))
+  expect(rows(container)).toEqual(["count: 1"])
+  // Through "Select a component" and back.
+  tree.clear()
+  tree.apply(treeBatch(3, [{ op: "reset" }]))
+  expect(container.textContent).toBe("Select a component to inspect it.")
+  tree.apply(
+    treeBatch(4, [
+      {
+        op: "add",
+        id: 3,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "Counter",
+        key: null,
+        index: 0,
+      },
+    ]),
+  )
+  select()
+  inspector.receive(inspected(3, { props: object({ label: "Count", x: 1 }) }))
+  expect(
+    (getByLabelText("Search keys and values") as HTMLInputElement).value,
+  ).toBe("count")
+  expect(rows(container)).toEqual(['label: "Count"'])
 })
 
 test("a paged value shows more on request", () => {
@@ -312,6 +446,44 @@ test("Hooks list each hook; custom hooks open to theirs", () => {
   ])
   inspector.receive(inspected(3, { props: object({}), hooks }))
   expect(rows(container)).toContain("State: 2")
+})
+
+test("search filters hooks by name, value and sub-hooks, and owners by name", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      hooks: [
+        ...hooks,
+        {
+          name: "useForm",
+          value: "f",
+          hooks: [{ name: "Reducer", value: 1 }],
+        },
+      ],
+      owners: [
+        { id: null, name: "App" },
+        { id: null, name: "Page" },
+      ],
+    }),
+  )
+  const owners = () =>
+    [...container.querySelectorAll("[data-testid=owner]")].map(
+      (el) => el.textContent,
+    )
+  search(container, "cart")
+  expect(rows(container)).toEqual(['useCart: "2 items"'])
+  search(container, "effect")
+  expect(rows(container)).toEqual(["Effect"])
+  // A sub-hook's match shows its custom hook, open.
+  search(container, "reducer")
+  expect(rows(container)).toEqual(['useForm: "f"', "Reducer: 1"])
+  expect(sections(container)).toEqual(["Hooks"])
+  search(container, "app")
+  expect(rows(container)).toEqual([])
+  expect(owners()).toEqual(["App"])
+  expect(sections(container)).toEqual(["Rendered by"])
 })
 
 test("a hook's object value opens like a prop", () => {
@@ -468,6 +640,25 @@ test("the header shows the resolved source, its full location as the title", asy
   // A re-send keeps it while the same source resolves again.
   inspector.receive(inspected(3, { props: object({}), source: { ...frame } }))
   expect(container.querySelector("[data-testid=source]")).not.toBeNull()
+})
+
+test("the source row scrolls with the sections, first above them", async () => {
+  const { container, inspector, select } = setup(
+    "function",
+    null,
+    resolving(counterAt),
+  )
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ a: 1 }),
+      source: frame,
+    }),
+  )
+  await settled()
+  const scroller = container.querySelector("[data-testid=section]")
+    ?.parentElement as HTMLElement
+  expect(scroller.firstElementChild?.getAttribute("data-testid")).toBe("source")
 })
 
 test("no source row without a source or a resolved one", async () => {

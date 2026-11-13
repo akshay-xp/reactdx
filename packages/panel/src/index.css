@@ -19,9 +19,17 @@
   --color-syntax-key: var(--theme-syntax-key);
   --color-syntax-string: var(--theme-syntax-string);
   --color-syntax-number: var(--theme-syntax-number);
+  --color-highlight: var(--theme-highlight);
 }
 
 body {
   background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+/* Inspector search matches (src/search.ts): ranges painted over the text, which
+   stays one node for screen readers and the e2e readers. */
+::highlight(reactdx-search) {
+  background-color: var(--color-highlight);
   color: var(--color-fg);
 }

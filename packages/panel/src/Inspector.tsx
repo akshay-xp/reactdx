@@ -1,21 +1,24 @@
-import type { Container, HookValue, Value } from "@reactdx/messages"
+import type { CallSite, Container, HookValue, Value } from "@reactdx/messages"
 import {
+  createEffect,
   createResource,
   createSignal,
   For,
   type JSX,
   Match,
+  onCleanup,
   Show,
   Switch,
 } from "solid-js"
 import type { InspectorStore } from "./inspection"
+import { matches, searchRanges } from "./search"
 import {
   label,
   locationText,
   type SourceLocation,
   type Sources,
 } from "./source"
-import { IconButton } from "./Toolbar"
+import { IconButton, SearchField } from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
 import { byName, previewText, sortedEntries } from "./value"
@@ -88,6 +91,90 @@ function entriesOf(value: Container): { entries: Entry[]; left: number } {
   }
 }
 
+// A value's children the panel holds: an inline container (or what was loaded
+// for it since), or what the page sent for an opened ref. Never asks the page.
+function loadedOf(inspector: InspectorStore, value: Value) {
+  if (value === null || typeof value !== "object") return undefined
+  if (isContainer(value))
+    return (inspector.expansion(value.id) as Container | undefined) ?? value
+  return value.type === "ref" && "preview" in value
+    ? (inspector.expansion(value.id) as Container | undefined)
+    : undefined
+}
+
+// Whether any loaded descendant of a value shows under the query. `seen`
+// guards circular refs.
+function descendantShows(
+  inspector: InspectorStore,
+  value: Value,
+  query: string,
+  seen = new Set<number>(),
+): boolean {
+  const loaded = loadedOf(inspector, value)
+  if (!query || !loaded || seen.has(loaded.id)) return false
+  seen.add(loaded.id)
+  return entriesOf(loaded).entries.some((entry) =>
+    entryShows(inspector, entry, query, seen),
+  )
+}
+
+// Whether a row shows under the search query: its name or value text matches,
+// or a loaded descendant's does.
+function entryShows(
+  inspector: InspectorStore,
+  entry: Entry,
+  query: string,
+  seen = new Set<number>(),
+): boolean {
+  return (
+    matches(entry.name, query) ||
+    matches(previewText(entry.value), query) ||
+    descendantShows(inspector, entry.value, query, seen)
+  )
+}
+
+// Whether a hook row shows under the query: its label or value text, a
+// sub-hook's, or its value's loaded descendants match.
+function hookShows(
+  inspector: InspectorStore,
+  hook: HookValue,
+  labelOf: (hook: HookValue) => string,
+  query: string,
+): boolean {
+  const value = hook.value as Value | undefined
+  return (
+    matches(labelOf(hook), query) ||
+    (value !== undefined &&
+      (matches(previewText(value), query) ||
+        descendantShows(inspector, value, query))) ||
+    (hook.hooks ?? []).some((sub) => hookShows(inspector, sub, labelOf, query))
+  )
+}
+
+// Paints the query's matches in `root` (the CSS Custom Highlight API: no DOM
+// change, so a value stays one text node), again whenever rows render.
+const HIGHLIGHT = "reactdx-search"
+function paintMatches(root: HTMLElement, query: () => string) {
+  // jsdom has no CSS.highlights.
+  if (typeof CSS === "undefined" || !("highlights" in CSS)) return
+  const paint = () => {
+    const ranges = searchRanges(root, query())
+    if (ranges.length) CSS.highlights.set(HIGHLIGHT, new Highlight(...ranges))
+    else CSS.highlights.delete(HIGHLIGHT)
+  }
+  const observer = new MutationObserver(paint)
+  observer.observe(root, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  })
+  createEffect(paint)
+  onCleanup(() => {
+    observer.disconnect()
+    CSS.highlights.delete(HIGHLIGHT)
+  })
+}
+
 // Panel settings, kept by the extension (storage.local).
 export type Settings = {
   hookNames(): boolean
@@ -125,6 +212,20 @@ export function Inspector(props: {
     const id = props.tree.selected()
     return id === undefined ? undefined : props.tree.info(id)
   }
+  // The search query, kept across selections: outside the Switch below.
+  const [query, setQuery] = createSignal("")
+  // Names found for hooks' call sites (Hook names), shared by the rows and the
+  // search: `State(count)` with Hook names on and a name found; else the type.
+  const [found, setFound] = createSignal(new Map<string, string>())
+  const labelOf = (hook: HookValue) => {
+    const name =
+      props.settings.hookNames() &&
+      hook.site &&
+      found().get(JSON.stringify(hook.site))
+    return name ? `${hook.name}(${name})` : hook.name
+  }
+  const nameFound = (site: CallSite, name: string) =>
+    setFound(new Map(found()).set(JSON.stringify(site), name))
   // Collapsed sections, kept while the panel is open.
   const [collapsed, setCollapsed] = createSignal(new Set<string>())
   const toggle = (name: string) => {
@@ -132,19 +233,19 @@ export function Inspector(props: {
     if (!next.delete(name)) next.add(name)
     setCollapsed(next)
   }
+  const shown = (value: Value | undefined) =>
+    value !== undefined &&
+    isContainer(value) &&
+    entriesOf(value).entries.some((entry) =>
+      entryShows(props.inspector, entry, query()),
+    )
   const section = (name: string, value: Value | undefined) => (
-    <Show
-      when={
-        value !== undefined &&
-        isContainer(value) &&
-        entriesOf(value).entries.length > 0 &&
-        value
-      }
-    >
+    <Show when={shown(value) && (value as Container)}>
       {(container) => (
         <Section
           name={name}
           open={!collapsed().has(name)}
+          forced={query() !== ""}
           onToggle={() => toggle(name)}
         >
           <Children
@@ -152,11 +253,38 @@ export function Inspector(props: {
             value={container()}
             path={name}
             depth={0}
+            query={query()}
           />
         </Section>
       )}
     </Show>
   )
+  // Alphabetical, and only those that show under the query.
+  const contexts = () =>
+    [...(props.inspector.data()?.contexts ?? [])].sort((a, b) =>
+      byName(a.name, b.name),
+    )
+  const contextShows = (context: Entry) =>
+    entryShows(props.inspector, context, query())
+  const hooksShow = () =>
+    Boolean(props.inspector.data()?.hooksError) ||
+    (props.inspector.data()?.hooks ?? []).some((hook) =>
+      hookShows(props.inspector, hook, labelOf, query()),
+    )
+  const owners = () =>
+    (props.inspector.data()?.owners ?? []).filter((owner) =>
+      matches(owner.name, query()),
+    )
+  const anyShown = () => {
+    const data = props.inspector.data()
+    return (
+      shown(data?.props) ||
+      shown(data?.state) ||
+      hooksShow() ||
+      contexts().some(contextShows) ||
+      owners().length > 0
+    )
+  }
   return (
     <Switch>
       <Match when={!info()}>
@@ -194,48 +322,57 @@ export function Inspector(props: {
                 </IconButton>
               </span>
             </header>
-            <Show when={location()}>
-              {(at) => (
-                <div
-                  data-testid="source"
-                  class="flex h-7 shrink-0 items-center gap-2 border-border border-b px-2 font-mono text-muted"
-                >
-                  <span class="truncate" title={locationText(at())}>
-                    {label(at())}
-                  </span>
-                  <button
-                    type="button"
-                    class="shrink-0 cursor-pointer text-accent hover:underline"
-                    onClick={() => open(at())}
+            <div class="flex h-8 shrink-0 items-center border-border border-b px-2 py-1">
+              <SearchField
+                label="Search keys and values"
+                testid="inspector-search"
+                clearLabel="Clear value search"
+                value={query()}
+                onInput={setQuery}
+                onKeyDown={(event) => event.key === "Escape" && setQuery("")}
+              />
+            </div>
+            <div class="overflow-y-auto" ref={(el) => paintMatches(el, query)}>
+              <Show when={location()}>
+                {(at) => (
+                  <div
+                    data-testid="source"
+                    class="flex h-7 shrink-0 items-center gap-2 border-border border-b px-2 font-mono text-muted"
                   >
-                    Open in editor
-                  </button>
-                  <Show when={copied() === locationText(at())}>
-                    <span class="shrink-0">Copied</span>
-                    <Show when={at().file.startsWith("/")}>
-                      <a
-                        class="shrink-0 text-accent hover:underline"
-                        href={`vscode://file${locationText(at())}`}
-                      >
-                        VS Code
-                      </a>
+                    <span class="truncate" title={locationText(at())}>
+                      {label(at())}
+                    </span>
+                    <button
+                      type="button"
+                      class="shrink-0 cursor-pointer text-accent hover:underline"
+                      onClick={() => open(at())}
+                    >
+                      Open in editor
+                    </button>
+                    <Show when={copied() === locationText(at())}>
+                      <span class="shrink-0">Copied</span>
+                      <Show when={at().file.startsWith("/")}>
+                        <a
+                          class="shrink-0 text-accent hover:underline"
+                          href={`vscode://file${locationText(at())}`}
+                        >
+                          VS Code
+                        </a>
+                      </Show>
                     </Show>
-                  </Show>
-                </div>
-              )}
-            </Show>
-            <div class="overflow-y-auto">
+                  </div>
+                )}
+              </Show>
+              <Show when={query() !== "" && !anyShown()}>
+                <p class="p-2 text-muted">No matches</p>
+              </Show>
               {section("Props", props.inspector.data()?.props)}
               {section("State", props.inspector.data()?.state)}
-              <Show
-                when={
-                  props.inspector.data()?.hooks?.length ||
-                  props.inspector.data()?.hooksError
-                }
-              >
+              <Show when={hooksShow()}>
                 <Section
                   name="Hooks"
                   open={!collapsed().has("Hooks")}
+                  forced={query() !== ""}
                   onToggle={() => toggle("Hooks")}
                 >
                   <Show when={props.inspector.data()?.hooksError}>
@@ -250,48 +387,57 @@ export function Inspector(props: {
                     hooks={props.inspector.data()?.hooks ?? []}
                     path="Hooks"
                     depth={0}
+                    query={query()}
+                    labelOf={labelOf}
+                    nameFound={nameFound}
                   />
                 </Section>
               </Show>
-              <Show when={props.inspector.data()?.contexts?.length}>
+              <Show when={contexts().some(contextShows)}>
                 <Section
                   name="Context"
                   open={!collapsed().has("Context")}
+                  forced={query() !== ""}
                   onToggle={() => toggle("Context")}
                 >
-                  <For
-                    each={[...(props.inspector.data()?.contexts ?? [])].sort(
-                      (a, b) => byName(a.name, b.name),
-                    )}
-                  >
+                  <For each={contexts()}>
                     {(context, index) => (
-                      <ValueRow
-                        inspector={props.inspector}
-                        entry={context}
-                        path={`Context.${index()}`}
-                        depth={0}
-                      />
+                      <Show when={contextShows(context)}>
+                        <ValueRow
+                          inspector={props.inspector}
+                          entry={context}
+                          path={`Context.${index()}`}
+                          depth={0}
+                          query={query()}
+                        />
+                      </Show>
                     )}
                   </For>
                 </Section>
               </Show>
-              <Show when={props.inspector.data()?.owners?.length}>
+              <Show when={owners().length}>
                 <Section
                   name="Rendered by"
                   open={!collapsed().has("Rendered by")}
+                  forced={query() !== ""}
                   onToggle={() => toggle("Rendered by")}
                 >
-                  <For each={props.inspector.data()?.owners}>
+                  <For each={owners()}>
                     {(owner) => (
                       <div class="flex min-h-5 items-center whitespace-nowrap pr-2 pl-6">
                         {owner.id === null ? (
-                          <span data-testid="owner" class="text-muted">
+                          <span
+                            data-testid="owner"
+                            data-search-text
+                            class="text-muted"
+                          >
                             {owner.name}
                           </span>
                         ) : (
                           <button
                             type="button"
                             data-testid="owner"
+                            data-search-text
                             class="text-accent hover:underline"
                             onPointerEnter={() =>
                               props.tree.hover(owner.id as number)
@@ -322,21 +468,24 @@ export function Inspector(props: {
 function Section(props: {
   name: string
   open: boolean
+  // Shown open regardless (while searching), without changing `open`.
+  forced: boolean
   onToggle: () => void
   children: JSX.Element
 }) {
+  const open = () => props.open || props.forced
   return (
     <section data-testid="section" class="border-border border-b py-1">
       <button
         type="button"
-        aria-expanded={props.open}
+        aria-expanded={open()}
         class="flex w-full items-center gap-1 px-2 py-0.5 font-medium text-muted hover:text-fg"
         onClick={props.onToggle}
       >
-        <Triangle open={props.open} />
+        <Triangle open={open()} />
         {props.name}
       </button>
-      <Show when={props.open}>
+      <Show when={open()}>
         <div class="pb-1 font-mono">{props.children}</div>
       </Show>
     </section>
@@ -358,6 +507,7 @@ function Children(props: {
   value: Container
   path: string
   depth: number
+  query: string
 }) {
   const loaded = () =>
     (props.inspector.expansion(props.value.id) as Container | undefined) ??
@@ -365,13 +515,18 @@ function Children(props: {
   const list = () => entriesOf(loaded())
   return (
     <>
-      <For each={list().entries}>
+      <For
+        each={list().entries.filter((entry) =>
+          entryShows(props.inspector, entry, props.query),
+        )}
+      >
         {(entry) => (
           <ValueRow
             inspector={props.inspector}
             entry={entry}
             path={`${props.path}.${entry.name}`}
             depth={props.depth}
+            query={props.query}
           />
         )}
       </For>
@@ -398,80 +553,103 @@ function HookRows(props: {
   hooks: HookValue[]
   path: string
   depth: number
+  query: string
+  labelOf: (hook: HookValue) => string
+  nameFound: (site: CallSite, name: string) => void
 }) {
   return (
     <For each={props.hooks}>
       {(hook, index) => {
+        // Paths are by call index, so hooks hidden by the search stay in the list.
         const path = () => `${props.path}.${index()}`
         const open = () => props.inspector.isOpen(path())
-        // `State(count)` with hook names on and a name found; else the type.
-        const [named] = createResource(
+        // While searching, a custom hook opens to a matching sub-hook.
+        const shownOpen = () =>
+          open() ||
+          (props.query !== "" &&
+            (hook.hooks ?? []).some((sub) =>
+              hookShows(props.inspector, sub, props.labelOf, props.query),
+            ))
+        createResource(
           () => props.settings.hookNames() && hook.site,
-          (site) => props.sources.hookName(site),
+          async (site) => {
+            const name = await props.sources.hookName(site)
+            if (name) props.nameFound(site, name)
+            return name
+          },
         )
-        const label = () => {
-          const name = props.settings.hookNames() && named.latest
-          return name ? `${hook.name}(${name})` : hook.name
-        }
+        const label = () => props.labelOf(hook)
         return (
-          <Switch>
-            <Match when={hook.hooks}>
-              {(hooks) => (
-                <>
-                  <div
-                    data-testid="value"
-                    class="flex min-h-5 items-center whitespace-nowrap pr-2"
-                    style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
-                  >
-                    <Toggle
-                      open={open()}
-                      onClick={() =>
-                        open()
-                          ? props.inspector.close(path())
-                          : props.inspector.open(path())
-                      }
-                    />
-                    <span class="text-syntax-key">
-                      {hook.value === undefined ? label() : `${label()}:`}
-                    </span>
-                    <Show when={hook.value !== undefined}>
-                      {" "}
-                      <span class={`truncate ${tone(hook.value as Value)}`}>
-                        {previewText(hook.value as Value)}
+          <Show
+            when={hookShows(props.inspector, hook, props.labelOf, props.query)}
+          >
+            <Switch>
+              <Match when={hook.hooks}>
+                {(hooks) => (
+                  <>
+                    <div
+                      data-testid="value"
+                      class="flex min-h-5 items-center whitespace-nowrap pr-2"
+                      style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
+                    >
+                      <Toggle
+                        open={shownOpen()}
+                        onClick={() =>
+                          open()
+                            ? props.inspector.close(path())
+                            : props.inspector.open(path())
+                        }
+                      />
+                      <span data-search-text class="text-syntax-key">
+                        {hook.value === undefined ? label() : `${label()}:`}
                       </span>
+                      <Show when={hook.value !== undefined}>
+                        {" "}
+                        <span
+                          data-search-text
+                          class={`truncate ${tone(hook.value as Value)}`}
+                        >
+                          {previewText(hook.value as Value)}
+                        </span>
+                      </Show>
+                    </div>
+                    <Show when={shownOpen()}>
+                      <HookRows
+                        inspector={props.inspector}
+                        sources={props.sources}
+                        settings={props.settings}
+                        hooks={hooks()}
+                        path={path()}
+                        depth={props.depth + 1}
+                        query={props.query}
+                        labelOf={props.labelOf}
+                        nameFound={props.nameFound}
+                      />
                     </Show>
-                  </div>
-                  <Show when={open()}>
-                    <HookRows
-                      inspector={props.inspector}
-                      sources={props.sources}
-                      settings={props.settings}
-                      hooks={hooks()}
-                      path={path()}
-                      depth={props.depth + 1}
-                    />
-                  </Show>
-                </>
-              )}
-            </Match>
-            <Match when={hook.value !== undefined}>
-              <ValueRow
-                inspector={props.inspector}
-                entry={{ name: label(), value: hook.value as Value }}
-                path={path()}
-                depth={props.depth}
-              />
-            </Match>
-            <Match when={hook.value === undefined}>
-              <div
-                data-testid="value"
-                class="flex min-h-5 items-center whitespace-nowrap pr-2 text-syntax-key"
-                style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
-              >
-                {label()}
-              </div>
-            </Match>
-          </Switch>
+                  </>
+                )}
+              </Match>
+              <Match when={hook.value !== undefined}>
+                <ValueRow
+                  inspector={props.inspector}
+                  entry={{ name: label(), value: hook.value as Value }}
+                  path={path()}
+                  depth={props.depth}
+                  query={props.query}
+                />
+              </Match>
+              <Match when={hook.value === undefined}>
+                <div
+                  data-testid="value"
+                  data-search-text
+                  class="flex min-h-5 items-center whitespace-nowrap pr-2 text-syntax-key"
+                  style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
+                >
+                  {label()}
+                </div>
+              </Match>
+            </Switch>
+          </Show>
         )
       }}
     </For>
@@ -501,6 +679,7 @@ function ValueRow(props: {
   entry: Entry
   path: string
   depth: number
+  query: string
 }) {
   const value = () => props.entry.value
   // A value the page sent as a ref (past its depth limit) loads when opened.
@@ -524,6 +703,9 @@ function ValueRow(props: {
   }
   const openable = () => isContainer(value()) || ref() !== undefined
   const open = () => props.inspector.isOpen(props.path)
+  // While searching, open to a match inside, without changing what's open.
+  const shownOpen = () =>
+    open() || descendantShows(props.inspector, value(), props.query)
   const toggle = () =>
     open()
       ? props.inspector.close(props.path)
@@ -536,21 +718,24 @@ function ValueRow(props: {
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
       >
         <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>
-          <Toggle open={open()} onClick={toggle} />
+          <Toggle open={shownOpen()} onClick={toggle} />
         </Show>
-        <span class="text-syntax-key">
+        <span data-search-text class="text-syntax-key">
           {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
         </span>
         {props.entry.arrow ? " => " : " "}
-        <span class={`truncate ${tone(value())}`}>{previewText(value())}</span>
+        <span data-search-text class={`truncate ${tone(value())}`}>
+          {previewText(value())}
+        </span>
       </div>
-      <Show when={open() && target()}>
+      <Show when={shownOpen() && target()}>
         {(container) => (
           <Children
             inspector={props.inspector}
             value={container()}
             path={props.path}
             depth={props.depth + 1}
+            query={props.query}
           />
         )}
       </Show>

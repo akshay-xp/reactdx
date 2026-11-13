@@ -131,6 +131,40 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
     }
   })
 
+for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
+  test(`${fixture}: inspector search filters rows and highlights matches`, async () => {
+    const { browser, page, panel } = await panelFor(
+      name,
+      `http://localhost:${port}/hooks.html`,
+      "after",
+    )
+    try {
+      await page.waitForSelector("[data-testid=hooks]")
+      await selectListed(panel, "Hooks", (t) => t.includes("State: 1"))
+      await panel.type("Search keys and values", "dark")
+      const found = await until(
+        panel.inspector,
+        (t) => t.includes('Theme: "dark"') && !t.includes("State: 1"),
+      )
+      assert.ok(found.includes('Context(Theme): "dark"'), found)
+      assert.ok(found.includes('Theme: "dark"'), found)
+      assert.ok(!found.includes("State: 1"), found)
+      if (name === "chrome")
+        assert.ok(
+          ((await panel.frame?.evaluate(
+            () => CSS.highlights.get("reactdx-search")?.size ?? 0,
+          )) ?? 0) >= 2,
+        )
+      await panel.type("Search keys and values", "")
+      const cleared = await until(panel.inspector, (t) =>
+        t.includes("State: 1"),
+      )
+      assert.ok(cleared.includes("State: 1"), cleared)
+    } finally {
+      await browser.close()
+    }
+  })
+
 // Hook names are opt-in: off, the parser chunk (hook-names) never loads.
 const NAMED = [
   "State(one): 1",

@@ -22,6 +22,8 @@ export type PanelText = (() => Promise<string>) & {
   close(): Promise<void>
   press(name: string): Promise<void>
   pressed(name: string): Promise<boolean>
+  // Replaces the text of the input with that accessible name ("" empties it).
+  type(label: string, text: string): Promise<void>
   selected(): Promise<string | undefined>
 }
 
@@ -90,6 +92,12 @@ export async function openPanelText(
     const press = async (name: string) => {
       await frame.evaluate(`${button(name)}.click()`)
     }
+    const type = async (label: string, text: string) => {
+      const input = `input[aria-label=${json(label)}]`
+      await frame.click(input, { count: 3 })
+      await frame.page().keyboard.press("Backspace")
+      if (text) await frame.type(input, text)
+    }
     const pressed = async (name: string) =>
       (await frame.evaluate(
         `${button(name)}.getAttribute("aria-pressed") === "true"`,
@@ -111,6 +119,7 @@ export async function openPanelText(
       close,
       press,
       pressed,
+      type,
       selected,
     })
   }
@@ -284,6 +293,15 @@ export async function openPanelText(
   const press = async (name: string) => {
     await onAccessible(button(name), `node.doAction(0); return "ok"`)
   }
+  // The entry's editable text, which edits as typing does (input events fire).
+  const type = async (label: string, text: string) => {
+    await onAccessible(
+      // type="search" is a SEARCHBOX where Firefox has that role, else an ENTRY.
+      `[${role("ENTRY")}, ${role("SEARCHBOX")}].includes(node.role) && node.name === ${json(label)}`,
+      `node.QueryInterface(Ci.nsIAccessibleEditableText).setTextContents(${json(text)})
+      return "ok"`,
+    )
+  }
   const pressed = async (name: string) =>
     (await onAccessible(
       button(name),
@@ -319,6 +337,7 @@ export async function openPanelText(
     close,
     press,
     pressed,
+    type,
     selected,
   })
 }
