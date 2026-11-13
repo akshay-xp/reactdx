@@ -58,10 +58,16 @@ export function ConnectionList(props: {
         >
           <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
             <Toolbar tree={props.tree} />
-            <ul>
+            {/* Flex columns down to each tree, all shrinkable: the trees take the
+                height left and scroll themselves, so the pane only scrolls when
+                the headings alone don't fit. */}
+            <ul class="flex min-h-0 flex-col">
               <For each={props.renderers}>
                 {(renderer) => (
-                  <li data-testid="renderer" class="border-border border-b p-2">
+                  <li
+                    data-testid="renderer"
+                    class="flex min-h-0 flex-col border-border border-b p-2"
+                  >
                     <h2>
                       <span class="font-mono">React {renderer.version}</span>{" "}
                       <span class="text-muted">
@@ -71,14 +77,20 @@ export function ConnectionList(props: {
                         {renderer.rendererPackageName}
                       </span>
                     </h2>
-                    <ul class="pl-4">
+                    <ul class="flex min-h-0 flex-col pl-4">
                       <For each={renderer.roots}>
                         {(root) => (
-                          <li data-testid="root" data-commits={root.commits}>
-                            <span>Root {root.id}</span>
-                            <span class="pl-2 text-muted">
-                              {root.commits} commits
-                            </span>
+                          <li
+                            data-testid="root"
+                            data-commits={root.commits}
+                            class="flex min-h-0 flex-col"
+                          >
+                            <div>
+                              <span>Root {root.id}</span>
+                              <span class="pl-2 text-muted">
+                                {root.commits} commits
+                              </span>
+                            </div>
                             <Show when={renderer.bundleType === 1}>
                               <TreeView tree={props.tree} rootId={root.id} />
                             </Show>

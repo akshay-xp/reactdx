@@ -34,8 +34,11 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
   }
   onMount(() => {
     measure()
-    addEventListener("resize", measure)
-    onCleanup(() => removeEventListener("resize", measure))
+    // The box's height comes from the layout: the panel's size and the other
+    // trees sharing the pane.
+    const observer = new ResizeObserver(measure)
+    observer.observe(scroller)
+    onCleanup(() => observer.disconnect())
   })
   const selected = (id: number) => props.tree.selected() === id
   // Dark muted on selected is 2.9:1 (docs/panel.md, Themes).
@@ -52,8 +55,9 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
     else props.tree.select(id)
   }
   // Times the first rows after a subscribe (e2e/perf.test.ts).
-  // The box grows with its rows (up to its max-height) and its height decides the
-  // window, so measure again when the count changes: rows can arrive after mount.
+  // The box grows with its rows (up to the height left in the pane) and its height
+  // decides the window, so measure again when the count changes, without waiting
+  // for the ResizeObserver: rows can arrive after mount.
   createEffect(on(() => rows().length, measure, { defer: true }))
   const shown = createMemo(() => rows().length > 0)
   createEffect(() => shown() && performance.mark("reactdx:rows"))
@@ -76,8 +80,7 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
       data-testid="tree"
       role="tree"
       tabIndex={0}
-      class="overflow-y-auto"
-      style={{ "max-height": "80vh" }}
+      class="min-h-0 overflow-y-auto"
       onScroll={measure}
       onClick={click}
       onPointerOver={(event) => {

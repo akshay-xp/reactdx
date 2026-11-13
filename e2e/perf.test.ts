@@ -182,6 +182,30 @@ test("the 10k tree scrolls with under 100 DOM rows and no long task", {
   }
 })
 
+test("a long tree is the only scroller: nothing around it scrolls", {
+  skip,
+}, async () => {
+  const { browser, panel } = await benchPanel()
+  try {
+    const layout = await panel.evaluate(() => {
+      const tree = document.querySelector("[data-testid=tree]") as HTMLElement
+      const scrolling: string[] = []
+      for (let el = tree.parentElement; el; el = el.parentElement)
+        if (el.scrollHeight > el.clientHeight)
+          scrolling.push(`${el.tagName}.${el.className}`)
+      return {
+        scrolling,
+        treeScrolls: tree.scrollHeight > tree.clientHeight,
+        // In the pane: its bottom isn't past the panel's.
+        inView: tree.getBoundingClientRect().bottom <= innerHeight,
+      }
+    })
+    assert.deepEqual(layout, { scrolling: [], treeScrolls: true, inView: true })
+  } finally {
+    await browser.close()
+  }
+})
+
 test("End and Home select the last and first rows and scroll to them", {
   skip,
 }, async () => {
