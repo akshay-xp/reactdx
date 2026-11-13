@@ -5,7 +5,7 @@ import type { TreeStore } from "./tree"
 // DOM elements filter. Laid out like SnapQL's search bar.
 export function Toolbar(props: { tree: TreeStore }) {
   return (
-    <search class="flex h-10 shrink-0 items-center gap-2 border-border border-b px-2">
+    <search class="flex h-10 shrink-0 items-center gap-2 border-border border-b px-2 py-1.5">
       <IconButton
         label="Pick element"
         testid="pick"
@@ -55,7 +55,7 @@ export function SearchField(props: {
   children?: JSX.Element
 }) {
   return (
-    <label class="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md bg-surface pr-0.5 pl-2 text-muted focus-within:ring-1 focus-within:ring-accent">
+    <label class="flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-md bg-surface pr-0.5 pl-2 text-muted focus-within:ring-1 focus-within:ring-accent">
       <svg
         aria-hidden="true"
         width="14"

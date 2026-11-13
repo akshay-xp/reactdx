@@ -188,7 +188,7 @@ test("search hides rows whose name and value don't match; clearing restores them
       state: object({ ticks: 2 }),
     }),
   )
-  expect(getByLabelText("Search values")).toBeTruthy()
+  expect(getByLabelText("Search keys and values")).toBeTruthy()
   // Matches the value, case ignored.
   search(container, "count")
   expect(rows(container)).toEqual(['label: "Count"'])
@@ -199,13 +199,15 @@ test("search hides rows whose name and value don't match; clearing restores them
   expect(rows(container)).toEqual([])
   expect(container.textContent).toContain("No matches")
 
-  fireEvent.keyDown(getByLabelText("Search values"), { key: "Escape" })
+  fireEvent.keyDown(getByLabelText("Search keys and values"), { key: "Escape" })
   expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
   expect(sections(container)).toEqual(["Props", "State"])
   search(container, "zzz")
   fireEvent.click(getByLabelText("Clear value search"))
   expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
-  expect((getByLabelText("Search values") as HTMLInputElement).value).toBe("")
+  expect(
+    (getByLabelText("Search keys and values") as HTMLInputElement).value,
+  ).toBe("")
 })
 
 test("empty sections aren't shown", () => {
@@ -360,9 +362,9 @@ test("the search query is kept for the next component", () => {
   )
   select()
   inspector.receive(inspected(3, { props: object({ label: "Count", x: 1 }) }))
-  expect((getByLabelText("Search values") as HTMLInputElement).value).toBe(
-    "count",
-  )
+  expect(
+    (getByLabelText("Search keys and values") as HTMLInputElement).value,
+  ).toBe("count")
   expect(rows(container)).toEqual(['label: "Count"'])
 })
 
@@ -638,6 +640,25 @@ test("the header shows the resolved source, its full location as the title", asy
   // A re-send keeps it while the same source resolves again.
   inspector.receive(inspected(3, { props: object({}), source: { ...frame } }))
   expect(container.querySelector("[data-testid=source]")).not.toBeNull()
+})
+
+test("the source row scrolls with the sections, first above them", async () => {
+  const { container, inspector, select } = setup(
+    "function",
+    null,
+    resolving(counterAt),
+  )
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ a: 1 }),
+      source: frame,
+    }),
+  )
+  await settled()
+  const scroller = container.querySelector("[data-testid=section]")
+    ?.parentElement as HTMLElement
+  expect(scroller.firstElementChild?.getAttribute("data-testid")).toBe("source")
 })
 
 test("no source row without a source or a resolved one", async () => {

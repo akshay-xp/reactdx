@@ -141,7 +141,7 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
     try {
       await page.waitForSelector("[data-testid=hooks]")
       await selectListed(panel, "Hooks", (t) => t.includes("State: 1"))
-      await panel.type("Search values", "dark")
+      await panel.type("Search keys and values", "dark")
       const found = await until(
         panel.inspector,
         (t) => t.includes('Theme: "dark"') && !t.includes("State: 1"),
@@ -155,7 +155,7 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
             () => CSS.highlights.get("reactdx-search")?.size ?? 0,
           )) ?? 0) >= 2,
         )
-      await panel.type("Search values", "")
+      await panel.type("Search keys and values", "")
       const cleared = await until(panel.inspector, (t) =>
         t.includes("State: 1"),
       )

@@ -322,39 +322,9 @@ export function Inspector(props: {
                 </IconButton>
               </span>
             </header>
-            <Show when={location()}>
-              {(at) => (
-                <div
-                  data-testid="source"
-                  class="flex h-7 shrink-0 items-center gap-2 border-border border-b px-2 font-mono text-muted"
-                >
-                  <span class="truncate" title={locationText(at())}>
-                    {label(at())}
-                  </span>
-                  <button
-                    type="button"
-                    class="shrink-0 cursor-pointer text-accent hover:underline"
-                    onClick={() => open(at())}
-                  >
-                    Open in editor
-                  </button>
-                  <Show when={copied() === locationText(at())}>
-                    <span class="shrink-0">Copied</span>
-                    <Show when={at().file.startsWith("/")}>
-                      <a
-                        class="shrink-0 text-accent hover:underline"
-                        href={`vscode://file${locationText(at())}`}
-                      >
-                        VS Code
-                      </a>
-                    </Show>
-                  </Show>
-                </div>
-              )}
-            </Show>
-            <div class="flex h-10 shrink-0 items-center border-border border-b px-2">
+            <div class="flex h-8 shrink-0 items-center border-border border-b px-2 py-1">
               <SearchField
-                label="Search values"
+                label="Search keys and values"
                 testid="inspector-search"
                 clearLabel="Clear value search"
                 value={query()}
@@ -363,6 +333,36 @@ export function Inspector(props: {
               />
             </div>
             <div class="overflow-y-auto" ref={(el) => paintMatches(el, query)}>
+              <Show when={location()}>
+                {(at) => (
+                  <div
+                    data-testid="source"
+                    class="flex h-7 shrink-0 items-center gap-2 border-border border-b px-2 font-mono text-muted"
+                  >
+                    <span class="truncate" title={locationText(at())}>
+                      {label(at())}
+                    </span>
+                    <button
+                      type="button"
+                      class="shrink-0 cursor-pointer text-accent hover:underline"
+                      onClick={() => open(at())}
+                    >
+                      Open in editor
+                    </button>
+                    <Show when={copied() === locationText(at())}>
+                      <span class="shrink-0">Copied</span>
+                      <Show when={at().file.startsWith("/")}>
+                        <a
+                          class="shrink-0 text-accent hover:underline"
+                          href={`vscode://file${locationText(at())}`}
+                        >
+                          VS Code
+                        </a>
+                      </Show>
+                    </Show>
+                  </div>
+                )}
+              </Show>
               <Show when={query() !== "" && !anyShown()}>
                 <p class="p-2 text-muted">No matches</p>
               </Show>
