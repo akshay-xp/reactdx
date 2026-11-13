@@ -1,4 +1,4 @@
-import type { Container, HookValue, Value } from "@reactdx/messages"
+import type { CallSite, Container, HookValue, Value } from "@reactdx/messages"
 import {
   createResource,
   createSignal,
@@ -131,6 +131,24 @@ function entryShows(
   )
 }
 
+// Whether a hook row shows under the query: its label or value text, a
+// sub-hook's, or its value's loaded descendants match.
+function hookShows(
+  inspector: InspectorStore,
+  hook: HookValue,
+  labelOf: (hook: HookValue) => string,
+  query: string,
+): boolean {
+  const value = hook.value as Value | undefined
+  return (
+    matches(labelOf(hook), query) ||
+    (value !== undefined &&
+      (matches(previewText(value), query) ||
+        descendantShows(inspector, value, query))) ||
+    (hook.hooks ?? []).some((sub) => hookShows(inspector, sub, labelOf, query))
+  )
+}
+
 // Panel settings, kept by the extension (storage.local).
 export type Settings = {
   hookNames(): boolean
@@ -170,6 +188,18 @@ export function Inspector(props: {
   }
   // The search query, kept across selections: outside the Switch below.
   const [query, setQuery] = createSignal("")
+  // Names found for hooks' call sites (Hook names), shared by the rows and the
+  // search: `State(count)` with Hook names on and a name found; else the type.
+  const [found, setFound] = createSignal(new Map<string, string>())
+  const labelOf = (hook: HookValue) => {
+    const name =
+      props.settings.hookNames() &&
+      hook.site &&
+      found().get(JSON.stringify(hook.site))
+    return name ? `${hook.name}(${name})` : hook.name
+  }
+  const nameFound = (site: CallSite, name: string) =>
+    setFound(new Map(found()).set(JSON.stringify(site), name))
   // Collapsed sections, kept while the panel is open.
   const [collapsed, setCollapsed] = createSignal(new Set<string>())
   const toggle = (name: string) => {
@@ -205,17 +235,28 @@ export function Inspector(props: {
   )
   // Alphabetical, and only those that show under the query.
   const contexts = () =>
-    [...(props.inspector.data()?.contexts ?? [])]
-      .sort((a, b) => byName(a.name, b.name))
-      .filter((context) => entryShows(props.inspector, context, query()))
+    [...(props.inspector.data()?.contexts ?? [])].sort((a, b) =>
+      byName(a.name, b.name),
+    )
+  const contextShows = (context: Entry) =>
+    entryShows(props.inspector, context, query())
+  const hooksShow = () =>
+    Boolean(props.inspector.data()?.hooksError) ||
+    (props.inspector.data()?.hooks ?? []).some((hook) =>
+      hookShows(props.inspector, hook, labelOf, query()),
+    )
+  const owners = () =>
+    (props.inspector.data()?.owners ?? []).filter((owner) =>
+      matches(owner.name, query()),
+    )
   const anyShown = () => {
     const data = props.inspector.data()
     return (
       shown(data?.props) ||
       shown(data?.state) ||
-      Boolean(data?.hooks?.length || data?.hooksError) ||
-      contexts().length > 0 ||
-      Boolean(data?.owners?.length)
+      hooksShow() ||
+      contexts().some(contextShows) ||
+      owners().length > 0
     )
   }
   return (
@@ -301,12 +342,7 @@ export function Inspector(props: {
               </Show>
               {section("Props", props.inspector.data()?.props)}
               {section("State", props.inspector.data()?.state)}
-              <Show
-                when={
-                  props.inspector.data()?.hooks?.length ||
-                  props.inspector.data()?.hooksError
-                }
-              >
+              <Show when={hooksShow()}>
                 <Section
                   name="Hooks"
                   open={!collapsed().has("Hooks")}
@@ -325,10 +361,13 @@ export function Inspector(props: {
                     hooks={props.inspector.data()?.hooks ?? []}
                     path="Hooks"
                     depth={0}
+                    query={query()}
+                    labelOf={labelOf}
+                    nameFound={nameFound}
                   />
                 </Section>
               </Show>
-              <Show when={contexts().length}>
+              <Show when={contexts().some(contextShows)}>
                 <Section
                   name="Context"
                   open={!collapsed().has("Context")}
@@ -337,25 +376,27 @@ export function Inspector(props: {
                 >
                   <For each={contexts()}>
                     {(context, index) => (
-                      <ValueRow
-                        inspector={props.inspector}
-                        entry={context}
-                        path={`Context.${index()}`}
-                        depth={0}
-                        query={query()}
-                      />
+                      <Show when={contextShows(context)}>
+                        <ValueRow
+                          inspector={props.inspector}
+                          entry={context}
+                          path={`Context.${index()}`}
+                          depth={0}
+                          query={query()}
+                        />
+                      </Show>
                     )}
                   </For>
                 </Section>
               </Show>
-              <Show when={props.inspector.data()?.owners?.length}>
+              <Show when={owners().length}>
                 <Section
                   name="Rendered by"
                   open={!collapsed().has("Rendered by")}
                   forced={query() !== ""}
                   onToggle={() => toggle("Rendered by")}
                 >
-                  <For each={props.inspector.data()?.owners}>
+                  <For each={owners()}>
                     {(owner) => (
                       <div class="flex min-h-5 items-center whitespace-nowrap pr-2 pl-6">
                         {owner.id === null ? (
@@ -481,81 +522,99 @@ function HookRows(props: {
   hooks: HookValue[]
   path: string
   depth: number
+  query: string
+  labelOf: (hook: HookValue) => string
+  nameFound: (site: CallSite, name: string) => void
 }) {
   return (
     <For each={props.hooks}>
       {(hook, index) => {
+        // Paths are by call index, so hooks hidden by the search stay in the list.
         const path = () => `${props.path}.${index()}`
         const open = () => props.inspector.isOpen(path())
-        // `State(count)` with hook names on and a name found; else the type.
-        const [named] = createResource(
+        // While searching, a custom hook opens to a matching sub-hook.
+        const shownOpen = () =>
+          open() ||
+          (props.query !== "" &&
+            (hook.hooks ?? []).some((sub) =>
+              hookShows(props.inspector, sub, props.labelOf, props.query),
+            ))
+        createResource(
           () => props.settings.hookNames() && hook.site,
-          (site) => props.sources.hookName(site),
+          async (site) => {
+            const name = await props.sources.hookName(site)
+            if (name) props.nameFound(site, name)
+            return name
+          },
         )
-        const label = () => {
-          const name = props.settings.hookNames() && named.latest
-          return name ? `${hook.name}(${name})` : hook.name
-        }
+        const label = () => props.labelOf(hook)
         return (
-          <Switch>
-            <Match when={hook.hooks}>
-              {(hooks) => (
-                <>
-                  <div
-                    data-testid="value"
-                    class="flex min-h-5 items-center whitespace-nowrap pr-2"
-                    style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
-                  >
-                    <Toggle
-                      open={open()}
-                      onClick={() =>
-                        open()
-                          ? props.inspector.close(path())
-                          : props.inspector.open(path())
-                      }
-                    />
-                    <span class="text-syntax-key">
-                      {hook.value === undefined ? label() : `${label()}:`}
-                    </span>
-                    <Show when={hook.value !== undefined}>
-                      {" "}
-                      <span class={`truncate ${tone(hook.value as Value)}`}>
-                        {previewText(hook.value as Value)}
+          <Show
+            when={hookShows(props.inspector, hook, props.labelOf, props.query)}
+          >
+            <Switch>
+              <Match when={hook.hooks}>
+                {(hooks) => (
+                  <>
+                    <div
+                      data-testid="value"
+                      class="flex min-h-5 items-center whitespace-nowrap pr-2"
+                      style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
+                    >
+                      <Toggle
+                        open={shownOpen()}
+                        onClick={() =>
+                          open()
+                            ? props.inspector.close(path())
+                            : props.inspector.open(path())
+                        }
+                      />
+                      <span class="text-syntax-key">
+                        {hook.value === undefined ? label() : `${label()}:`}
                       </span>
+                      <Show when={hook.value !== undefined}>
+                        {" "}
+                        <span class={`truncate ${tone(hook.value as Value)}`}>
+                          {previewText(hook.value as Value)}
+                        </span>
+                      </Show>
+                    </div>
+                    <Show when={shownOpen()}>
+                      <HookRows
+                        inspector={props.inspector}
+                        sources={props.sources}
+                        settings={props.settings}
+                        hooks={hooks()}
+                        path={path()}
+                        depth={props.depth + 1}
+                        query={props.query}
+                        labelOf={props.labelOf}
+                        nameFound={props.nameFound}
+                      />
                     </Show>
-                  </div>
-                  <Show when={open()}>
-                    <HookRows
-                      inspector={props.inspector}
-                      sources={props.sources}
-                      settings={props.settings}
-                      hooks={hooks()}
-                      path={path()}
-                      depth={props.depth + 1}
-                    />
-                  </Show>
-                </>
-              )}
-            </Match>
-            <Match when={hook.value !== undefined}>
-              <ValueRow
-                inspector={props.inspector}
-                entry={{ name: label(), value: hook.value as Value }}
-                path={path()}
-                depth={props.depth}
-                query=""
-              />
-            </Match>
-            <Match when={hook.value === undefined}>
-              <div
-                data-testid="value"
-                class="flex min-h-5 items-center whitespace-nowrap pr-2 text-syntax-key"
-                style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
-              >
-                {label()}
-              </div>
-            </Match>
-          </Switch>
+                  </>
+                )}
+              </Match>
+              <Match when={hook.value !== undefined}>
+                <ValueRow
+                  inspector={props.inspector}
+                  entry={{ name: label(), value: hook.value as Value }}
+                  path={path()}
+                  depth={props.depth}
+                  query={props.query}
+                />
+              </Match>
+              <Match when={hook.value === undefined}>
+                <div
+                  data-testid="value"
+                  class="flex min-h-5 items-center whitespace-nowrap pr-2 text-syntax-key"
+                  style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
+                >
+                  {label()}
+                </div>
+              </Match>
+            </Switch>
+          </Show>
         )
       }}
     </For>

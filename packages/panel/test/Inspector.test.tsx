@@ -397,6 +397,44 @@ test("Hooks list each hook; custom hooks open to theirs", () => {
   expect(rows(container)).toContain("State: 2")
 })
 
+test("search filters hooks by name, value and sub-hooks, and owners by name", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      hooks: [
+        ...hooks,
+        {
+          name: "useForm",
+          value: "f",
+          hooks: [{ name: "Reducer", value: 1 }],
+        },
+      ],
+      owners: [
+        { id: null, name: "App" },
+        { id: null, name: "Page" },
+      ],
+    }),
+  )
+  const owners = () =>
+    [...container.querySelectorAll("[data-testid=owner]")].map(
+      (el) => el.textContent,
+    )
+  search(container, "cart")
+  expect(rows(container)).toEqual(['useCart: "2 items"'])
+  search(container, "effect")
+  expect(rows(container)).toEqual(["Effect"])
+  // A sub-hook's match shows its custom hook, open.
+  search(container, "reducer")
+  expect(rows(container)).toEqual(['useForm: "f"', "Reducer: 1"])
+  expect(sections(container)).toEqual(["Hooks"])
+  search(container, "app")
+  expect(rows(container)).toEqual([])
+  expect(owners()).toEqual(["App"])
+  expect(sections(container)).toEqual(["Rendered by"])
+})
+
 test("a hook's object value opens like a prop", () => {
   const { container, inspector, select } = setup()
   select()
