@@ -53,11 +53,19 @@ async function launchChrome(
     )
   if (!openDevtools || !extensions.includes(reactdxBuild("chrome")))
     return { browser, panelCreated: async () => false }
-  const devtools = await browser.waitForTarget(
-    (target) => target.url().endsWith("/devtools.html"),
-    // Slow CI runners take longer than 10 s to open DevTools.
-    { timeout: 30_000 },
-  )
+  const devtoolsPage = (timeout: number) =>
+    browser.waitForTarget((t) => t.url().endsWith("/devtools.html"), {
+      timeout,
+    })
+  // On CI, Chrome sometimes opens DevTools without ever loading ReactDX's
+  // devtools page (Chrome's own target list has none). Reloading DevTools loads it.
+  const devtools = await devtoolsPage(10_000).catch(async () => {
+    const frontend = await browser.waitForTarget((t) =>
+      t.url().startsWith(DEVTOOLS),
+    )
+    await (await frontend.asPage())?.reload()
+    return devtoolsPage(20_000)
+  })
   return {
     browser,
     async panelCreated() {
