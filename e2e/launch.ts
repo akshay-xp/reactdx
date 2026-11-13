@@ -53,11 +53,19 @@ async function launchChrome(
     )
   if (!openDevtools || !extensions.includes(reactdxBuild("chrome")))
     return { browser, panelCreated: async () => false }
-  const devtools = await browser.waitForTarget(
-    (target) => target.url().endsWith("/devtools.html"),
-    // Slow CI runners take longer than 10 s to open DevTools.
-    { timeout: 30_000 },
-  )
+  const devtoolsPage = (timeout: number) =>
+    browser.waitForTarget((t) => t.url().endsWith("/devtools.html"), {
+      timeout,
+    })
+  // On CI, Chrome sometimes opens DevTools without ever loading ReactDX's
+  // devtools page (Chrome's own target list has none). A new tab's DevTools loads
+  // it. Reloading DevTools did too, but could detach the tab's frame mid-goto.
+  const devtools = await devtoolsPage(10_000).catch(async () => {
+    const [stale] = await browser.pages()
+    await browser.newPage()
+    await stale?.close()
+    return devtoolsPage(20_000)
+  })
   return {
     browser,
     async panelCreated() {
@@ -129,8 +137,9 @@ const SHOW_REACTDX = `import("./ui/legacy/legacy.js").then(({ InspectorView }) =
 })`
 
 // Chrome only: selects the ReactDX tab in the open DevTools window and returns the panel frame.
-// Each DevTools target gets a short try, newest first: on CI, waiting on the first
-// one found (after another DevTools closed) once hung for the whole timeout.
+// showPanel can hang in a freshly opened DevTools (on CI, after another one closed)
+// and a second call goes through, so each try is short. A just-opened target can
+// throw "Requesting main frame too early!".
 export async function openPanel(browser: Browser): Promise<Frame> {
   const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
@@ -139,7 +148,6 @@ export async function openPanel(browser: Browser): Promise<Frame> {
       .filter((t) => t.url().startsWith(DEVTOOLS))
       .reverse()
     for (const target of targets) {
-      // A just-opened target can throw "Requesting main frame too early!".
       const devtools = await (async () => {
         const page = await target.asPage()
         await page.waitForFunction(SHOW_REACTDX, { timeout: 3_000 })

@@ -187,19 +187,36 @@ test("End and Home select the last and first rows and scroll to them", {
 }, async () => {
   const { browser, panel } = await benchPanel()
   try {
-    const selected = (text: string) =>
+    const selected = (text: string, timeout: number) =>
       panel.waitForFunction(
         (want) =>
           document.querySelector("[data-testid=node][aria-selected=true]")
             ?.textContent === want,
-        { timeout: 2000 },
+        { timeout },
         text,
       )
     await panel.focus("[data-testid=tree]")
-    await panel.page().keyboard.press("End")
-    await selected('Cell key="9999"')
+    // The tree can still be receiving Cells (seen on CI): End then selects the
+    // last row so far, so it's pressed again until the last Cell is selected.
+    const deadline = Date.now() + 10_000
+    for (;;) {
+      await panel.page().keyboard.press("End")
+      const last = await selected('Cell key="9999"', 500).then(
+        () => true,
+        () => false,
+      )
+      if (last) break
+      if (Date.now() > deadline)
+        assert.fail(
+          `End selected ${await panel.evaluate(
+            () =>
+              document.querySelector("[data-testid=node][aria-selected=true]")
+                ?.textContent,
+          )}`,
+        )
+    }
     await panel.page().keyboard.press("Home")
-    await selected("Bench")
+    await selected("Bench", 2000)
   } finally {
     await browser.close()
   }
