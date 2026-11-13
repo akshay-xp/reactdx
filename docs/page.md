@@ -64,6 +64,7 @@ The agent tracks the component tree only between `WATCH` and `UNWATCH` message e
 - `tree.owner(element)`: walks DOM parents to the first element with a `__reactFiber$…` key, then `fiber.return` to the nearest fiber with a kind that isn't `host`, whose id the tree still has (mounted and emitted). So a pick is always a component, with a row even when DOM elements are hidden. `undefined` outside React.
 - `pick-start` adds capture-phase listeners on the window, ahead of React's on the root container:
   - `pointermove`: highlights the owner of the element under the pointer (hides the overlay over anything React doesn't own).
+  - `pointerdown`, `mousedown`, `pointerup`, `mouseup`: `preventDefault` and `stopImmediatePropagation`, so the app never sees any of the press (pages act on press too: menus, drags, focus); as React DevTools does. A prevented `pointerdown` still lets the `click` fire.
   - `click`: `preventDefault` and `stopImmediatePropagation` (the app never sees it), ends picking, posts `picked(owner ?? null)`.
   - `keydown` Escape: ends picking, posts `picked(null)`.
 - Ending picking removes the listeners and hides the overlay. `pick-stop` and `unwatch` end it without posting. Only `click` is swallowed: `pointerdown` and `mousedown` still reach the page.
