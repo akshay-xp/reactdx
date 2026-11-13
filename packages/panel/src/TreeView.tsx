@@ -81,6 +81,24 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
       if (top < 0) pane.scrollTop += top
       else if (top + ROW_HEIGHT > pane.clientHeight)
         pane.scrollTop += top + ROW_HEIGHT - pane.clientHeight
+      // Render the new window now (the scroll event comes later); once it's in the
+      // DOM, bring the row's toggle and name into view sideways: deep rows start
+      // off to the right.
+      measure()
+      queueMicrotask(() => {
+        const row = box.querySelector(`[data-id="${id}"]`)
+        const start = row?.querySelector("[data-toggle]")
+        const name = row?.querySelector("[data-testid=name]")
+        if (!pane || !start || !name) return
+        const left = pane.getBoundingClientRect().left
+        const from = start.getBoundingClientRect().left - left
+        const to = name.getBoundingClientRect().right - left
+        // Whole pixels, rounded outward: the scroll snaps to device pixels.
+        if (from < 0) pane.scrollLeft += Math.floor(from)
+        else if (to > pane.clientWidth)
+          // A name wider than the pane keeps its start in view.
+          pane.scrollLeft += Math.ceil(Math.min(from, to - pane.clientWidth))
+      })
     }),
   )
   const range = () => windowOf(top(), height(), rows().length)
