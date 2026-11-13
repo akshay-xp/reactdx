@@ -317,6 +317,55 @@ test("search reaches loaded values, expanding their ancestors only while it filt
   expect(rows(container)).toEqual([])
 })
 
+test("the search query is kept for the next component", () => {
+  const { container, inspector, select, tree, getByLabelText } = setup()
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 4,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "Other",
+        key: null,
+        index: 1,
+      },
+    ]),
+  )
+  select()
+  inspector.receive(inspected(3, { props: object({ label: "Count" }) }))
+  search(container, "count")
+  tree.select(4)
+  inspector.inspect(4)
+  inspector.receive(inspected(4, { props: object({ count: 1, other: 2 }) }))
+  expect(rows(container)).toEqual(["count: 1"])
+  // Through "Select a component" and back.
+  tree.clear()
+  tree.apply(treeBatch(3, [{ op: "reset" }]))
+  expect(container.textContent).toBe("Select a component to inspect it.")
+  tree.apply(
+    treeBatch(4, [
+      {
+        op: "add",
+        id: 3,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "Counter",
+        key: null,
+        index: 0,
+      },
+    ]),
+  )
+  select()
+  inspector.receive(inspected(3, { props: object({ label: "Count", x: 1 }) }))
+  expect((getByLabelText("Search values") as HTMLInputElement).value).toBe(
+    "count",
+  )
+  expect(rows(container)).toEqual(['label: "Count"'])
+})
+
 test("a paged value shows more on request", () => {
   const { container, inspector, select, sent } = setup()
   select()
