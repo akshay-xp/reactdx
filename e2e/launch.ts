@@ -121,18 +121,35 @@ function themedProfile(theme: "light" | "dark") {
   return dir
 }
 
+const DEVTOOLS = "devtools://devtools/bundled/devtools_app.html"
+const SHOW_REACTDX = `import("./ui/legacy/legacy.js").then(({ InspectorView }) => {
+  const view = InspectorView.InspectorView.instance()
+  const id = view.tabbedPane.tabIds().find((id) => id.includes("ReactDX"))
+  return id && view.showPanel(id).then(() => true)
+})`
+
 // Chrome only: selects the ReactDX tab in the open DevTools window and returns the panel frame.
+// Each DevTools target gets a short try, newest first: on CI, waiting on the first
+// one found (after another DevTools closed) once hung for the whole timeout.
 export async function openPanel(browser: Browser): Promise<Frame> {
-  const target = await browser.waitForTarget((t) =>
-    t.url().startsWith("devtools://devtools/bundled/devtools_app.html"),
-  )
-  const devtools = await target.asPage()
-  await devtools.waitForFunction(
-    `import("./ui/legacy/legacy.js").then(({ InspectorView }) => {
-      const view = InspectorView.InspectorView.instance()
-      const id = view.tabbedPane.tabIds().find((id) => id.includes("ReactDX"))
-      return id && view.showPanel(id).then(() => true)
-    })`,
-  )
-  return devtools.waitForFrame((f) => f.url().endsWith("/panel.html"))
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    const targets = browser
+      .targets()
+      .filter((t) => t.url().startsWith(DEVTOOLS))
+      .reverse()
+    for (const target of targets) {
+      // A just-opened target can throw "Requesting main frame too early!".
+      const devtools = await (async () => {
+        const page = await target.asPage()
+        await page.waitForFunction(SHOW_REACTDX, { timeout: 3_000 })
+        return page
+      })().catch(() => undefined)
+      if (devtools)
+        return devtools.waitForFrame((f) => f.url().endsWith("/panel.html"))
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  const urls = browser.targets().map((t) => `${t.type()} ${t.url()}`)
+  throw new Error(`no DevTools showed ReactDX: ${urls.join(", ")}`)
 }
