@@ -129,8 +129,9 @@ const SHOW_REACTDX = `import("./ui/legacy/legacy.js").then(({ InspectorView }) =
 })`
 
 // Chrome only: selects the ReactDX tab in the open DevTools window and returns the panel frame.
-// Each DevTools target gets a short try, newest first: on CI, waiting on the first
-// one found (after another DevTools closed) once hung for the whole timeout.
+// showPanel can hang in a freshly opened DevTools (on CI, after another one closed)
+// and a second call goes through, so each try is short. A just-opened target can
+// throw "Requesting main frame too early!".
 export async function openPanel(browser: Browser): Promise<Frame> {
   const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
@@ -139,7 +140,6 @@ export async function openPanel(browser: Browser): Promise<Frame> {
       .filter((t) => t.url().startsWith(DEVTOOLS))
       .reverse()
     for (const target of targets) {
-      // A just-opened target can throw "Requesting main frame too early!".
       const devtools = await (async () => {
         const page = await target.asPage()
         await page.waitForFunction(SHOW_REACTDX, { timeout: 3_000 })
