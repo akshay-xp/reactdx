@@ -63,12 +63,16 @@ test("a pick inside a collapsed subtree shows its row, scrolled into view both w
           "[data-testid=node][aria-selected=true] [data-testid=name]",
         ) as HTMLElement
       ).getBoundingClientRect()
+      const box = document.querySelector("[data-testid=trees]") as HTMLElement
       return {
+        // A row clear of the bottom edge, where an overlay scrollbar sits
+        // (macOS draws the horizontal one over the content).
+        clear: name.bottom - pane.top <= box.clientHeight - 20 + 1,
         vertical: name.top >= pane.top && name.bottom <= pane.bottom,
         horizontal: name.left >= pane.left && name.right <= pane.right,
       }
     })
-    assert.deepEqual(view, { vertical: true, horizontal: true })
+    assert.deepEqual(view, { clear: true, vertical: true, horizontal: true })
   } finally {
     await browser.close()
   }

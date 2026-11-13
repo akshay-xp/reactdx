@@ -77,15 +77,18 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
       const index = rows().findIndex((row) => row.id === id)
       // Before mount there's no layout to scroll.
       if (index === -1 || !pane) return
+      // A row's clearance from the pane's edges: macOS draws the horizontal
+      // scrollbar over the content, so a row right at the bottom hides under it.
+      const margin = Math.min(ROW_HEIGHT, (pane.clientHeight - ROW_HEIGHT) / 2)
       const top = offset(pane) + index * ROW_HEIGHT
-      if (top < 0) pane.scrollTop += top
-      else if (top + ROW_HEIGHT > pane.clientHeight)
-        pane.scrollTop += top + ROW_HEIGHT - pane.clientHeight
-      // Render the new window now (the scroll event comes later); once it's in the
-      // DOM, bring the row's toggle and name into view sideways: deep rows start
-      // off to the right.
+      if (top < margin) pane.scrollTop += top - margin
+      else if (top + ROW_HEIGHT + margin > pane.clientHeight)
+        pane.scrollTop += top + ROW_HEIGHT + margin - pane.clientHeight
       measure()
-      queueMicrotask(() => {
+      // Next frame, after the scroll has applied and the window has rendered:
+      // bring the row's toggle and name into view sideways (deep rows start off
+      // to the right).
+      requestAnimationFrame(() => {
         const row = box.querySelector(`[data-id="${id}"]`)
         const start = row?.querySelector("[data-toggle]")
         const name = row?.querySelector("[data-testid=name]")
