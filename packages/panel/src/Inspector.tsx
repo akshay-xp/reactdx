@@ -18,7 +18,7 @@ import {
 import { IconButton } from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
-import { previewText } from "./value"
+import { byName, previewText, sortedEntries } from "./value"
 
 // Text color per kind of value, from the theme's syntax tokens.
 function tone(value: Value) {
@@ -54,7 +54,7 @@ const isContainer = (value: Value): value is Container =>
 // A container's loaded entries, and how many are still on the page.
 function entriesOf(value: Container): { entries: Entry[]; left: number } {
   const named = (props: Record<string, Value> = {}) =>
-    Object.entries(props).map(([name, item]) => ({ name, value: item }))
+    sortedEntries(props).map(([name, item]) => ({ name, value: item }))
   const indexed = (items: Value[]) =>
     items.map((item, i) => ({ name: String(i), value: item }))
   switch (value.type) {
@@ -259,7 +259,11 @@ export function Inspector(props: {
                   open={!collapsed().has("Context")}
                   onToggle={() => toggle("Context")}
                 >
-                  <For each={props.inspector.data()?.contexts}>
+                  <For
+                    each={[...(props.inspector.data()?.contexts ?? [])].sort(
+                      (a, b) => byName(a.name, b.name),
+                    )}
+                  >
                     {(context, index) => (
                       <ValueRow
                         inspector={props.inspector}

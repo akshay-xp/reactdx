@@ -114,6 +114,65 @@ test("Props then State, one row per value", () => {
   expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
 })
 
+test("object keys and contexts read alphabetically; hooks, arrays and maps keep their order", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        zoom: 1,
+        Alpha: 2,
+        list: { type: "array", id: 6, length: 2, items: ["z", "a"] },
+        map: {
+          type: "map",
+          id: 7,
+          size: 2,
+          entries: [
+            ["z", 1],
+            ["a", 2],
+          ],
+        },
+      }),
+      hooks: [
+        { name: "State", value: 0 },
+        { name: "Memo", value: object({ y: 1, x: 2 }, { id: 8 }) },
+      ],
+      contexts: [
+        { name: "Theme", value: "dark" },
+        { name: "Auth", value: null },
+      ],
+    }),
+  )
+  expect(rows(container)).toEqual([
+    "Alpha: 2",
+    'list: ["z", "a"]',
+    "map: Map(2)",
+    "zoom: 1",
+    "State: 0",
+    "Memo: {x: 2, y: 1}",
+    "Auth: null",
+    'Theme: "dark"',
+  ])
+  for (const name of ["list", "map", "Memo"])
+    fireEvent.click(toggle(container, name) as Element)
+  expect(rows(container)).toEqual([
+    "Alpha: 2",
+    'list: ["z", "a"]',
+    '0: "z"',
+    '1: "a"',
+    "map: Map(2)",
+    '"z" => 1',
+    '"a" => 2',
+    "zoom: 1",
+    "State: 0",
+    "Memo: {x: 2, y: 1}",
+    "x: 2",
+    "y: 1",
+    "Auth: null",
+    'Theme: "dark"',
+  ])
+})
+
 test("empty sections aren't shown", () => {
   const { container, inspector, select } = setup("class")
   select()
@@ -294,8 +353,8 @@ test("Context lists each context read, after Hooks", () => {
   expect(sections(container)).toEqual(["Hooks", "Context"])
   expect(rows(container)).toEqual([
     "State: 0",
-    'Theme: "dark"',
     "Context: {a: 1}",
+    'Theme: "dark"',
   ])
   fireEvent.click(toggle(container, "Context") as Element)
   expect(rows(container)).toContain("a: 1")
