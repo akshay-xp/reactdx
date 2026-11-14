@@ -2,11 +2,16 @@ import { expect, test } from "vitest"
 import {
   CLEAR_HIGHLIGHT,
   highlight,
+  MAX_COPY,
   PICK_START,
   PICK_STOP,
   parsePicked,
   parseTreeCommand,
+  parseValueStored,
+  parseValueText,
   picked,
+  valueStored,
+  valueText,
 } from "../src/index"
 
 test.each([
@@ -103,4 +108,63 @@ test("parsePicked strips extra keys", () => {
 test("picker commands for the agent", () => {
   expect(PICK_START).toEqual({ source: "reactdx-relay", type: "pick-start" })
   expect(PICK_STOP).toEqual({ source: "reactdx-relay", type: "pick-stop" })
+})
+
+test.each([
+  { type: "copy-value", target: { objectId: 2 } },
+  { type: "copy-value", target: { objectId: 2, key: "name" } },
+  { type: "store-value", target: { objectId: 2, key: 0 } },
+  { type: "copy-value", target: { hook: [1, 0] } },
+  { type: "store-value", target: { context: 0 } },
+])("keeps the value command %o", (command) => {
+  expect(parseTreeCommand(command)).toEqual(command)
+})
+
+test.each<[string, unknown]>([
+  ["no target", { type: "copy-value" }],
+  ["objectId 0", { type: "copy-value", target: { objectId: 0 } }],
+  ["a key object", { type: "copy-value", target: { objectId: 1, key: {} } }],
+  [
+    "a fractional index",
+    { type: "copy-value", target: { objectId: 1, key: 1.5 } },
+  ],
+  [
+    "a long key",
+    { type: "copy-value", target: { objectId: 1, key: "k".repeat(1001) } },
+  ],
+  ["an empty hook path", { type: "store-value", target: { hook: [] } }],
+  [
+    "a deep hook path",
+    { type: "store-value", target: { hook: Array(9).fill(0) } },
+  ],
+  ["a negative context", { type: "store-value", target: { context: -1 } }],
+])("drops a value command with %s", (_, data) => {
+  expect(parseTreeCommand(data)).toBeUndefined()
+})
+
+test("a value command's target keeps only its fields", () => {
+  expect(
+    parseTreeCommand({
+      type: "copy-value",
+      target: { objectId: 2, key: "a", hook: [0], extra: 1 },
+    }),
+  ).toEqual({ type: "copy-value", target: { objectId: 2, key: "a" } })
+})
+
+test("valueText round-trips, and only text within MAX_COPY passes", () => {
+  expect(parseValueText(valueText("{}"))).toEqual(valueText("{}"))
+  expect(parseValueText(valueText("x".repeat(MAX_COPY + 1)))).toBeUndefined()
+  expect(
+    parseValueText({ source: "reactdx", type: "value-text", text: 1 }),
+  ).toBeUndefined()
+})
+
+test("valueStored round-trips; only a $reactdx<n> name passes", () => {
+  expect(parseValueStored(valueStored("$reactdx12"))).toEqual(
+    valueStored("$reactdx12"),
+  )
+  for (const name of ["$reactdx0", "$reactdx", "x", "$reactdx1;alert(1)", 1])
+    expect(
+      parseValueStored({ source: "reactdx", type: "value-stored", name }),
+    ).toBeUndefined()
 })

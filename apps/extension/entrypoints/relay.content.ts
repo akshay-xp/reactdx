@@ -8,6 +8,8 @@ import {
   parsePicked,
   parseTreeBatch,
   parseTreeCommand,
+  parseValueStored,
+  parseValueText,
   type RendererInfo,
   type RootInfo,
   type StateReply,
@@ -80,7 +82,9 @@ export default defineContentScript({
         parseTreeBatch(event.data) ??
         parsePicked(event.data) ??
         parseInspected(event.data) ??
-        parseExpanded(event.data)
+        parseExpanded(event.data) ??
+        parseValueText(event.data) ??
+        parseValueStored(event.data)
       if (forward) {
         tree?.postMessage(forward)
         return

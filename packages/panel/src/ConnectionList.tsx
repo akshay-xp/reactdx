@@ -1,5 +1,6 @@
 import type { RendererView } from "@reactdx/messages"
 import { For, Match, Show, Switch } from "solid-js"
+import { Empty, EmptyAction } from "./Empty"
 import { Inspector, type Settings } from "./Inspector"
 import type { InspectorStore } from "./inspection"
 import type { Sources } from "./source"
@@ -9,6 +10,16 @@ import type { TreeStore } from "./tree"
 
 const build = (bundleType: number) =>
   bundleType === 1 ? "development" : "production"
+
+// A circular arrow, inside a 24-unit svg (Glyph).
+function ReloadGlyph() {
+  return (
+    <>
+      <path d="M20 11a8 8 0 1 0-2.3 6.2" />
+      <path d="M20 4v7h-7" />
+    </>
+  )
+}
 
 // Page data is only ever a text node: never markup.
 // `stale`: the page loaded before ReactDX was installed or updated, so React never
@@ -26,19 +37,18 @@ export function ConnectionList(props: {
   return (
     <Switch>
       <Match when={props.renderers.length === 0 && props.stale}>
-        <div class="flex flex-col items-start gap-2 p-2">
-          <p class="text-muted">
-            This page was open before ReactDX was installed or updated. Reload
-            it to inspect React.
-          </p>
-          <button
-            type="button"
-            class="rounded-md bg-surface px-2 py-0.5 text-fg hover:bg-selected"
+        <Empty
+          icon={<ReloadGlyph />}
+          title="Reload this page to inspect React."
+          hint="It was open before ReactDX was installed or updated."
+        >
+          <EmptyAction
+            icon={<ReloadGlyph />}
             onClick={() => props.onReload?.()}
           >
             Reload page
-          </button>
-        </div>
+          </EmptyAction>
+        </Empty>
       </Match>
       <Match when={props.renderers.length === 0}>
         <p class="p-2 text-muted">No React on this page</p>

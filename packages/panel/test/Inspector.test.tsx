@@ -4,10 +4,11 @@ import {
   type TreeKind,
   treeBatch,
   type Value,
+  valueStored,
 } from "@reactdx/messages"
 import { fireEvent, render } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { Inspector } from "../src/Inspector"
 import { createInspectorStore, type InspectorCommand } from "../src/inspection"
 import type { Sources } from "../src/source"
@@ -62,7 +63,11 @@ function setup(
     ]),
   )
   const sent: InspectorCommand[] = []
-  const inspector = createInspectorStore((command) => sent.push(command))
+  const copied: string[] = []
+  const inspector = createInspectorStore(
+    (command) => sent.push(command),
+    (text) => copied.push(text),
+  )
   const view = render(() => (
     <Inspector
       tree={tree}
@@ -75,7 +80,7 @@ function setup(
     tree.select(3)
     inspector.inspect(3)
   }
-  return { tree, inspector, sent, select, ...view }
+  return { tree, inspector, sent, copied, select, ...view }
 }
 
 const sections = (container: Element) =>
@@ -87,12 +92,23 @@ const rows = (container: Element) =>
     (row) => row.textContent,
   )
 
-test("empty states", () => {
-  const { container, inspector, select } = setup()
-  expect(container.textContent).toBe("Select a component to inspect it.")
+test("empty states say what to do; the first offers the picker", () => {
+  const { container, inspector, tree, select, getByRole } = setup()
+  expect(container.textContent).toBe(
+    "Select a component to inspect it.Click it in the tree, or pick it on the page.Pick an element",
+  )
+  const pick = getByRole("button", { name: "Pick an element" })
+  fireEvent.click(pick)
+  expect(tree.picking()).toBe(true)
+  expect(pick.getAttribute("aria-pressed")).toBe("true")
+  expect(pick.textContent).toBe("Click an element on the page")
+  fireEvent.click(pick)
+  expect(tree.picking()).toBe(false)
   select()
   inspector.receive(inspected(3, null))
-  expect(container.textContent).toBe("This component unmounted.")
+  expect(container.textContent).toBe(
+    "This component unmounted.Select another in the tree.",
+  )
 })
 
 test("the header names the node, its kind and key", () => {
@@ -345,7 +361,7 @@ test("the search query is kept for the next component", () => {
   // Through "Select a component" and back.
   tree.clear()
   tree.apply(treeBatch(3, [{ op: "reset" }]))
-  expect(container.textContent).toBe("Select a component to inspect it.")
+  expect(container.textContent).toMatch(/^Select a component to inspect it\./)
   tree.apply(
     treeBatch(4, [
       {
@@ -816,4 +832,117 @@ test("another source never shows the previous one's location while it resolves",
   inspector.receive(inspected(3, { props: object({}), source: other }))
   await settled()
   expect(container.querySelector("[data-testid=source]")).toBeNull()
+})
+
+// Right-clicks the row reading `text` and returns the menu's item labels.
+const menuOn = (container: Element, text: string) => {
+  const row = [...container.querySelectorAll("[data-testid=value]")].find(
+    (r) => r.textContent === text,
+  )
+  fireEvent.contextMenu(row as Element, { clientX: 10, clientY: 20 })
+  return [...document.querySelectorAll("[role=menuitem]")].map(
+    (item) => item.textContent,
+  )
+}
+const choose = (label: string) =>
+  fireEvent.click(
+    [...document.querySelectorAll("[role=menuitem]")].find(
+      (item) => item.textContent === label,
+    ) as Element,
+  )
+const menu = () => document.querySelector("[role=menu]")
+
+test("right-clicking a row offers Copy key, Copy value and Store as global variable", () => {
+  const { container, inspector, sent, copied, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        label: "Count",
+        list: { type: "array", id: 6, length: 1, items: ["a"] },
+      }),
+    }),
+  )
+  expect(menuOn(container, 'label: "Count"')).toEqual([
+    "Copy key",
+    "Copy value",
+    "Store as global variable",
+  ])
+  choose("Copy key")
+  expect(copied).toEqual(["label"])
+  expect(menu()).toBeNull()
+  // The page copies or stores the value: the panel's may be cut short.
+  menuOn(container, 'label: "Count"')
+  choose("Copy value")
+  fireEvent.click(toggle(container, "list") as Element)
+  menuOn(container, '0: "a"')
+  choose("Store as global variable")
+  expect(sent.slice(-2)).toEqual([
+    { type: "copy-value", target: { objectId: 1, key: "label" } },
+    { type: "store-value", target: { objectId: 6, key: 0 } },
+  ])
+})
+
+test("hook and context rows name the hook by call path and the context by read order", () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      hooks,
+      contexts: [
+        { name: "Zoom", value: 1 },
+        { name: "Auth", value: 2 },
+      ],
+    }),
+  )
+  fireEvent.click(toggle(container, "useCart") as Element)
+  menuOn(container, "State: 2")
+  choose("Copy value")
+  menuOn(container, 'useCart: "2 items"')
+  choose("Copy value")
+  // Auth reads second, though it's listed first.
+  menuOn(container, "Auth: 2")
+  choose("Copy value")
+  expect(sent.slice(-3)).toEqual([
+    { type: "copy-value", target: { hook: [1, 0] } },
+    { type: "copy-value", target: { hook: [1] } },
+    { type: "copy-value", target: { context: 1 } },
+  ])
+  // A hook without a value has only its name to copy.
+  expect(menuOn(container, "Effect")).toEqual(["Copy key"])
+})
+
+test("Escape or a press outside closes the menu", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ a: 1 }) }))
+  menuOn(container, "a: 1")
+  // Focused, so the keyboard works it at once.
+  expect(document.activeElement?.textContent).toBe("Copy key")
+  fireEvent.keyDown(document.activeElement as Element, { key: "Escape" })
+  expect(menu()).toBeNull()
+  menuOn(container, "a: 1")
+  fireEvent.pointerDown(document.body)
+  expect(menu()).toBeNull()
+})
+
+test("a stored value's global is named for a few seconds", () => {
+  vi.useFakeTimers()
+  try {
+    const { container, inspector, select } = setup()
+    select()
+    inspector.receive(inspected(3, { props: object({ a: 1 }) }))
+    menuOn(container, "a: 1")
+    choose("Store as global variable")
+    inspector.receiveValueStored(valueStored("$reactdx1"))
+    const status = container.querySelector("[role=status]")
+    expect(status?.textContent).toBe(
+      "Stored as $reactdx1. Use it in the Console.",
+    )
+    vi.advanceTimersByTime(4000)
+    expect(status?.textContent).toBe("")
+  } finally {
+    vi.useRealTimers()
+  }
 })

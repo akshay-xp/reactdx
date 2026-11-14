@@ -15,7 +15,7 @@ const skip =
   process.env.E2E_FIXTURE !== undefined && process.env.E2E_FIXTURE !== "18"
 const URL_18 = "http://localhost:5218"
 const RELOAD =
-  "This page was open before ReactDX was installed or updated. Reload it to inspect React."
+  "Reload this page to inspect React. It was open before ReactDX was installed or updated."
 
 let stop: (() => void) | undefined
 before(async () => {

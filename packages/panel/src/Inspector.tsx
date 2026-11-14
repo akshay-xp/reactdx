@@ -1,4 +1,11 @@
-import type { CallSite, Container, HookValue, Value } from "@reactdx/messages"
+import type {
+  CallSite,
+  Container,
+  HookValue,
+  Value,
+  ValueKey,
+  ValueTarget,
+} from "@reactdx/messages"
 import {
   createEffect,
   createResource,
@@ -10,7 +17,9 @@ import {
   Show,
   Switch,
 } from "solid-js"
+import { Empty, EmptyAction } from "./Empty"
 import type { InspectorStore } from "./inspection"
+import { type MenuItem, RowMenu } from "./RowMenu"
 import { matches, searchRanges } from "./search"
 import {
   label,
@@ -18,7 +27,7 @@ import {
   type SourceLocation,
   type Sources,
 } from "./source"
-import { IconButton, SearchField } from "./Toolbar"
+import { IconButton, PickGlyph, SearchField } from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
 import { byName, previewText, sortedEntries } from "./value"
@@ -46,7 +55,9 @@ function tone(value: Value) {
   }
 }
 
-type Entry = { name: string; value: Value; arrow?: boolean }
+// `key`: where the page finds it in its container (ValueTarget).
+type Entry = { name: string; value: Value; arrow?: boolean; key?: ValueKey }
+type OnMenu = (event: MouseEvent, key: string, target?: ValueTarget) => void
 
 const isContainer = (value: Value): value is Container =>
   value !== null &&
@@ -57,9 +68,13 @@ const isContainer = (value: Value): value is Container =>
 // A container's loaded entries, and how many are still on the page.
 function entriesOf(value: Container): { entries: Entry[]; left: number } {
   const named = (props: Record<string, Value> = {}) =>
-    sortedEntries(props).map(([name, item]) => ({ name, value: item }))
+    sortedEntries(props).map(([name, item]) => ({
+      name,
+      value: item,
+      key: name,
+    }))
   const indexed = (items: Value[]) =>
-    items.map((item, i) => ({ name: String(i), value: item }))
+    items.map((item, i) => ({ name: String(i), value: item, key: i }))
   switch (value.type) {
     case "object": {
       const entries = named(value.props)
@@ -76,10 +91,11 @@ function entriesOf(value: Container): { entries: Entry[]; left: number } {
       }
     case "map":
       return {
-        entries: value.entries.map(([key, item]) => ({
+        entries: value.entries.map(([key, item], i) => ({
           name: previewText(key),
           value: item,
           arrow: true,
+          key: i,
         })),
         left: value.size - value.entries.length,
       }
@@ -181,6 +197,8 @@ export type Settings = {
   setHookNames(on: boolean): void
 }
 
+const STORED_MS = 4000
+
 // The selected node's values (docs/panel.md, Inspector). Page data is text only.
 export function Inspector(props: {
   tree: TreeStore
@@ -205,6 +223,12 @@ export function Inspector(props: {
   }
   // The location last copied because no dev server opened it.
   const [copied, setCopied] = createSignal<string>()
+  // Names a stored value's global for a few seconds.
+  createEffect(() => {
+    if (!props.inspector.stored()) return
+    const timer = setTimeout(() => props.inspector.clearStored(), STORED_MS)
+    onCleanup(() => clearTimeout(timer))
+  })
   const open = async (at: SourceLocation) => {
     if ((await props.sources.open(at)) === "copied") setCopied(locationText(at))
   }
@@ -226,6 +250,31 @@ export function Inspector(props: {
   }
   const nameFound = (site: CallSite, name: string) =>
     setFound(new Map(found()).set(JSON.stringify(site), name))
+  // The open right-click menu (RowMenu): a row's key to copy, and where the page
+  // finds its value to copy or store.
+  const [menu, setMenu] = createSignal<{
+    x: number
+    y: number
+    items: MenuItem[]
+  }>()
+  const onMenu: OnMenu = (event, key, target) => {
+    event.preventDefault()
+    const items = [
+      { label: "Copy key", run: () => props.inspector.copyKey(key) },
+    ]
+    if (target)
+      items.push(
+        {
+          label: "Copy value",
+          run: () => props.inspector.copyValue(target),
+        },
+        {
+          label: "Store as global variable",
+          run: () => props.inspector.storeValue(target),
+        },
+      )
+    setMenu({ x: event.clientX, y: event.clientY, items })
+  }
   // Collapsed sections, kept while the panel is open.
   const [collapsed, setCollapsed] = createSignal(new Set<string>())
   const toggle = (name: string) => {
@@ -254,16 +303,18 @@ export function Inspector(props: {
             path={name}
             depth={0}
             query={query()}
+            onMenu={onMenu}
           />
         </Section>
       )}
     </Show>
   )
-  // Alphabetical, and only those that show under the query.
+  // Alphabetical, and only those that show under the query. `read`: the page's
+  // index, in read order.
   const contexts = () =>
-    [...(props.inspector.data()?.contexts ?? [])].sort((a, b) =>
-      byName(a.name, b.name),
-    )
+    (props.inspector.data()?.contexts ?? [])
+      .map((context, read) => ({ ...context, read }))
+      .sort((a, b) => byName(a.name, b.name))
   const contextShows = (context: Entry) =>
     entryShows(props.inspector, context, query())
   const hooksShow = () =>
@@ -288,10 +339,28 @@ export function Inspector(props: {
   return (
     <Switch>
       <Match when={!info()}>
-        <p class="p-2 text-muted">Select a component to inspect it.</p>
+        <Empty
+          icon={<PickGlyph />}
+          title="Select a component to inspect it."
+          hint="Click it in the tree, or pick it on the page."
+        >
+          <EmptyAction
+            icon={<PickGlyph />}
+            pressed={props.tree.picking()}
+            onClick={() => props.tree.setPicking(!props.tree.picking())}
+          >
+            {props.tree.picking()
+              ? "Click an element on the page"
+              : "Pick an element"}
+          </EmptyAction>
+        </Empty>
       </Match>
       <Match when={props.inspector.gone()}>
-        <p class="p-2 text-muted">This component unmounted.</p>
+        <Empty
+          icon={<PickGlyph />}
+          title="This component unmounted."
+          hint="Select another in the tree."
+        />
       </Match>
       <Match when={info()}>
         {(node) => (
@@ -386,10 +455,12 @@ export function Inspector(props: {
                     settings={props.settings}
                     hooks={props.inspector.data()?.hooks ?? []}
                     path="Hooks"
+                    at={[]}
                     depth={0}
                     query={query()}
                     labelOf={labelOf}
                     nameFound={nameFound}
+                    onMenu={onMenu}
                   />
                 </Section>
               </Show>
@@ -409,6 +480,8 @@ export function Inspector(props: {
                           path={`Context.${index()}`}
                           depth={0}
                           query={query()}
+                          target={{ context: context.read }}
+                          onMenu={onMenu}
                         />
                       </Show>
                     )}
@@ -458,6 +531,30 @@ export function Inspector(props: {
                 </Section>
               </Show>
             </div>
+            {/* Always there, so a screen reader announces what it says. */}
+            <div
+              role="status"
+              class="pointer-events-none fixed right-2 bottom-2 max-w-[90vw]"
+            >
+              <Show when={props.inspector.stored()}>
+                {(name) => (
+                  <p class="rounded-md border border-border bg-surface px-2 py-1 text-fg shadow-lg">
+                    Stored as <code class="font-mono">{name()}</code>. Use it in
+                    the Console.
+                  </p>
+                )}
+              </Show>
+            </div>
+            <Show when={menu()}>
+              {(at) => (
+                <RowMenu
+                  x={at().x}
+                  y={at().y}
+                  items={at().items}
+                  onClose={() => setMenu(undefined)}
+                />
+              )}
+            </Show>
           </div>
         )}
       </Match>
@@ -465,6 +562,7 @@ export function Inspector(props: {
   )
 }
 
+// An empty inspector: centered, the picker's crosshair above what to do.
 function Section(props: {
   name: string
   open: boolean
@@ -508,6 +606,7 @@ function Children(props: {
   path: string
   depth: number
   query: string
+  onMenu: OnMenu
 }) {
   const loaded = () =>
     (props.inspector.expansion(props.value.id) as Container | undefined) ??
@@ -527,6 +626,8 @@ function Children(props: {
             path={`${props.path}.${entry.name}`}
             depth={props.depth}
             query={props.query}
+            target={{ objectId: loaded().id, key: entry.key as ValueKey }}
+            onMenu={props.onMenu}
           />
         )}
       </For>
@@ -552,16 +653,22 @@ function HookRows(props: {
   settings: Settings
   hooks: HookValue[]
   path: string
+  // Call indexes from the top: the page's address for a hook (ValueTarget).
+  at: number[]
   depth: number
   query: string
   labelOf: (hook: HookValue) => string
   nameFound: (site: CallSite, name: string) => void
+  onMenu: OnMenu
 }) {
   return (
     <For each={props.hooks}>
       {(hook, index) => {
         // Paths are by call index, so hooks hidden by the search stay in the list.
         const path = () => `${props.path}.${index()}`
+        const at = () => [...props.at, index()]
+        const target = () =>
+          hook.value === undefined ? undefined : { hook: at() }
         const open = () => props.inspector.isOpen(path())
         // While searching, a custom hook opens to a matching sub-hook.
         const shownOpen = () =>
@@ -587,10 +694,14 @@ function HookRows(props: {
               <Match when={hook.hooks}>
                 {(hooks) => (
                   <>
+                    {/* biome-ignore lint/a11y/noStaticElementInteractions: a right-click shortcut; rows take no focus yet */}
                     <div
                       data-testid="value"
                       class="flex min-h-5 items-center whitespace-nowrap pr-2"
                       style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
+                      onContextMenu={(event) =>
+                        props.onMenu(event, label(), target())
+                      }
                     >
                       <Toggle
                         open={shownOpen()}
@@ -600,18 +711,20 @@ function HookRows(props: {
                             : props.inspector.open(path())
                         }
                       />
-                      <span data-search-text class="text-syntax-key">
-                        {hook.value === undefined ? label() : `${label()}:`}
-                      </span>
-                      <Show when={hook.value !== undefined}>
-                        {" "}
-                        <span
-                          data-search-text
-                          class={`truncate ${tone(hook.value as Value)}`}
-                        >
-                          {previewText(hook.value as Value)}
+                      <span class="min-w-0 truncate">
+                        <span data-search-text class="text-syntax-key">
+                          {hook.value === undefined ? label() : `${label()}:`}
                         </span>
-                      </Show>
+                        <Show when={hook.value !== undefined}>
+                          {" "}
+                          <span
+                            data-search-text
+                            class={tone(hook.value as Value)}
+                          >
+                            {previewText(hook.value as Value)}
+                          </span>
+                        </Show>
+                      </span>
                     </div>
                     <Show when={shownOpen()}>
                       <HookRows
@@ -620,10 +733,12 @@ function HookRows(props: {
                         settings={props.settings}
                         hooks={hooks()}
                         path={path()}
+                        at={at()}
                         depth={props.depth + 1}
                         query={props.query}
                         labelOf={props.labelOf}
                         nameFound={props.nameFound}
+                        onMenu={props.onMenu}
                       />
                     </Show>
                   </>
@@ -636,14 +751,18 @@ function HookRows(props: {
                   path={path()}
                   depth={props.depth}
                   query={props.query}
+                  target={target()}
+                  onMenu={props.onMenu}
                 />
               </Match>
               <Match when={hook.value === undefined}>
+                {/* biome-ignore lint/a11y/noStaticElementInteractions: a right-click shortcut; rows take no focus yet */}
                 <div
                   data-testid="value"
                   data-search-text
                   class="flex min-h-5 items-center whitespace-nowrap pr-2 text-syntax-key"
                   style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
+                  onContextMenu={(event) => props.onMenu(event, label())}
                 >
                   {label()}
                 </div>
@@ -680,6 +799,9 @@ function ValueRow(props: {
   path: string
   depth: number
   query: string
+  // Where the page finds the value; none: only the key can be copied.
+  target?: ValueTarget
+  onMenu: OnMenu
 }) {
   const value = () => props.entry.value
   // A value the page sent as a ref (past its depth limit) loads when opened.
@@ -712,20 +834,27 @@ function ValueRow(props: {
       : props.inspector.open(props.path, ref())
   return (
     <>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: a right-click shortcut; rows take no focus yet */}
       <div
         data-testid="value"
         class="flex min-h-5 items-center whitespace-nowrap pr-2"
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
+        onContextMenu={(event) =>
+          props.onMenu(event, props.entry.name, props.target)
+        }
       >
         <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>
           <Toggle open={shownOpen()} onClick={toggle} />
         </Show>
-        <span data-search-text class="text-syntax-key">
-          {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
-        </span>
-        {props.entry.arrow ? " => " : " "}
-        <span data-search-text class={`truncate ${tone(value())}`}>
-          {previewText(value())}
+        {/* Inline, not flex items: flex drops the spaces between them. */}
+        <span class="min-w-0 truncate">
+          <span data-search-text class="text-syntax-key">
+            {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
+          </span>
+          {props.entry.arrow ? " => " : " "}
+          <span data-search-text class={tone(value())}>
+            {previewText(value())}
+          </span>
         </span>
       </div>
       <Show when={shownOpen() && target()}>
@@ -736,6 +865,7 @@ function ValueRow(props: {
             path={props.path}
             depth={props.depth + 1}
             query={props.query}
+            onMenu={props.onMenu}
           />
         )}
       </Show>

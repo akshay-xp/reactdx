@@ -45,6 +45,10 @@ test("hovering an owner in Rendered by highlights it; leaving removes it", {
   const { browser, page, panel } = await overlayPage(name, URL_18)
   try {
     await selectListed(panel, "Counter", (t) => t.includes("Rendered by"))
+    // The click left the pointer on Counter's row, which draws its overlay: the
+    // owner's could be read as that one.
+    await panel.leave()
+    await waitForOverlays(page, 0)
     const owner = await panel.frame?.waitForSelector(
       "button[data-testid=owner]",
     )

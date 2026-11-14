@@ -3,11 +3,13 @@ import {
   type InspectedMessage,
   type TreeBatchMessage,
   UNWATCH,
+  valueStored,
+  valueText,
   WATCH,
 } from "@reactdx/messages"
 import React from "react"
 import type { Root } from "react-dom/client"
-import { afterAll, beforeAll, beforeEach, expect, test } from "vitest"
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import { startAgent } from "../src/agent.ts"
 import { installHook } from "../src/hook.ts"
 import { windowLike } from "./window.ts"
@@ -174,4 +176,60 @@ test("expand sends a page of an object the inspection described", () => {
   inspect(idOf("Clock"))
   expand(ref.id)
   expect(expansions()).toHaveLength(1)
+})
+
+const valueCommand = (type: "copy-value" | "store-value", target: unknown) =>
+  send({ source: "reactdx-relay", type, target })
+const texts = () =>
+  posted.filter((m) => (m as { type?: string }).type === "value-text")
+const propsId = () =>
+  (replies()[0]?.data?.props as unknown as { id: number } | undefined)?.id
+
+test("copy-value posts a prop's or a hook's value as text", () => {
+  inspect(idOf("Greeting"))
+  valueCommand("copy-value", { objectId: propsId(), key: "name" })
+  valueCommand("copy-value", { objectId: propsId() })
+  inspect(idOf("Other"))
+  valueCommand("copy-value", { hook: [0] })
+  // Earlier tests set Other's state to a random number.
+  const state = replies()[1]?.data?.hooks?.[0]?.value
+  expect(texts()).toEqual([
+    valueText("Ada"),
+    valueText('{\n  "name": "Ada"\n}'),
+    valueText(String(state)),
+  ])
+})
+
+test("a value command for nothing the inspection holds does nothing", () => {
+  inspect(idOf("Greeting"))
+  valueCommand("copy-value", { objectId: propsId(), key: "missing" })
+  valueCommand("copy-value", { hook: [5] })
+  valueCommand("copy-value", { context: 0 })
+  valueCommand("store-value", { objectId: 999 })
+  expect(texts()).toEqual([])
+  expect("$reactdx1" in globalThis).toBe(false)
+})
+
+test("store-value keeps the value in the next free $reactdx<n> and logs it", () => {
+  const log = vi.spyOn(console, "log").mockImplementation(() => {})
+  const scope = globalThis as Record<string, unknown>
+  try {
+    inspect(idOf("Greeting"))
+    valueCommand("store-value", { objectId: propsId(), key: "name" })
+    valueCommand("store-value", { objectId: propsId() })
+    expect(scope.$reactdx1).toBe("Ada")
+    expect(scope.$reactdx2).toEqual({ name: "Ada" })
+    expect(log.mock.calls).toEqual([
+      ["$reactdx1", "Ada"],
+      ["$reactdx2", { name: "Ada" }],
+    ])
+    // The panel says where each went.
+    expect(
+      posted.filter((m) => (m as { type?: string }).type === "value-stored"),
+    ).toEqual([valueStored("$reactdx1"), valueStored("$reactdx2")])
+  } finally {
+    log.mockRestore()
+    delete scope.$reactdx1
+    delete scope.$reactdx2
+  }
 })

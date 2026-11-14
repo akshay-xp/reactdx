@@ -12,8 +12,7 @@ export function Toolbar(props: { tree: TreeStore }) {
         pressed={props.tree.picking()}
         onClick={() => props.tree.setPicking(!props.tree.picking())}
       >
-        <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
-        <circle cx="12" cy="12" r="5" />
+        <PickGlyph />
       </IconButton>
       <SearchField
         label="Search components"
@@ -40,6 +39,16 @@ export function Toolbar(props: { tree: TreeStore }) {
         <path d="m8 7-5 5 5 5M16 7l5 5-5 5" />
       </IconButton>
     </search>
+  )
+}
+
+// The picker's crosshair, inside a 24-unit svg (the toolbar's, the inspector's).
+export function PickGlyph() {
+  return (
+    <>
+      <path d="M12 3v4M12 17v4M3 12h4M17 12h4" />
+      <circle cx="12" cy="12" r="5" />
+    </>
   )
 }
 
@@ -113,19 +122,26 @@ export function IconButton(props: {
       }}
       onClick={props.onClick}
     >
-      <svg
-        aria-hidden="true"
-        width="15"
-        height="15"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        {props.children}
-      </svg>
+      <Glyph size={15}>{props.children}</Glyph>
     </button>
+  )
+}
+
+// A stroked 24-unit icon.
+export function Glyph(props: { size: number; children: JSX.Element }) {
+  return (
+    <svg
+      aria-hidden="true"
+      width={props.size}
+      height={props.size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      {props.children}
+    </svg>
   )
 }
