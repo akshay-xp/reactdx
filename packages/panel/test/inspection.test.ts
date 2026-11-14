@@ -3,6 +3,8 @@ import {
   expanded,
   inspected,
   type Value,
+  valueStored,
+  valueText,
 } from "@reactdx/messages"
 import { expect, test } from "vitest"
 import { createInspectorStore, type InspectorCommand } from "../src/inspection"
@@ -18,8 +20,12 @@ const object = (props: Record<string, Value>, extra = {}): Value => ({
 
 const setup = () => {
   const sent: InspectorCommand[] = []
-  const store = createInspectorStore((command) => sent.push(command))
-  return { sent, store }
+  const copied: string[] = []
+  const store = createInspectorStore(
+    (command) => sent.push(command),
+    (text) => copied.push(text),
+  )
+  return { sent, copied, store }
 }
 
 test("inspect asks for the node and drops what was shown", () => {
@@ -107,4 +113,40 @@ test("a new node closes every path; resend asks again", () => {
   expect(store.isOpen("props.a")).toBe(false)
   store.resend()
   expect(sent.at(-1)).toEqual({ type: "inspect", id: 5 })
+})
+
+test("a row's key is copied here; its value is asked of the page, which sends the text to copy", () => {
+  const { sent, copied, store } = setup()
+  store.copyKey("count")
+  store.copyValue({ objectId: 7, key: "count" })
+  store.storeValue({ hook: [0, 1] })
+  expect(sent).toEqual([
+    { type: "copy-value", target: { objectId: 7, key: "count" } },
+    { type: "store-value", target: { hook: [0, 1] } },
+  ])
+  store.receiveValueText(valueText("2"))
+  expect(copied).toEqual(["count", "2"])
+})
+
+test("value text is copied only in reply to a Copy value, once", () => {
+  const { copied, store } = setup()
+  // The page can post one whenever it likes: unasked, it's dropped.
+  store.receiveValueText(valueText("forged"))
+  store.copyValue({ objectId: 7 })
+  store.receiveValueText(valueText("asked"))
+  store.receiveValueText(valueText("again"))
+  expect(copied).toEqual(["asked"])
+})
+
+test("stored() names the global a Store as global variable went to, only when asked", () => {
+  const { store } = setup()
+  store.receiveValueStored(valueStored("$reactdx9"))
+  expect(store.stored()).toBeUndefined()
+  store.storeValue({ objectId: 7 })
+  store.receiveValueStored(valueStored("$reactdx1"))
+  expect(store.stored()).toBe("$reactdx1")
+  store.receiveValueStored(valueStored("$reactdx2"))
+  expect(store.stored()).toBe("$reactdx1")
+  store.clearStored()
+  expect(store.stored()).toBeUndefined()
 })

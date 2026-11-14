@@ -6,7 +6,11 @@ import { createInspectorStore } from "../src/inspection"
 import type { Sources } from "../src/source"
 import { createTreeStore } from "../src/tree"
 
-const inspection = () => createInspectorStore(() => {})
+const inspection = () =>
+  createInspectorStore(
+    () => {},
+    () => {},
+  )
 const settings = { hookNames: () => false, setHookNames: () => {} }
 const sources: Sources = {
   resolve: async () => null,
@@ -54,8 +58,10 @@ test("a page open since before the install asks for a reload", () => {
     />
   ))
   expect(container.textContent).toBe(
-    "This page was open before ReactDX was installed or updated. Reload it to inspect React.Reload page",
+    "Reload this page to inspect React.It was open before ReactDX was installed or updated.Reload page",
   )
+  // Centered like the inspector's empty states, the reload icon above.
+  expect(container.querySelector("[data-testid=empty] svg")).not.toBeNull()
   fireEvent.click(container.querySelector("button") as Element)
   expect(reloads).toBe(1)
 })

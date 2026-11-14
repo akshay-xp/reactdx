@@ -4,6 +4,9 @@ import type {
   InspectedData,
   InspectedMessage,
   Value,
+  ValueStoredMessage,
+  ValueTarget,
+  ValueTextMessage,
 } from "@reactdx/messages"
 import { createSignal } from "solid-js"
 
@@ -11,6 +14,7 @@ import { createSignal } from "solid-js"
 export type InspectorCommand =
   | { type: "inspect"; id: number | null }
   | { type: "expand"; objectId: number; offset: number }
+  | { type: "copy-value" | "store-value"; target: ValueTarget }
 
 export type InspectorStore = ReturnType<typeof createInspectorStore>
 
@@ -34,14 +38,20 @@ function merge(loaded: Value | undefined, page: Value): Value {
 
 // The inspected node as the page last described it, which paths the user opened,
 // and the objects loaded for them (docs/panel.md, Inspector).
+// `copy` puts text on the clipboard: a row's key, or a value's text from the page.
 export function createInspectorStore(
   send: (command: InspectorCommand) => void,
+  copy: (text: string) => void,
 ) {
   const [id, setId] = createSignal<number>()
   const [data, setData] = createSignal<InspectedData | null>()
   // Open paths (dot-joined keys from the section) to the ref each one loads, if any.
   const [open, setOpen] = createSignal(new Map<string, number | undefined>())
   const [expansions, setExpansions] = createSignal(new Map<number, Value>())
+  let copyAsked = false
+  let storeAsked = false
+  // The page global the last Store as global variable went to, while shown.
+  const [stored, setStored] = createSignal<string>()
 
   const expand = (objectId: number, offset = 0) =>
     send({ type: "expand", objectId, offset })
@@ -90,6 +100,30 @@ export function createInspectorStore(
       setOpen(map)
     },
     expansion: (objectId: number) => expansions().get(objectId),
+    copyKey: copy,
+    // Values are copied whole from the page: the panel's are cut and paged.
+    copyValue(target: ValueTarget) {
+      copyAsked = true
+      send({ type: "copy-value", target })
+    },
+    storeValue(target: ValueTarget) {
+      storeAsked = true
+      send({ type: "store-value", target })
+    },
+    stored,
+    clearStored: () => setStored(undefined),
+    // Like value text: only as the reply to a store.
+    receiveValueStored(message: ValueStoredMessage) {
+      if (!storeAsked) return
+      storeAsked = false
+      setStored(message.name)
+    },
+    // Only as the reply to a Copy value: the page could post one at any time.
+    receiveValueText(message: ValueTextMessage) {
+      if (!copyAsked) return
+      copyAsked = false
+      copy(message.text)
+    },
     // The next page of a loaded container, appended to it when it arrives.
     more(value: Container) {
       if (value.nextOffset === undefined) return

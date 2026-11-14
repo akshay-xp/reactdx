@@ -1,3 +1,5 @@
+import { parseValueTarget, type ValueTarget } from "./inspect.ts"
+
 export type RendererInfo = {
   version: string
   bundleType: number
@@ -260,6 +262,13 @@ export type ExpandMessage = {
   offset: number
 }
 
+// Panel to background: copy a row's value, or store it as a page global.
+export type ValueMessage = {
+  type: "copy-value" | "store-value"
+  tabId: number
+  target: ValueTarget
+}
+
 // Background to the relay's tree port. The relay checks each one before acting:
 // a malformed command never reaches the page.
 export type TreeCommand =
@@ -270,6 +279,7 @@ export type TreeCommand =
   | { type: "pick-stop" }
   | { type: "inspect"; id: number | null }
   | { type: "expand"; objectId: number; offset: number }
+  | { type: "copy-value" | "store-value"; target: ValueTarget }
 
 // Commands with no arguments.
 const BARE_COMMANDS = new Set<unknown>([
@@ -281,12 +291,16 @@ const BARE_COMMANDS = new Set<unknown>([
 
 export function parseTreeCommand(data: unknown): TreeCommand | undefined {
   if (typeof data !== "object" || data === null) return
-  const { type, id, objectId, offset } = data as Record<string, unknown>
+  const { type, id, objectId, offset, target } = data as Record<string, unknown>
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
   if (type === "inspect" && (id === null || isId(id))) return { type, id }
   if (type === "expand" && isId(objectId) && isCount(offset))
     return { type, objectId, offset }
+  if (type === "copy-value" || type === "store-value") {
+    const parsed = parseValueTarget(target)
+    if (parsed) return { type, target: parsed }
+  }
 }
 
 // Content script to agent: draw or remove the highlight overlay.

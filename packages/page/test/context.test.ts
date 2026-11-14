@@ -1,9 +1,10 @@
+import { valueText } from "@reactdx/messages"
 import React from "react"
 import { expect, test } from "vitest"
 import { inspecting } from "./inspecting.ts"
 
 const h = React.createElement
-const { send, replies, idOf, inspect } = inspecting()
+const { posted, send, replies, idOf, inspect } = inspecting()
 
 const Theme = React.createContext("light")
 Theme.displayName = "Theme"
@@ -39,6 +40,12 @@ test("the contexts a function component reads, once each, in order", async () =>
     { name: "Theme", value: "dark" },
     { name: "Context", value: 1 },
   ])
+})
+
+test("copy-value copies a context read by index", async () => {
+  await inspect(dark(h(Reader)), "Reader")
+  send({ source: "reactdx-relay", type: "copy-value", target: { context: 1 } })
+  expect(posted.at(-1)).toEqual(valueText("1"))
 })
 
 test.skipIf(!react19)("use() reads count too", async () => {

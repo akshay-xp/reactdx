@@ -5,6 +5,7 @@ import {
   type InspectedData,
   type InspectedMessage,
   inspected,
+  MAX_COPY,
   MAX_OPS,
   MAX_OWNERS,
   MAX_TREE_STRING,
@@ -19,6 +20,11 @@ import {
   type TreeOp,
   treeBatch,
   type Value,
+  type ValueStoredMessage,
+  type ValueTarget,
+  type ValueTextMessage,
+  valueStored,
+  valueText,
 } from "@reactdx/messages"
 import type { FiberRoot, Hook, HookRecord } from "./hook.ts"
 import {
@@ -27,7 +33,7 @@ import {
   inspectHooks,
   type RawHook,
 } from "./hooks.ts"
-import { createInspector } from "./inspect.ts"
+import { copyText, createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
 import { sourceOf } from "./source.ts"
 import { createTree, type Fiber } from "./tree.ts"
@@ -77,7 +83,9 @@ export function startAgent(
       | TreeBatchMessage
       | PickedMessage
       | InspectedMessage
-      | ExpandedMessage,
+      | ExpandedMessage
+      | ValueTextMessage
+      | ValueStoredMessage,
   ) => void,
 ) {
   const scope = target as unknown as Record<symbol, unknown>
@@ -181,6 +189,7 @@ export function startAgent(
         id: number
         values: ReturnType<typeof createInspector>
         sent?: { props: unknown; state: unknown; contexts: unknown[] }
+        hooks?: RawHook[]
       }
     | undefined
   // The dispatcher of the renderer that owns the fiber's root (HostRoot, tag 3),
@@ -251,6 +260,7 @@ export function startAgent(
         ...(hook.site && { site: hook.site }),
       })
       data.hooks = read.hooks.map(describeHook)
+      selected.hooks = read.hooks
       if (read.error !== undefined) data.hooksError = read.error
     }
     return data
@@ -260,6 +270,45 @@ export function startAgent(
     selected = id === null ? undefined : { id, values: createInspector() }
     if (id !== null) post(inspected(id, describe(id)))
   }
+  // The value a panel row shows (copy-value, store-value), from what was sent.
+  const valueAt = (target: ValueTarget) => {
+    if (!selected) return
+    if ("objectId" in target)
+      return selected.values.find(target.objectId, target.key)
+    if ("hook" in target) {
+      let hook: RawHook | undefined
+      let list = selected.hooks
+      for (const index of target.hook) {
+        hook = list?.[index]
+        list = hook?.hooks
+      }
+      return hook && "value" in hook ? { value: hook.value } : undefined
+    }
+    const contexts = selected.sent?.contexts ?? []
+    return target.context < contexts.length
+      ? { value: contexts[target.context] }
+      : undefined
+  }
+  const globals = target as unknown as Record<string, unknown>
+  const useValue = (command: ReturnType<typeof parseTreeCommand>) => {
+    if (command?.type !== "copy-value" && command?.type !== "store-value")
+      return
+    const found = valueAt(command.target)
+    if (!found) return
+    if (command.type === "copy-value") {
+      const text = copyText(found.value)
+      if (text.length <= MAX_COPY) post(valueText(text))
+      return
+    }
+    // Like DevTools' "Store as global variable": the next free name, logged.
+    let n = 1
+    while (`$reactdx${n}` in globals) n++
+    const name = `$reactdx${n}`
+    globals[name] = found.value
+    console.log(name, found.value)
+    post(valueStored(name))
+  }
+
   // On the flush: send again only if the node rendered (or unmounted) since.
   const refresh = () => {
     if (!selected) return
@@ -312,7 +361,9 @@ export function startAgent(
         if (value !== undefined)
           post(expanded(objectId, offset, value as Value))
       }
-    } else if (data.type === "unwatch") {
+    } else if (data.type === "copy-value" || data.type === "store-value")
+      useValue(parseTreeCommand(data))
+    else if (data.type === "unwatch") {
       stopPicking()
       inspect(null)
       watching = false

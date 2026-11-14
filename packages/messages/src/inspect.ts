@@ -142,6 +142,78 @@ export const expanded = (
   value,
 })
 
+// Panel to agent: which value a row shows. `objectId`: a container the agent
+// described (the row's own, or its parent's with `key`: a property name, or an
+// index into an array, typed array, map's entries or set). `hook`: a hook by
+// call index, through custom hooks. `context`: a context read by index.
+export type ValueKey = string | number
+export type ValueTarget =
+  | { objectId: number; key?: ValueKey }
+  | { hook: number[] }
+  | { context: number }
+
+export function parseValueTarget(data: unknown): ValueTarget | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { objectId, key, hook, context } = data as Record<string, unknown>
+  if (isId(objectId)) {
+    if (key === undefined) return { objectId }
+    if (isCount(key) || isText(key)) return { objectId, key }
+    return
+  }
+  if (
+    Array.isArray(hook) &&
+    hook.length > 0 &&
+    hook.length <= MAX_HOOK_NESTING &&
+    hook.every(isCount)
+  )
+    return { hook: [...hook] }
+  if (isCount(context)) return { context }
+}
+
+// Agent to panel: a value as text for the clipboard (docs/page.md, Copy).
+export const MAX_COPY = 10_000_000
+export type ValueTextMessage = {
+  source: "reactdx"
+  type: "value-text"
+  text: string
+}
+export const valueText = (text: string): ValueTextMessage => ({
+  source: "reactdx",
+  type: "value-text",
+  text,
+})
+// Agent to panel: the page global a store-value put the value in.
+export type ValueStoredMessage = {
+  source: "reactdx"
+  type: "value-stored"
+  name: string
+}
+export const valueStored = (name: string): ValueStoredMessage => ({
+  source: "reactdx",
+  type: "value-stored",
+  name,
+})
+export function parseValueStored(
+  data: unknown,
+): ValueStoredMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, name } = data as Record<string, unknown>
+  if (
+    source === "reactdx" &&
+    type === "value-stored" &&
+    typeof name === "string" &&
+    /^\$reactdx[1-9]\d{0,8}$/.test(name)
+  )
+    return valueStored(name)
+}
+
+export function parseValueText(data: unknown): ValueTextMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, text } = data as Record<string, unknown>
+  if (source === "reactdx" && type === "value-text" && isText(text, MAX_COPY))
+    return valueText(text)
+}
+
 const isCount = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) >= 0
 const isId = (value: unknown): value is number => isCount(value) && value >= 1

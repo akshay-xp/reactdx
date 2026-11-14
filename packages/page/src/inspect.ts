@@ -139,6 +139,86 @@ function preview(value: object) {
 const messageOf = (error: unknown) =>
   String(error instanceof Error ? error.message : error)
 
+// A summarized value (leaf) as copy text.
+function summaryText(summary: Record<string, unknown>) {
+  const { type } = summary
+  if (type === "react-element") return `<${summary.name} />`
+  if (type === "element") return `<${summary.tag}>`
+  if (type === "node") return summary.nodeName
+  if (type === "date") return summary.iso
+  if (type === "regexp") return `/${summary.source}/${summary.flags}`
+  if (type === "error") return `${summary.name}: ${summary.message}`
+  if (type === "array-buffer") return `ArrayBuffer(${summary.byteLength})`
+  if (type === "data-view") return `DataView(${summary.byteLength})`
+  return `[${{ promise: "Promise", "weak-map": "WeakMap", "weak-set": "WeakSet" }[type as string]}]`
+}
+
+// A value as JSON-safe data for copyText; getters are never run.
+function plain(value: unknown, path: Set<object>): unknown {
+  switch (typeof value) {
+    case "number":
+      return Number.isFinite(value) ? value : String(value)
+    case "bigint":
+      return `${value}n`
+    case "function":
+      return `[Function: ${value.name || "anonymous"}]`
+    case "symbol":
+      return value.toString()
+    case "object": {
+      if (value === null) return null
+      try {
+        const summary = leaf(value)
+        if (summary) return summaryText(summary)
+        if (path.has(value)) return "[Circular]"
+        path.add(value)
+        try {
+          const child = (item: unknown) => plain(item, path)
+          if (value instanceof Map)
+            return [...value].map(([key, item]) => [child(key), child(item)])
+          if (value instanceof Set) return [...value].map(child)
+          if (isTypedArray(value))
+            return Array.from(indexes(value.length), (i) => child(value[i]))
+          const descriptors = Object.getOwnPropertyDescriptors(value)
+          const read = (key: string) => {
+            const descriptor = descriptors[key] as PropertyDescriptor
+            return "value" in descriptor ? child(descriptor.value) : "[Getter]"
+          }
+          if (Array.isArray(value))
+            return Array.from(indexes(value.length), (i) =>
+              i in descriptors ? read(String(i)) : null,
+            )
+          // Enumerable keys only, as JSON: React's dev `key` warning getter isn't.
+          return Object.fromEntries(
+            Object.keys(descriptors)
+              .filter((key) => descriptors[key]?.enumerable)
+              .map((key) => [key, read(key)]),
+          )
+        } finally {
+          path.delete(value)
+        }
+      } catch {
+        return "[Unreadable]"
+      }
+    }
+    default:
+      return value
+  }
+}
+
+// The text Copy value puts on the clipboard (docs/page.md, Copy): a string as it
+// is, a function its source, anything else as indented JSON, with what JSON
+// can't hold written as text.
+export function copyText(value: unknown) {
+  // A function row copies its source: the built-in toString, not one the app set.
+  if (typeof value === "function")
+    try {
+      return Function.prototype.toString.call(value)
+    } catch {}
+  const data = plain(value, new Set())
+  if (typeof data === "string") return data
+  return data === undefined ? "undefined" : JSON.stringify(data, null, 2)
+}
+
 export function createInspector() {
   let ids = new WeakMap<object, number>()
   const objects = new Map<number, object>()
@@ -249,6 +329,33 @@ export function createInspector() {
     // Undefined for an id this inspector doesn't hold (released, or forged).
     expand: (id: number, offset = 0) =>
       objects.has(id) ? serialize(objects.get(id), 0, offset) : undefined,
+    // A described object, or its child: a property by name (as sent: bounded,
+    // symbols as text) or an index into an array, typed array, map's entries or
+    // set. Undefined if there's none, it's a getter (never run) or it throws.
+    find(objectId: number, key?: string | number) {
+      const object = objects.get(objectId)
+      if (!object || key === undefined) return object && { value: object }
+      try {
+        if (typeof key === "number") {
+          if (object instanceof Map || object instanceof Set) {
+            const items = [...object.values()]
+            return key < items.length ? { value: items[key] } : undefined
+          }
+          if (!Array.isArray(object) && !isTypedArray(object)) return
+        }
+        const descriptors = Object.getOwnPropertyDescriptors(object)
+        const own = Reflect.ownKeys(descriptors).find(
+          (k) => bounded(String(k)) === String(key),
+        )
+        const descriptor =
+          own === undefined ? undefined : descriptors[own as string]
+        return descriptor && "value" in descriptor
+          ? { value: descriptor.value }
+          : undefined
+      } catch {
+        return
+      }
+    },
     // Drops every described object, so the page keeps none of them alive.
     release() {
       objects.clear()

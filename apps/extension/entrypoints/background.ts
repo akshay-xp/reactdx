@@ -17,6 +17,9 @@ import {
   type TreeBatchMessage,
   toolbarIcons,
   toolbarState,
+  type ValueMessage,
+  type ValueStoredMessage,
+  type ValueTextMessage,
 } from "@reactdx/messages"
 import type { Browser } from "wxt/browser"
 
@@ -73,7 +76,9 @@ export default defineBackground(() => {
           | TreeBatchMessage
           | PickedMessage
           | InspectedMessage
-          | ExpandedMessage,
+          | ExpandedMessage
+          | ValueTextMessage
+          | ValueStoredMessage,
       ) => {
         const ports = panels.get(tabId)
         if (!ports) return unwatch(tabId)
@@ -108,7 +113,8 @@ export default defineBackground(() => {
           | ClearHighlightMessage
           | PickMessage
           | InspectMessage
-          | ExpandMessage,
+          | ExpandMessage
+          | ValueMessage,
       ) => {
         // Commands go to the tab's relay, which validates them (parseTreeCommand).
         const { tabId, ...command } = message

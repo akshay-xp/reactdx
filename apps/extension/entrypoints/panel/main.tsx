@@ -10,6 +10,8 @@ import type {
   SubscribeMessage,
   TabStateMessage,
   TreeBatchMessage,
+  ValueStoredMessage,
+  ValueTextMessage,
 } from "@reactdx/messages"
 import { Panel } from "@reactdx/panel"
 import { openInEditor } from "@reactdx/panel/editor"
@@ -34,8 +36,9 @@ const [stale, setStale] = createSignal(false)
 const tree = createTreeStore()
 const tabId = browser.devtools.inspectedWindow.tabId
 // Its commands go over the current port, which the background routes to the tab.
-const inspector = createInspectorStore((command) =>
-  port.postMessage({ ...command, tabId }),
+const inspector = createInspectorStore(
+  (command) => port.postMessage({ ...command, tabId }),
+  (text) => editor.copy(text),
 )
 // Requests go only to the inspected page's own server (docs/panel.md, Sources).
 const editor = {
@@ -98,7 +101,9 @@ function connect() {
         | TreeBatchMessage
         | PickedMessage
         | InspectedMessage
-        | ExpandedMessage,
+        | ExpandedMessage
+        | ValueTextMessage
+        | ValueStoredMessage,
     ) => {
       if (message.type === "state") {
         setRenderers(message.renderers)
@@ -106,6 +111,10 @@ function connect() {
       } else if (message.type === "picked") tree.picked(message.id)
       else if (message.type === "inspected") inspector.receive(message)
       else if (message.type === "expanded") inspector.receiveExpanded(message)
+      else if (message.type === "value-text")
+        inspector.receiveValueText(message)
+      else if (message.type === "value-stored")
+        inspector.receiveValueStored(message)
       else {
         if (tree.apply(message))
           next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)

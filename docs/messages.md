@@ -98,18 +98,20 @@ Any invalid op drops the whole batch (a partial batch would desync the mirror). 
 
 Background to the relay's tree port. Everything the relay acts on passes through it, so a malformed command never reaches the page.
 
-| Command                                | Relay posts to the agent                                              |
-| -------------------------------------- | --------------------------------------------------------------------- |
-| `{ type: "resync" }`                   | `WATCH`                                                               |
-| `{ type: "highlight", id }`            | `highlight(id)`: `{ source: "reactdx-relay", type: "highlight", id }` |
-| `{ type: "clear-highlight" }`          | `CLEAR_HIGHLIGHT`                                                     |
-| `{ type: "pick-start" }`               | `PICK_START`                                                          |
-| `{ type: "pick-stop" }`                | `PICK_STOP`                                                           |
-| `{ type: "inspect", id }`              | `{ source: "reactdx-relay", type: "inspect", id }`                    |
-| `{ type: "expand", objectId, offset }` | `{ source: "reactdx-relay", type: "expand", objectId, offset }`       |
+| Command                                           | Relay posts to the agent                                              |
+| ------------------------------------------------- | --------------------------------------------------------------------- |
+| `{ type: "resync" }`                              | `WATCH`                                                               |
+| `{ type: "highlight", id }`                       | `highlight(id)`: `{ source: "reactdx-relay", type: "highlight", id }` |
+| `{ type: "clear-highlight" }`                     | `CLEAR_HIGHLIGHT`                                                     |
+| `{ type: "pick-start" }`                          | `PICK_START`                                                          |
+| `{ type: "pick-stop" }`                           | `PICK_STOP`                                                           |
+| `{ type: "inspect", id }`                         | `{ source: "reactdx-relay", type: "inspect", id }`                    |
+| `{ type: "expand", objectId, offset }`            | `{ source: "reactdx-relay", type: "expand", objectId, offset }`       |
+| `{ type: "copy-value" \| "store-value", target }` | `{ source: "reactdx-relay", type, target }`                           |
 
 - The relay posts every command but `resync` as `{ source: "reactdx-relay", ...command }`: what `parseTreeCommand` returns has only the known fields.
 - `inspect`'s `id` may be `null`; `expand`'s `objectId` is a positive safe integer and `offset` a non-negative one.
+- `copy-value` / `store-value` (`ValueMessage` from the panel, with `tabId`): `target` is a `ValueTarget` (`parseValueTarget`, `src/inspect.ts`), only its known fields kept: `{ objectId, key? }` (`objectId` positive; `key` a non-negative safe integer or a string up to 1,000 chars), `{ hook }` (1 to 8 non-negative safe integers), or `{ context }` (non-negative safe integer).
 
 - `id`: positive safe integer. Anything else (no id, a string, 0, a fraction, an unsafe integer, an unknown type, a non-object) is dropped. Extra keys are stripped.
 - `parsePicked(data)`: `source: "reactdx"`, `type: "picked"`, `id` a positive safe integer or `null`; anything else dropped, extra keys stripped. Built with `picked(id)`.
@@ -122,6 +124,8 @@ The agent's `inspected` and `expanded` replies carry `Value` descriptors (`docs/
 - `parseValue(data)`: a fresh copy with only known fields, or `undefined`. Primitives: finite numbers, booleans, `null`, strings up to 1,000 chars. Descriptors by `type`, each field checked: names (`function`, class names, tags, element names and keys, symbol descriptions, error names) up to 256 chars, other strings up to 1,000, counts non-negative safe integers, ids positive.
 - Containers (`object`, `array`, `typed-array`, `map`, `set`): at most 100 entries in a page (props, items, entries, values), `nextOffset` a positive id, nested at most 4 deep, at most 50,000 values in one message. Map entries are `[key, value]` pairs.
 - `parseInspected`: `{ source: "reactdx", type: "inspected", id, data }`, `data` null or `{ props, state?, hooks?, hooksError? }` (one 50,000-value budget). `hooks`: `HookValue` `{ name, value?, hooks?, site? }` trees (M4 #34; `site`, a `CallSite` `{ url, line, column }` with the same limits as `source`'s url form, M4 #37), at most 200 hooks in all, groups nested at most 8 deep, names up to 256 chars; `hooksError` up to 1,000. `contexts`: at most 50 `{ name, value }` (M4 #35). `owners`: at most 50 `{ id, name }`, `id` a positive safe integer or null (not in the tree). `source` (`SourceRef`, M4 #36): `{ file, line, column }` or `{ url, line, column }`, exactly one of `file`/`url`, non-empty and up to 1,000 chars, `line`/`column` positive safe integers. `parseExpanded`: `{ source: "reactdx", type: "expanded", objectId, offset, value }`. Builders `inspected(id, data)`, `expanded(objectId, offset, value)`.
+- `parseValueText`: `{ source: "reactdx", type: "value-text", text }`, `text` a string up to `MAX_COPY` (10,000,000) chars; builder `valueText(text)`. The relay forwards it over the tree port like `expanded`. The panel copies it only as the reply to its own Copy value (`docs/panel.md`, Inspector store).
+- `parseValueStored`: `{ source: "reactdx", type: "value-stored", name }`, `name` matching `$reactdx<n>` (`n` from 1, up to 9 digits); builder `valueStored(name)`. Forwarded like `value-text`; the panel shows it only as the reply to its own store.
 - `packages/messages/test/inspect.test.ts`: every descriptor kept, each bound dropped.
 
 ## Toolbar (`toolbarState(renderers)`, `toolbarIcons(icon)`)

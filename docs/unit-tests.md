@@ -15,7 +15,7 @@ Vitest 5.1.0 in jsdom 31.0.0. One suite, run once per React version.
 | `react-19` | `packages/page/test/**/*.test.ts`                   | 19.3.1 | `19.`                       |
 | `panel`    | `packages/{panel,messages}/test/**/*.test.{ts,tsx}` | none   |                             |
 
-- The React projects alias `^(react|react-dom)(/.*)?$` into `test-env/react-<n>/node_modules`. `panel` uses `vite-plugin-solid` 2.11.16 and `@solidjs/testing-library` 0.8.10, and runs once (no React).
+- The React projects alias `^(react|react-dom)(/.*)?$` into `test-env/react-<n>/node_modules`. `panel` uses `vite-plugin-solid` 2.11.16 and `@solidjs/testing-library` 0.8.10, and runs once (no React). Its `test/setup.ts` unmounts after each test (`afterEach(cleanup)`: without test globals the library doesn't), so nothing portaled to the body (the row menu) outlives its test.
 - CI runs each project as its own `unit` job (`docs/ci.md`).
 
 ## Why `test-env/*` packages, not npm aliases

@@ -1,7 +1,7 @@
 import { parseValue } from "@reactdx/messages"
 import React from "react"
-import { expect, test } from "vitest"
-import { createInspector } from "../src/inspect.ts"
+import { expect, test, vi } from "vitest"
+import { copyText, createInspector } from "../src/inspect.ts"
 
 const roundTrips = (value: unknown) =>
   expect(JSON.parse(JSON.stringify(value))).toEqual(value)
@@ -328,4 +328,104 @@ test("everything it sends passes the panel's checks", () => {
   }
   const result = serialize(value)
   expect(parseValue(result)).toEqual(result)
+})
+
+test("find finds a described object, or its child by key or index", () => {
+  const inspector = createInspector()
+  const getter = vi.fn(() => 1)
+  const value = {
+    name: "Ada",
+    list: [10, 20],
+    map: new Map([["k", 5]]),
+    set: new Set(["s"]),
+    nothing: undefined,
+    [Symbol("tag")]: 7,
+    get g() {
+      return getter()
+    },
+  }
+  const described = inspector.serialize(value)
+  const id = at(described, "id") as number
+  const idOf = (path: string) => at(described, `props.${path}.id`) as number
+  expect(inspector.find(id)).toEqual({ value })
+  expect(inspector.find(id, "name")).toEqual({ value: "Ada" })
+  expect(inspector.find(id, "nothing")).toEqual({ value: undefined })
+  expect(inspector.find(id, "Symbol(tag)")).toEqual({ value: 7 })
+  expect(inspector.find(idOf("list"), 1)).toEqual({ value: 20 })
+  expect(inspector.find(idOf("map"), 0)).toEqual({ value: 5 })
+  expect(inspector.find(idOf("set"), 0)).toEqual({ value: "s" })
+  // Not found: a getter (never run), a missing key or index, an unknown object.
+  expect(inspector.find(id, "g")).toBeUndefined()
+  expect(getter).not.toHaveBeenCalled()
+  expect(inspector.find(id, "missing")).toBeUndefined()
+  expect(inspector.find(idOf("list"), 5)).toBeUndefined()
+  expect(inspector.find(99)).toBeUndefined()
+})
+
+test("copyText: strings as they are, other values as JSON-like text", () => {
+  expect(copyText("a\nb")).toBe("a\nb")
+  expect(copyText(1)).toBe("1")
+  expect(copyText(null)).toBe("null")
+  expect(copyText(undefined)).toBe("undefined")
+  expect(copyText(10n)).toBe("10n")
+  // A function row copies its source; Function.prototype.toString, not the
+  // function's own (app code).
+  function save() {
+    return 1
+  }
+  save.toString = () => "own"
+  // As the transform printed it.
+  expect(copyText(save)).toBe(Function.prototype.toString.call(save))
+  expect(copyText(save)).toMatch(/^function save\(\) \{\s+return 1;?\s+\}$/)
+  expect(copyText(Symbol("s"))).toBe("Symbol(s)")
+})
+
+test("copyText writes objects as indented JSON, without running getters", () => {
+  const getter = vi.fn(() => 1)
+  const cycle: Record<string, unknown> = { id: 1 }
+  cycle.self = cycle
+  const value = {
+    text: "x",
+    gone: undefined,
+    nan: Number.NaN,
+    big: 2n,
+    run() {},
+    when: new Date(0),
+    map: new Map<unknown, unknown>([[{ k: 1 }, "v"]]),
+    set: new Set([1]),
+    bytes: new Uint8Array([1, 2]),
+    element: React.createElement("div"),
+    cycle,
+    [Symbol("hidden")]: 1,
+    get g() {
+      return getter()
+    },
+  }
+  expect(JSON.parse(copyText(value))).toEqual({
+    text: "x",
+    nan: "NaN",
+    big: "2n",
+    run: "[Function: run]",
+    when: "1970-01-01T00:00:00.000Z",
+    map: [[{ k: 1 }, "v"]],
+    set: [1],
+    bytes: [1, 2],
+    element: "<div />",
+    cycle: { id: 1, self: "[Circular]" },
+    g: "[Getter]",
+  })
+  expect(copyText([1])).toBe("[\n  1\n]")
+  expect(getter).not.toHaveBeenCalled()
+})
+
+test("copyText marks a value that throws while read", () => {
+  const trap = new Proxy(
+    {},
+    {
+      ownKeys() {
+        throw new Error("no")
+      },
+    },
+  )
+  expect(JSON.parse(copyText({ trap }))).toEqual({ trap: "[Unreadable]" })
 })
