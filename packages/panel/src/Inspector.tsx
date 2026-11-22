@@ -19,6 +19,7 @@ import {
 } from "solid-js"
 import { Empty, EmptyAction } from "./Empty"
 import type { InspectorStore } from "./inspection"
+import { childPath, type PathRoot, type RowPath } from "./paths"
 import { type MenuItem, RowMenu } from "./RowMenu"
 import { matches, searchRanges } from "./search"
 import {
@@ -288,7 +289,7 @@ export function Inspector(props: {
     entriesOf(value).entries.some((entry) =>
       entryShows(props.inspector, entry, query()),
     )
-  const section = (name: string, value: Value | undefined) => (
+  const section = (name: string, root: PathRoot, value: Value | undefined) => (
     <Show when={shown(value) && (value as Container)}>
       {(container) => (
         <Section
@@ -300,7 +301,7 @@ export function Inspector(props: {
           <Children
             inspector={props.inspector}
             value={container()}
-            path={name}
+            path={{ root, keys: [] }}
             depth={0}
             query={query()}
             onMenu={onMenu}
@@ -435,8 +436,8 @@ export function Inspector(props: {
               <Show when={query() !== "" && !anyShown()}>
                 <p class="p-2 text-muted">No matches</p>
               </Show>
-              {section("Props", props.inspector.data()?.props)}
-              {section("State", props.inspector.data()?.state)}
+              {section("Props", "props", props.inspector.data()?.props)}
+              {section("State", "state", props.inspector.data()?.state)}
               <Show when={hooksShow()}>
                 <Section
                   name="Hooks"
@@ -454,7 +455,6 @@ export function Inspector(props: {
                     sources={props.sources}
                     settings={props.settings}
                     hooks={props.inspector.data()?.hooks ?? []}
-                    path="Hooks"
                     at={[]}
                     depth={0}
                     query={query()}
@@ -472,12 +472,12 @@ export function Inspector(props: {
                   onToggle={() => toggle("Context")}
                 >
                   <For each={contexts()}>
-                    {(context, index) => (
+                    {(context) => (
                       <Show when={contextShows(context)}>
                         <ValueRow
                           inspector={props.inspector}
                           entry={context}
-                          path={`Context.${index()}`}
+                          path={{ root: { context: context.read }, keys: [] }}
                           depth={0}
                           query={query()}
                           target={{ context: context.read }}
@@ -603,7 +603,7 @@ function Triangle(props: { open: boolean }) {
 function Children(props: {
   inspector: InspectorStore
   value: Container
-  path: string
+  path: RowPath
   depth: number
   query: string
   onMenu: OnMenu
@@ -623,7 +623,7 @@ function Children(props: {
           <ValueRow
             inspector={props.inspector}
             entry={entry}
-            path={`${props.path}.${entry.name}`}
+            path={childPath(props.path, entry.key as ValueKey)}
             depth={props.depth}
             query={props.query}
             target={{ objectId: loaded().id, key: entry.key as ValueKey }}
@@ -652,8 +652,8 @@ function HookRows(props: {
   sources: Sources
   settings: Settings
   hooks: HookValue[]
-  path: string
-  // Call indexes from the top: the page's address for a hook (ValueTarget).
+  // Call indexes from the top: the hook's row path root and the page's address
+  // for it (ValueTarget).
   at: number[]
   depth: number
   query: string
@@ -665,8 +665,8 @@ function HookRows(props: {
     <For each={props.hooks}>
       {(hook, index) => {
         // Paths are by call index, so hooks hidden by the search stay in the list.
-        const path = () => `${props.path}.${index()}`
         const at = () => [...props.at, index()]
+        const path = (): RowPath => ({ root: { hook: at() }, keys: [] })
         const target = () =>
           hook.value === undefined ? undefined : { hook: at() }
         const open = () => props.inspector.isOpen(path())
@@ -732,7 +732,6 @@ function HookRows(props: {
                         sources={props.sources}
                         settings={props.settings}
                         hooks={hooks()}
-                        path={path()}
                         at={at()}
                         depth={props.depth + 1}
                         query={props.query}
@@ -796,7 +795,7 @@ function Toggle(props: { open: boolean; onClick: () => void }) {
 function ValueRow(props: {
   inspector: InspectorStore
   entry: Entry
-  path: string
+  path: RowPath
   depth: number
   query: string
   // Where the page finds the value; none: only the key can be copied.

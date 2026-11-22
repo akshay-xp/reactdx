@@ -9,6 +9,7 @@ import type {
   ValueTextMessage,
 } from "@reactdx/messages"
 import { createSignal } from "solid-js"
+import { pathKey, type RowPath } from "./paths"
 
 // What the store asks the page for; the panel adds the tab (InspectMessage).
 export type InspectorCommand =
@@ -45,7 +46,7 @@ export function createInspectorStore(
 ) {
   const [id, setId] = createSignal<number>()
   const [data, setData] = createSignal<InspectedData | null>()
-  // Open paths (dot-joined keys from the section) to the ref each one loads, if any.
+  // Open paths (by pathKey) to the ref each one loads, if any.
   const [open, setOpen] = createSignal(new Map<string, number | undefined>())
   const [expansions, setExpansions] = createSignal(new Map<number, Value>())
   let copyAsked = false
@@ -87,16 +88,17 @@ export function createInspectorStore(
       )
       setExpansions(map)
     },
-    isOpen: (path: string) => open().has(path),
+    isOpen: (path: RowPath) => open().has(pathKey(path)),
     // `ref`: the object to load, for a value the page sent as a ref.
-    open(path: string, ref?: number) {
-      if (open().has(path)) return
-      setOpen(new Map(open()).set(path, ref))
+    open(path: RowPath, ref?: number) {
+      const key = pathKey(path)
+      if (open().has(key)) return
+      setOpen(new Map(open()).set(key, ref))
       if (ref !== undefined && !expansions().has(ref)) expand(ref)
     },
-    close(path: string) {
+    close(path: RowPath) {
       const map = new Map(open())
-      map.delete(path)
+      map.delete(pathKey(path))
       setOpen(map)
     },
     expansion: (objectId: number) => expansions().get(objectId),

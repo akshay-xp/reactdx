@@ -795,7 +795,7 @@ test("with Hook names on, sited hooks show the variable they're assigned to", as
       ],
     }),
   )
-  inspector.open("Hooks.1")
+  inspector.open({ root: { hook: [1] }, keys: [] })
   await settled()
   expect(rows(container)).toEqual([
     "State: 1",
@@ -945,4 +945,27 @@ test("a stored value's global is named for a few seconds", () => {
   } finally {
     vi.useRealTimers()
   }
+})
+
+test("a key with a dot and the nested keys it spells open and close independently", () => {
+  const { container, inspector, select } = setup()
+  select()
+  const inline = (id: number, props: Record<string, Value>) =>
+    object(props, { id })
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        "a.b": inline(2, { x: 1 }),
+        a: inline(3, { b: inline(4, { y: 2 }) }),
+      }),
+    }),
+  )
+  fireEvent.click(toggle(container, "a") as Element)
+  fireEvent.click(toggle(container, "b") as Element)
+  expect(toggle(container, "a.b")?.getAttribute("aria-expanded")).toBe("false")
+  expect(rows(container)).not.toContain("x: 1")
+  fireEvent.click(toggle(container, "a.b") as Element)
+  fireEvent.click(toggle(container, "b") as Element)
+  expect(rows(container)).toContain("x: 1")
+  expect(rows(container)).not.toContain("y: 2")
 })
