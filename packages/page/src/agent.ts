@@ -26,7 +26,7 @@ import {
   valueStored,
   valueText,
 } from "@reactdx/messages"
-import { applyEdit, fromEditValue, type Renderer } from "./edit.ts"
+import { applyEdit, type EditOp, fromEditValue, type Renderer } from "./edit.ts"
 import type { FiberRoot, Hook, HookRecord } from "./hook.ts"
 import {
   type DispatcherRef,
@@ -357,20 +357,24 @@ export function startAgent(
         if (value !== undefined)
           post(expanded(objectId, offset, value as Value))
       }
-    } else if (data.type === "edit") {
+    } else if (
+      data.type === "edit" ||
+      data.type === "delete-path" ||
+      data.type === "rename-path"
+    ) {
       const command = parseTreeCommand(data)
-      if (command?.type !== "edit" || command.id !== selected?.id) return
+      if (!command || !("root" in command) || command.id !== selected?.id)
+        return
       const fiber = tree.fiber(command.id)
       const renderer = fiber && rendererOf(fiber)
       if (!renderer) return
-      applyEdit(
-        renderer,
-        fiber,
-        command.root,
-        command.path,
-        fromEditValue(command.value),
-        selected.hooks,
-      )
+      const op: EditOp =
+        command.type === "edit"
+          ? { op: "set", value: fromEditValue(command.value) }
+          : command.type === "delete-path"
+            ? { op: "delete" }
+            : { op: "rename", to: command.to }
+      applyEdit(renderer, fiber, command.root, command.path, op, selected.hooks)
       // React commits the edit in a microtask; send its result then, not on
       // the next flush, since the developer is waiting on this one value.
       setTimeout(refresh)

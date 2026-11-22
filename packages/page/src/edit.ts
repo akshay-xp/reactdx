@@ -27,15 +27,36 @@ export function fromEditValue(value: EditValue): unknown {
 }
 
 // The development renderer's override functions (react-dom 18 and 19).
+type Path = ValueKey[]
 export type Renderer = {
-  overrideProps?: (fiber: object, path: ValueKey[], value: unknown) => void
+  overrideProps?: (fiber: object, path: Path, value: unknown) => void
+  overridePropsDeletePath?: (fiber: object, path: Path) => void
+  overridePropsRenamePath?: (fiber: object, from: Path, to: Path) => void
   overrideHookState?: (
     fiber: object,
     index: number,
-    path: ValueKey[],
+    path: Path,
     value: unknown,
   ) => void
+  overrideHookStateDeletePath?: (
+    fiber: object,
+    index: number,
+    path: Path,
+  ) => void
+  overrideHookStateRenamePath?: (
+    fiber: object,
+    index: number,
+    from: Path,
+    to: Path,
+  ) => void
 }
+
+// What an edit does at its path: write a value, delete the key or item, or
+// rename the key (the last in the path) to `to`.
+export type EditOp =
+  | { op: "set"; value: unknown }
+  | { op: "delete" }
+  | { op: "rename"; to: string }
 
 const STATE_HOOKS = new Set(["State", "Reducer"])
 
@@ -45,17 +66,35 @@ const isPlain = (value: unknown) =>
     value !== null &&
     [Object.prototype, null].includes(Object.getPrototypeOf(value)))
 
-// Every container the path writes through, from `root`, is a plain object or
-// array: React's copy would turn a Map, Set or class instance into an object.
-// Read through descriptors, so no getter runs.
-export function plainPath(root: unknown, path: ValueKey[]) {
+// The container the path's last key is in, when every container from `root`
+// down to it is a plain object or array (React's copy would turn a Map, Set or
+// class instance into an object). Read through descriptors: no getter runs.
+function parentOf(root: unknown, path: Path) {
   let at = root
   for (const key of path.slice(0, -1)) {
-    if (!isPlain(at)) return false
+    if (!isPlain(at)) return
     at = Object.getOwnPropertyDescriptor(at, key)?.value
   }
-  return path.length === 0 || isPlain(at)
+  return isPlain(at) ? (at as object) : undefined
 }
+
+export const plainPath = (root: unknown, path: Path) =>
+  path.length === 0 || parentOf(root, path) !== undefined
+
+// Whether `op` can be done at `path` under `root`: through plain containers
+// only; a delete or rename names a key; a rename is of an object's key, to a
+// name it doesn't have.
+function allowed(root: unknown, path: Path, op: EditOp) {
+  if (op.op === "set") return plainPath(root, path)
+  const parent = parentOf(root, path)
+  if (!parent || path.length === 0) return false
+  return (
+    op.op === "delete" ||
+    (!Array.isArray(parent) && !Object.hasOwn(parent, op.to))
+  )
+}
+
+const renamed = (path: Path, to: string) => [...path.slice(0, -1), to]
 
 // A copy of `value` with `next` at `path`: each container along it copied (an
 // array by slice, an object by spread), as React's overrides do.
@@ -82,19 +121,23 @@ type ClassInstance = {
   setState: (update: (previous: unknown) => unknown) => void
 }
 
-// Writes `value` at `path` under `root`. `hooks`: the fiber's hooks as last read.
-// Anything it can't write (another root, a hook without state) is ignored.
+// Does `op` at `path` under `root`. `hooks`: the fiber's hooks as last read.
+// Anything it can't do (another root, a hook without state, a path through a
+// Map) is ignored.
 export function applyEdit(
   renderer: Renderer,
   fiber: object,
   root: EditRoot,
-  path: ValueKey[],
-  value: unknown,
+  path: Path,
+  op: EditOp,
   hooks: RawHook[] = [],
 ) {
   if (root === "props") {
-    if (plainPath((fiber as { memoizedProps: unknown }).memoizedProps, path))
-      renderer.overrideProps?.(fiber, path, value)
+    const props = (fiber as { memoizedProps: unknown }).memoizedProps
+    if (!allowed(props, path, op)) return
+    if (op.op === "set") renderer.overrideProps?.(fiber, path, op.value)
+    else if (op.op === "delete") renderer.overridePropsDeletePath?.(fiber, path)
+    else renderer.overridePropsRenamePath?.(fiber, path, renamed(path, op.to))
     return
   }
   // React has no override for class state, and a render recomputes it from the
@@ -104,13 +147,25 @@ export function applyEdit(
   if (root === "state") {
     const { tag, stateNode } = fiber as { tag: number; stateNode: unknown }
     const instance = stateNode as ClassInstance | null
-    if (tag !== 1 || !instance || !plainPath(instance.state, path)) return
-    instance.setState((previous) => copyWithSet(previous, path, value))
+    if (tag !== 1 || !instance || op.op !== "set") return
+    if (!allowed(instance.state, path, op)) return
+    instance.setState((previous) => copyWithSet(previous, path, op.value))
     return
   }
   if (typeof root !== "object" || !("hook" in root)) return
   const hook = hookAt(hooks, root.hook)
   if (!hook || !STATE_HOOKS.has(hook.name) || hook.index === undefined) return
-  if (plainPath(hook.value, path))
-    renderer.overrideHookState?.(fiber, hook.index, path, value)
+  if (!allowed(hook.value, path, op)) return
+  const { index } = hook
+  if (op.op === "set")
+    renderer.overrideHookState?.(fiber, index, path, op.value)
+  else if (op.op === "delete")
+    renderer.overrideHookStateDeletePath?.(fiber, index, path)
+  else
+    renderer.overrideHookStateRenamePath?.(
+      fiber,
+      index,
+      path,
+      renamed(path, op.to),
+    )
 }

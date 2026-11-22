@@ -380,3 +380,67 @@ test("class state and useReducer values edit and come back", async () => {
   await settle()
   expect(replies()).toHaveLength(sent)
 })
+
+const pathCommand = (fields: Record<string, unknown>) =>
+  React.act(async () => send({ source: "reactdx-relay", ...fields }))
+
+test("delete and rename write through React; adding is an edit at a new path", async () => {
+  const nested = idOf("Nested")
+  inspect(nested)
+  const at = { id: nested, root: "props" }
+  // Refused: renaming an array item or onto a key that's there, and anything
+  // through the Map.
+  const sent = replies().length
+  await pathCommand({ type: "rename-path", ...at, path: ["items", 0], to: "x" })
+  await pathCommand({
+    type: "rename-path",
+    ...at,
+    path: ["user", "name"],
+    to: "address",
+  })
+  await pathCommand({ type: "delete-path", ...at, path: ["tags", "k"] })
+  await pathCommand({
+    type: "rename-path",
+    ...at,
+    path: ["tags", "k"],
+    to: "j",
+  })
+  await settle()
+  expect(replies()).toHaveLength(sent)
+
+  // Earlier tests may have edited these: start from what was sent.
+  const items = (lastProps().items as { items: unknown[] }).items
+  await pathCommand({ type: "delete-path", ...at, path: ["items", 0] })
+  await settle()
+  expect(lastProps().items).toMatchObject({ items: items.slice(1) })
+  await pathCommand({ type: "delete-path", ...at, path: ["user", "name"] })
+  await settle()
+  expect(Object.keys(lastProps().user?.props as object)).toEqual(["address"])
+  await pathCommand({
+    type: "rename-path",
+    ...at,
+    path: ["user", "address", "city"],
+    to: "town",
+  })
+  expect(text("em")).toBe("undefined 75")
+  const hook = { id: nested, root: { hook: [0] } }
+  await pathCommand({ type: "delete-path", ...hook, path: ["age"] })
+  expect(text("s")).toMatch(/^\w+ undefined$/)
+  await pathCommand({
+    type: "rename-path",
+    ...hook,
+    path: ["name"],
+    to: "title",
+  })
+  expect(text("s")).toBe("undefined undefined")
+  // Adding: an edit at a path that isn't there yet.
+  await edit({ ...at, path: ["user", "newKey"], value: "" })
+  await edit({
+    ...at,
+    path: ["items", items.length - 1],
+    value: { type: "undefined" },
+  })
+  await settle()
+  expect(lastProps().user).toMatchObject({ props: { newKey: "" } })
+  expect(lastProps().items).toMatchObject({ length: items.length })
+})
