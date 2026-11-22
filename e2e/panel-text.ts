@@ -192,7 +192,13 @@ export async function openPanelText(
         tip.beginInputTransactionForTests(window)
         const key = new KeyboardEvent("", { key: "End", code: "End", keyCode: KeyboardEvent.DOM_VK_END })
         for (const tree of trees) {
-          tree.takeFocus()
+          // A tree re-rendered since the walk leaves a stale accessible, which
+          // can't take focus: skip it; the next read's end() gets the new one.
+          try {
+            tree.takeFocus()
+          } catch {
+            continue
+          }
           await new Promise((r) => setTimeout(r, 50))
           tip.keydown(key)
           tip.keyup(key)
