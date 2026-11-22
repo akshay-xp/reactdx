@@ -1237,3 +1237,17 @@ test("values edit at any depth through plain objects and arrays; other container
     expect(editor(container)).toBeNull()
   }
 })
+
+test("a DOM element value is a leaf: its id isn't an object id", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        node: { type: "element", tag: "div", id: "main", className: "" },
+      }),
+    }),
+  )
+  const row = container.querySelector("[data-testid=value]") as Element
+  expect(row.querySelector("[data-testid=value-toggle]")).toBeNull()
+})

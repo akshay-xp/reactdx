@@ -34,7 +34,7 @@ import { IconButton, PickGlyph, SearchField } from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
 import { isPlain } from "./typed"
-import { byName, previewText, sortedEntries } from "./value"
+import { byName, isContainer, previewText, sortedEntries } from "./value"
 
 // Text color per kind of value, from the theme's syntax tokens.
 function tone(value: Value) {
@@ -62,12 +62,6 @@ function tone(value: Value) {
 // `key`: where the page finds it in its container (ValueTarget).
 type Entry = { name: string; value: Value; arrow?: boolean; key?: ValueKey }
 type OnMenu = (event: MouseEvent, key: string, target?: ValueTarget) => void
-
-const isContainer = (value: Value): value is Container =>
-  value !== null &&
-  typeof value === "object" &&
-  "id" in value &&
-  value.type !== "ref"
 
 // A container's loaded entries, and how many are still on the page.
 function entriesOf(value: Container): { entries: Entry[]; left: number } {

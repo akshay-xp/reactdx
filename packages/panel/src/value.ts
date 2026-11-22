@@ -28,11 +28,10 @@ function shape(value: Preview): string {
   }
 }
 
-const isContainer = (value: Value): value is Container =>
-  typeof value === "object" &&
-  value !== null &&
-  "id" in value &&
-  value.type !== "ref"
+// By type: a DOM element's descriptor has an `id` too (its HTML id).
+const CONTAINERS = new Set(["object", "array", "typed-array", "map", "set"])
+export const isContainer = (value: Value): value is Container =>
+  value !== null && typeof value === "object" && CONTAINERS.has(value.type)
 
 // Containers inside a preview show only their shape.
 const nested = (value: Value) =>
