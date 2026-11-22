@@ -56,15 +56,15 @@ test("replies for another node are ignored; null means it's gone", () => {
 test("opening a ref asks for it once; the reply is its expansion", () => {
   const { sent, store } = setup()
   store.inspect(3)
-  store.open("props.a", 9)
-  store.open("props.a", 9)
-  expect(store.isOpen("props.a")).toBe(true)
+  store.open({ root: "props", keys: ["a"] }, 9)
+  store.open({ root: "props", keys: ["a"] }, 9)
+  expect(store.isOpen({ root: "props", keys: ["a"] })).toBe(true)
   expect(sent.slice(1)).toEqual([{ type: "expand", objectId: 9, offset: 0 }])
   const page = object({ b: 1 }, { id: 9, nextOffset: 100 })
   store.receiveExpanded(expanded(9, 0, page))
   expect(store.expansion(9)).toEqual(page)
-  store.close("props.a")
-  expect(store.isOpen("props.a")).toBe(false)
+  store.close({ root: "props", keys: ["a"] })
+  expect(store.isOpen({ root: "props", keys: ["a"] })).toBe(false)
 })
 
 test("more pages are appended to the expansion", () => {
@@ -94,13 +94,13 @@ test("more pages are appended to the expansion", () => {
 test("a re-send keeps open paths and asks for open refs again", () => {
   const { sent, store } = setup()
   store.inspect(3)
-  store.open("props.a", 9)
-  store.open("props.b")
+  store.open({ root: "props", keys: ["a"] }, 9)
+  store.open({ root: "props", keys: ["b"] })
   store.receiveExpanded(expanded(9, 0, object({ x: 1 }, { id: 9 })))
   store.receive(inspected(3, { props: object({ a: 1 }) }))
   store.receive(inspected(3, { props: object({ a: 2 }) }))
-  expect(store.isOpen("props.a")).toBe(true)
-  expect(store.isOpen("props.b")).toBe(true)
+  expect(store.isOpen({ root: "props", keys: ["a"] })).toBe(true)
+  expect(store.isOpen({ root: "props", keys: ["b"] })).toBe(true)
   expect(store.expansion(9)).toBeUndefined()
   expect(sent.filter((c) => c.type === "expand")).toHaveLength(3)
 })
@@ -108,9 +108,9 @@ test("a re-send keeps open paths and asks for open refs again", () => {
 test("a new node closes every path; resend asks again", () => {
   const { sent, store } = setup()
   store.inspect(3)
-  store.open("props.a")
+  store.open({ root: "props", keys: ["a"] })
   store.inspect(5)
-  expect(store.isOpen("props.a")).toBe(false)
+  expect(store.isOpen({ root: "props", keys: ["a"] })).toBe(false)
   store.resend()
   expect(sent.at(-1)).toEqual({ type: "inspect", id: 5 })
 })
@@ -149,4 +149,60 @@ test("stored() names the global a Store as global variable went to, only when as
   expect(store.stored()).toBe("$reactdx1")
   store.clearStored()
   expect(store.stored()).toBeUndefined()
+})
+
+test("edit sends a write for the inspected node at a row path", () => {
+  const { sent, store } = setup()
+  store.edit({ root: "props", keys: ["label"] }, "Total")
+  expect(sent).toEqual([])
+  store.inspect(3)
+  store.edit({ root: "props", keys: ["label"] }, "Total")
+  store.edit({ root: { hook: [0] }, keys: [] }, 7)
+  store.edit({ root: "props", keys: ["n"] }, { type: "undefined" })
+  expect(sent.slice(1)).toEqual([
+    { type: "edit", id: 3, root: "props", path: ["label"], value: "Total" },
+    { type: "edit", id: 3, root: { hook: [0] }, path: [], value: 7 },
+    {
+      type: "edit",
+      id: 3,
+      root: "props",
+      path: ["n"],
+      value: { type: "undefined" },
+    },
+  ])
+})
+
+test("remove and rename send a delete or rename for the inspected node", () => {
+  const { sent, store } = setup()
+  store.remove({ root: "props", keys: ["a"] })
+  expect(sent).toEqual([])
+  store.inspect(3)
+  store.remove({ root: "props", keys: ["a"] })
+  store.rename({ root: "state", keys: ["a"] }, "b")
+  expect(sent.slice(1)).toEqual([
+    { type: "delete-path", id: 3, root: "props", path: ["a"] },
+    { type: "rename-path", id: 3, root: "state", path: ["a"], to: "b" },
+  ])
+})
+
+test("rerender asks the page to render the inspected node again", () => {
+  const { sent, store } = setup()
+  store.rerender()
+  expect(sent).toEqual([])
+  store.inspect(3)
+  store.rerender()
+  expect(sent.slice(1)).toEqual([{ type: "rerender", id: 3 }])
+})
+
+test("force asks the page to show a fallback or an error UI, or the children again", () => {
+  const { sent, store } = setup()
+  store.force("error", true)
+  expect(sent).toEqual([])
+  store.inspect(3)
+  store.force("error", true)
+  store.force("fallback", false)
+  expect(sent.slice(1)).toEqual([
+    { type: "force", id: 3, kind: "error", on: true },
+    { type: "force", id: 3, kind: "fallback", on: false },
+  ])
 })

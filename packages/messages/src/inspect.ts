@@ -79,10 +79,13 @@ export type HookValue = {
   value?: Value
   hooks?: HookValue[]
   site?: CallSite
+  // A context read: its index in `contexts` (read order), where it's edited.
+  context?: number
 }
 
 // A context the node read, by its displayName ("Context" without one).
-export type ContextValue = { name: string; value: Value }
+// `default`: no provider above, so it's the context's default value (read-only).
+export type ContextValue = { name: string; value: Value; default?: true }
 // A component that rendered the node, nearest first. `id` null: not in the tree
 // (a Server Component).
 export type Owner = { id: number | null; name: string }
@@ -102,7 +105,13 @@ export type InspectedData = {
   contexts?: ContextValue[]
   owners?: Owner[]
   source?: SourceRef
+  boundaries?: Boundaries
 }
+
+// The nearest Suspense boundary (`fallback`) and error boundary at or above the
+// node, by tree id, and whether the panel forced each (M5 #56).
+export type Boundary = { id: number; on: boolean }
+export type Boundaries = { fallback?: Boundary; error?: Boundary }
 
 const MAX_CONTEXTS = 50
 export const MAX_OWNERS = 50
@@ -168,6 +177,80 @@ export function parseValueTarget(data: unknown): ValueTarget | undefined {
   )
     return { hook: [...hook] }
   if (isCount(context)) return { context }
+}
+
+// Panel to agent: where an edit writes (docs/messages.md, Edits): the selected
+// node's props or class state, a hook by call indexes, or a context by read order.
+export type EditRoot =
+  | "props"
+  | "state"
+  | { hook: number[] }
+  | { context: number }
+
+// A value to write. Objects are tagged, so a user's `{ type: "undefined" }` is an
+// object, not the marker; what JSON can't hold has a marker.
+export type EditValue =
+  | string
+  | number
+  | boolean
+  | null
+  | { type: "undefined" }
+  | { type: "number"; value: "NaN" | "Infinity" | "-Infinity" | "-0" }
+  | EditValue[]
+  | { type: "object"; props: Record<string, EditValue> }
+
+const MAX_EDIT_PATH = 32
+const MAX_EDIT_STRING = 100_000
+const MAX_EDIT_NESTING = 16
+const MAX_EDIT_VALUES = 10_000
+
+export function parseEditRoot(data: unknown): EditRoot | undefined {
+  if (data === "props" || data === "state") return data
+  const target = parseValueTarget(data)
+  if (target && "hook" in target) return { hook: target.hook }
+  if (target && "context" in target) return { context: target.context }
+}
+
+export function parseEditPath(data: unknown): ValueKey[] | undefined {
+  if (!Array.isArray(data) || data.length > MAX_EDIT_PATH) return
+  if (!data.every((key) => isCount(key) || isText(key))) return
+  return [...data]
+}
+
+// A fresh copy within the bounds, or undefined.
+export function parseEditValue(data: unknown): EditValue | undefined {
+  let count = 0
+  const walk = (value: unknown, depth: number): EditValue | undefined => {
+    if (++count > MAX_EDIT_VALUES || depth > MAX_EDIT_NESTING) return
+    if (value === null || typeof value === "boolean") return value
+    if (typeof value === "number")
+      return Number.isFinite(value) ? value : undefined
+    if (typeof value === "string")
+      return value.length <= MAX_EDIT_STRING ? value : undefined
+    if (Array.isArray(value)) {
+      const items: EditValue[] = []
+      for (const item of value) {
+        const parsed = walk(item, depth + 1)
+        if (parsed === undefined) return
+        items.push(parsed)
+      }
+      return items
+    }
+    if (typeof value !== "object") return
+    const { type, value: marker, props } = value as Record<string, unknown>
+    if (type === "undefined") return { type }
+    if (type === "number" && NUMBERS.has(marker))
+      return { type, value: marker as "NaN" }
+    if (type !== "object" || typeof props !== "object" || props === null) return
+    const out: Record<string, EditValue> = {}
+    for (const [key, item] of Object.entries(props)) {
+      const parsed = walk(item, depth + 1)
+      if (parsed === undefined || !isText(key)) return
+      out[key] = parsed
+    }
+    return { type, props: out }
+  }
+  return walk(data, 0)
 }
 
 // Agent to panel: a value as text for the clipboard (docs/page.md, Copy).
@@ -382,7 +465,10 @@ function parseHooks(
   const out: HookValue[] = []
   for (const item of data) {
     if (--count.left < 0 || typeof item !== "object" || item === null) return
-    const { name, value, hooks, site } = item as Record<string, unknown>
+    const { name, value, hooks, site, context } = item as Record<
+      string,
+      unknown
+    >
     if (!isName(name)) return
     const hook: HookValue = { name }
     if (value !== undefined) {
@@ -400,6 +486,10 @@ function parseHooks(
       if (!parsed) return
       hook.site = parsed
     }
+    if (context !== undefined) {
+      if (!isCount(context)) return
+      hook.context = context
+    }
     out.push(hook)
   }
   return out
@@ -412,8 +502,16 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
   if (!isId(message.id)) return
   if (message.data === null) return inspected(message.id, null)
   if (typeof message.data !== "object") return
-  const { props, state, hooks, hooksError, contexts, owners, source } =
-    message.data as Record<string, unknown>
+  const {
+    props,
+    state,
+    hooks,
+    hooksError,
+    contexts,
+    owners,
+    source,
+    boundaries,
+  } = message.data as Record<string, unknown>
   const budget = { left: MAX_VALUES }
   const parsed: InspectedData = { props: null }
   const value = parseValue(props, 0, budget)
@@ -436,9 +534,10 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
   if (contexts !== undefined) {
     const list = parseList(contexts, MAX_CONTEXTS, (item) => {
       const value = parseValue(item.value, 0, budget)
-      return isName(item.name) && value !== undefined
-        ? { name: item.name, value }
-        : undefined
+      if (!isName(item.name) || value === undefined) return
+      if (item.default === undefined) return { name: item.name, value }
+      if (item.default === true)
+        return { name: item.name, value, default: true as const }
     })
     if (!list) return
     parsed.contexts = list
@@ -455,7 +554,25 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     if (!ref) return
     parsed.source = ref
   }
+  if (boundaries !== undefined) {
+    const found = parseBoundaries(boundaries)
+    if (!found) return
+    parsed.boundaries = found
+  }
   return inspected(message.id, parsed)
+}
+
+function parseBoundaries(data: unknown): Boundaries | undefined {
+  if (typeof data !== "object" || data === null) return
+  const out: Boundaries = {}
+  for (const kind of ["fallback", "error"] as const) {
+    const item = (data as Record<string, unknown>)[kind]
+    if (item === undefined) continue
+    const { id, on } = (item ?? {}) as Record<string, unknown>
+    if (!isId(id) || typeof on !== "boolean") return
+    out[kind] = { id, on }
+  }
+  return out
 }
 
 function parseSource(data: unknown): SourceRef | undefined {

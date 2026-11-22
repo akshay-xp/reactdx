@@ -107,3 +107,15 @@ test.each<[Value, string]>([
 ])("%o reads %s", (value, text) => {
   expect(previewText(value)).toBe(text)
 })
+
+test("an element inside an object previews as itself, not as a container", () => {
+  expect(
+    previewText({
+      type: "object",
+      className: "Object",
+      id: 1,
+      size: 1,
+      props: { n: { type: "element", tag: "div", id: "main", className: "" } },
+    }),
+  ).toBe("{n: <div#main>}")
+})

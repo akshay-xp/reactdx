@@ -13,6 +13,7 @@ import { Inspector } from "../src/Inspector"
 import { createInspectorStore, type InspectorCommand } from "../src/inspection"
 import type { Sources } from "../src/source"
 import { createTreeStore } from "../src/tree"
+import { previewText } from "../src/value"
 
 const object = (
   props: Record<string, Value>,
@@ -327,7 +328,7 @@ test("search reaches loaded values, expanding their ancestors only while it filt
   expect(rows(container)).toEqual(["a: {b: {...}}", "deep: {...}", "other: 1"])
 
   // A collapsed section opens while filtering, and is collapsed again after.
-  fireEvent.click(getByRole("button", { name: "Props" }))
+  fireEvent.click(getByRole("treeitem", { name: "Props" }))
   expect(rows(container)).toEqual([])
   search(container, "other")
   expect(rows(container)).toEqual(["other: 1"])
@@ -795,7 +796,7 @@ test("with Hook names on, sited hooks show the variable they're assigned to", as
       ],
     }),
   )
-  inspector.open("Hooks.1")
+  inspector.open({ root: { hook: [1] }, keys: [] })
   await settled()
   expect(rows(container)).toEqual([
     "State: 1",
@@ -867,6 +868,9 @@ test("right-clicking a row offers Copy key, Copy value and Store as global varia
     "Copy key",
     "Copy value",
     "Store as global variable",
+    // A prop can be renamed and deleted (#53).
+    "Rename key",
+    "Delete",
   ])
   choose("Copy key")
   expect(copied).toEqual(["label"])
@@ -945,4 +949,678 @@ test("a stored value's global is named for a few seconds", () => {
   } finally {
     vi.useRealTimers()
   }
+})
+
+test("a key with a dot and the nested keys it spells open and close independently", () => {
+  const { container, inspector, select } = setup()
+  select()
+  const inline = (id: number, props: Record<string, Value>) =>
+    object(props, { id })
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        "a.b": inline(2, { x: 1 }),
+        a: inline(3, { b: inline(4, { y: 2 }) }),
+      }),
+    }),
+  )
+  fireEvent.click(toggle(container, "a") as Element)
+  fireEvent.click(toggle(container, "b") as Element)
+  expect(toggle(container, "a.b")?.getAttribute("aria-expanded")).toBe("false")
+  expect(rows(container)).not.toContain("x: 1")
+  fireEvent.click(toggle(container, "a.b") as Element)
+  fireEvent.click(toggle(container, "b") as Element)
+  expect(rows(container)).toContain("x: 1")
+  expect(rows(container)).not.toContain("y: 2")
+})
+
+// The value row reading `text`.
+const rowOf = (container: Element, text: string) =>
+  [...container.querySelectorAll<HTMLElement>("[data-testid=value]")].find(
+    (row) => row.textContent === text,
+  ) as HTMLElement
+const press = (key: string, init: KeyboardEventInit = {}) =>
+  fireEvent.keyDown(document.activeElement as Element, { key, ...init })
+
+test("rows are one tab stop; Up, Down, Home and End move focus", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ a: 1, b: 2, c: 3 }) }))
+  // The tab stop follows rendered rows (a MutationObserver, a microtask later).
+  await settled()
+  const tabs = () =>
+    [...container.querySelectorAll("[data-testid=value]")].map((row) =>
+      row.getAttribute("tabindex"),
+    )
+  // The Props header holds it until a row is focused (it's a row too).
+  expect(tabs()).toEqual(["-1", "-1", "-1"])
+  rowOf(container, "a: 1").focus()
+  press("ArrowDown")
+  expect(document.activeElement).toBe(rowOf(container, "b: 2"))
+  expect(tabs()).toEqual(["-1", "0", "-1"])
+  press("End")
+  expect(document.activeElement).toBe(rowOf(container, "c: 3"))
+  press("ArrowUp")
+  press("ArrowUp")
+  expect(document.activeElement).toBe(rowOf(container, "a: 1"))
+  press("Home")
+  press("ArrowUp")
+  expect(document.activeElement?.textContent).toBe("Props")
+})
+
+test("Right and Left open, close and move between levels", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ obj: object({ x: 1 }, { id: 2 }), n: 1 }),
+      hooks,
+    }),
+  )
+  await settled()
+  const obj = () =>
+    [...container.querySelectorAll<HTMLElement>("[data-testid=value]")].find(
+      (row) => row.textContent?.startsWith("obj:"),
+    ) as HTMLElement
+  const expanded = () =>
+    obj()
+      .querySelector("[data-testid=value-toggle]")
+      ?.getAttribute("aria-expanded")
+  obj().focus()
+  press("ArrowRight")
+  expect(expanded()).toBe("true")
+  expect(document.activeElement).toBe(obj())
+  press("ArrowRight")
+  expect(document.activeElement).toBe(rowOf(container, "x: 1"))
+  press("ArrowLeft")
+  expect(document.activeElement).toBe(obj())
+  press("ArrowLeft")
+  expect(expanded()).toBe("false")
+  // Nothing to open: up to its section's header.
+  press("ArrowLeft")
+  expect(document.activeElement?.textContent).toBe("Props")
+  rowOf(container, "n: 1").focus()
+  press("ArrowRight")
+  expect(document.activeElement).toBe(rowOf(container, "n: 1"))
+  // A custom hook opens to its hooks.
+  const cart = () =>
+    [...container.querySelectorAll<HTMLElement>("[data-testid=value]")].find(
+      (row) => row.textContent?.startsWith("useCart"),
+    ) as HTMLElement
+  cart().focus()
+  press("ArrowRight")
+  press("ArrowRight")
+  expect(document.activeElement).toBe(rowOf(container, "State: 2"))
+  press("ArrowLeft")
+  expect(document.activeElement).toBe(cart())
+})
+
+test("section headers are rows: Tab reaches each section's rows by arrows, Left and Right close and open it", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ a: 1 }), hooks }))
+  await settled()
+  const header = (name: string) =>
+    [...container.querySelectorAll<HTMLElement>("[role=treeitem]")].find(
+      (row) => row.tagName === "BUTTON" && row.textContent === name,
+    ) as HTMLElement
+  const stops = () =>
+    [...container.querySelectorAll<HTMLElement>("[tabindex='0']")].filter(
+      (el) => el.closest("[role=tree]"),
+    )
+  // One stop for the whole tree: the first header until a row is focused.
+  expect(stops()).toEqual([header("Props")])
+  rowOf(container, "a: 1").focus()
+  press("ArrowDown")
+  expect(document.activeElement).toBe(header("Hooks"))
+  press("ArrowDown")
+  expect(document.activeElement).toBe(rowOf(container, "State: 0"))
+  press("ArrowLeft")
+  expect(document.activeElement).toBe(header("Hooks"))
+  press("ArrowLeft")
+  expect(header("Hooks").getAttribute("aria-expanded")).toBe("false")
+  expect(rowOf(container, "State: 0")).toBeUndefined()
+  press("ArrowRight")
+  expect(header("Hooks").getAttribute("aria-expanded")).toBe("true")
+  press("ArrowRight")
+  expect(document.activeElement).toBe(rowOf(container, "State: 0"))
+  expect(stops()).toEqual([rowOf(container, "State: 0")])
+})
+
+test("an editable value is marked (on hover or focus); a read-only one isn't", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ a: 1 }),
+      hooks: [...hooks, { name: "Ref", value: 5 }],
+    }),
+  )
+  await settled()
+  const marked = (text: string) =>
+    rowOf(container, text)
+      .querySelector("[data-value]")
+      ?.classList.contains("editable-value")
+  expect(marked("a: 1")).toBe(true)
+  expect(marked("State: 0")).toBe(true)
+  expect(marked("Ref: 5")).toBe(false)
+})
+
+test("the row menu opens from the keyboard and gives focus back", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ a: 1 }) }))
+  await settled()
+  const labels = () =>
+    [...document.querySelectorAll("[role=menuitem]")].map((i) => i.textContent)
+  rowOf(container, "a: 1").focus()
+  press("F10", { shiftKey: true })
+  expect(labels()).toEqual([
+    "Copy key",
+    "Copy value",
+    "Store as global variable",
+    "Rename key",
+    "Delete",
+  ])
+  expect(document.activeElement?.textContent).toBe("Copy key")
+  press("Escape")
+  expect(menu()).toBeNull()
+  expect(document.activeElement).toBe(rowOf(container, "a: 1"))
+  press("ContextMenu")
+  expect(labels()).toHaveLength(5)
+  choose("Copy key")
+  expect(document.activeElement).toBe(rowOf(container, "a: 1"))
+})
+
+test("focus stays on its row across a re-send", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ a: 1, b: 2 }) }))
+  await settled()
+  rowOf(container, "b: 2").focus()
+  inspector.receive(inspected(3, { props: object({ a: 1, b: 3 }) }))
+  await settled()
+  expect(document.activeElement).toBe(rowOf(container, "b: 3"))
+  // Focus elsewhere isn't pulled in.
+  const outside = document.createElement("button")
+  document.body.append(outside)
+  outside.focus()
+  inspector.receive(inspected(3, { props: object({ a: 1, b: 4 }) }))
+  await settled()
+  expect(document.activeElement).toBe(outside)
+  outside.remove()
+})
+
+// The value part of the row reading `text` (after its key).
+const valuePart = (container: Element, text: string) =>
+  rowOf(container, text).querySelectorAll("[data-search-text]")[1] as Element
+const editor = (container: Element) =>
+  container.querySelector<HTMLInputElement>("[data-testid=value-input]")
+
+test("inline editor: strings and numbers in place, Enter applies, Escape and blur cancel", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ label: "Count", step: 1 }),
+      hooks: [
+        { name: "State", value: 0 },
+        { name: "Ref", value: 1 },
+      ],
+    }),
+  )
+  await settled()
+  const edits = () => sent.filter((command) => command.type === "edit")
+  fireEvent.click(valuePart(container, 'label: "Count"'))
+  const input = editor(container) as HTMLInputElement
+  expect(input).toBeTruthy()
+  expect(input.value).toBe('"Count"')
+  expect(document.activeElement).toBe(input)
+  fireEvent.input(input, { target: { value: "Total" } })
+  fireEvent.keyDown(input, { key: "Enter" })
+  expect(edits()).toEqual([
+    { type: "edit", id: 3, root: "props", path: ["label"], value: "Total" },
+  ])
+  expect(editor(container)).toBeNull()
+  expect(document.activeElement).toBe(rowOf(container, 'label: "Count"'))
+
+  // Enter or F2 on a focused row opens it; a number stays a number.
+  rowOf(container, "step: 1").focus()
+  press("Enter")
+  fireEvent.input(editor(container) as Element, { target: { value: "5" } })
+  fireEvent.keyDown(editor(container) as Element, { key: "Enter" })
+  expect(edits().at(-1)).toMatchObject({ path: ["step"], value: 5 })
+  rowOf(container, "step: 1").focus()
+  press("F2")
+  fireEvent.input(editor(container) as Element, { target: { value: "abc" } })
+  fireEvent.keyDown(editor(container) as Element, { key: "Enter" })
+  expect(container.textContent).toContain("Not a valid value")
+  expect(editor(container)).not.toBeNull()
+  fireEvent.keyDown(editor(container) as Element, { key: "Escape" })
+  expect(editor(container)).toBeNull()
+  rowOf(container, "step: 1").focus()
+  press("F2")
+  fireEvent.blur(editor(container) as Element)
+  expect(editor(container)).toBeNull()
+  expect(edits()).toHaveLength(2)
+
+  // A state hook is editable at its root; a ref isn't.
+  fireEvent.click(valuePart(container, "State: 0"))
+  fireEvent.input(editor(container) as Element, { target: { value: "3" } })
+  fireEvent.keyDown(editor(container) as Element, { key: "Enter" })
+  expect(edits().at(-1)).toEqual({
+    type: "edit",
+    id: 3,
+    root: { hook: [0] },
+    path: [],
+    value: 3,
+  })
+  fireEvent.click(valuePart(container, "Ref: 1"))
+  expect(editor(container)).toBeNull()
+})
+
+test("a boolean flips with its checkbox or Space, shown as the page says", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ on: true }) }))
+  await settled()
+  const edits = () => sent.filter((command) => command.type === "edit")
+  const box = () =>
+    rowOf(container, "on: true").querySelector<HTMLInputElement>(
+      "input[type=checkbox]",
+    )
+  expect(box()).toBeTruthy()
+  expect(box()?.checked).toBe(true)
+  fireEvent.click(box() as Element)
+  expect(edits()).toEqual([
+    { type: "edit", id: 3, root: "props", path: ["on"], value: false },
+  ])
+  // Not until the page re-sends it.
+  expect(box()?.checked).toBe(true)
+  rowOf(container, "on: true").focus()
+  press(" ")
+  expect(edits()).toHaveLength(2)
+  expect(edits().at(-1)).toMatchObject({ value: false })
+})
+
+test("values edit at any depth through plain objects and arrays; other containers' entries don't", async () => {
+  const { container, inspector, sent, select } = setup("class")
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        user: object(
+          { address: object({ city: "Paris" }, { id: 11 }) },
+          { id: 10 },
+        ),
+        list: { type: "array", id: 12, length: 3, items: [1, 2, 3] },
+        m: { type: "map", id: 13, size: 1, entries: [["k", 1]] },
+        pt: object({ x: 1 }, { id: 14, className: "Point" }),
+      }),
+      state: object({ ticks: 2 }, { id: 15 }),
+      hooks: [
+        { name: "State", value: object({ a: 1 }, { id: 16 }) },
+        { name: "Ref", value: object({ b: 1 }, { id: 17 }) },
+      ],
+    }),
+  )
+  await settled()
+  const edits = () => sent.filter((command) => command.type === "edit")
+  const editTo = (row: string, text: string) => {
+    fireEvent.click(valuePart(container, row))
+    const input = editor(container) as Element
+    expect(input).toBeTruthy()
+    fireEvent.input(input, { target: { value: text } })
+    fireEvent.keyDown(input, { key: "Enter" })
+  }
+  for (const name of ["user", "address", "list", "m", "pt", "State"])
+    fireEvent.click(toggle(container, name) as Element)
+  fireEvent.click(
+    [...container.querySelectorAll("[data-testid=value]")]
+      .find((row) => row.textContent?.startsWith("Ref"))
+      ?.querySelector("[data-testid=value-toggle]") as Element,
+  )
+  editTo('city: "Paris"', "Lyon")
+  editTo("2: 3", "9")
+  editTo("ticks: 2", "5")
+  editTo("a: 1", "7")
+  expect(
+    edits().map(({ root, path, value }) => ({ root, path, value })),
+  ).toEqual([
+    { root: "props", path: ["user", "address", "city"], value: "Lyon" },
+    { root: "props", path: ["list", 2], value: 9 },
+    { root: "state", path: ["ticks"], value: 5 },
+    { root: { hook: [0] }, path: ["a"], value: 7 },
+  ])
+  for (const row of ['"k" => 1', "x: 1", "b: 1"]) {
+    fireEvent.click(valuePart(container, row))
+    expect(editor(container)).toBeNull()
+  }
+})
+
+test("a DOM element value is a leaf: its id isn't an object id", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        node: { type: "element", tag: "div", id: "main", className: "" },
+      }),
+    }),
+  )
+  const row = container.querySelector("[data-testid=value]") as Element
+  expect(row.querySelector("[data-testid=value-toggle]")).toBeNull()
+})
+
+test("typed edits: text reads as JSON plus markers, so a value can change type", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        n: null,
+        s: "5",
+        u: { type: "undefined" },
+        f: 1,
+        t: "Count",
+        d: { type: "date", iso: "2026-01-01T00:00:00.000Z" },
+      }),
+    }),
+  )
+  await settled()
+  const last = () => sent.filter((command) => command.type === "edit").at(-1)
+  const open = (row: string) => {
+    fireEvent.click(valuePart(container, row))
+    return editor(container) as HTMLInputElement
+  }
+  const type = (row: string, text: string) => {
+    const input = open(row)
+    expect(input).toBeTruthy()
+    fireEvent.input(input, { target: { value: text } })
+    fireEvent.keyDown(input, { key: "Enter" })
+  }
+  expect(open('t: "Count"').value).toBe('"Count"')
+  fireEvent.keyDown(editor(container) as Element, { key: "Escape" })
+  type("n: null", '{"a": 1}')
+  expect(last()).toMatchObject({
+    path: ["n"],
+    value: { type: "object", props: { a: 1 } },
+  })
+  type('s: "5"', "5")
+  expect(last()).toMatchObject({ path: ["s"], value: 5 })
+  for (const [text, value] of [
+    ["undefined", { type: "undefined" }],
+    ["NaN", { type: "number", value: "NaN" }],
+    ["-0", { type: "number", value: "-0" }],
+  ] as const) {
+    type("f: 1", text)
+    expect(last()).toMatchObject({ path: ["f"], value })
+  }
+  type("u: undefined", "2")
+  expect(last()).toMatchObject({ path: ["u"], value: 2 })
+  // Not JSON: a string over a string, refused over anything else.
+  type('t: "Count"', "Total")
+  expect(last()).toMatchObject({ path: ["t"], value: "Total" })
+  type("f: 1", "abc")
+  expect(container.textContent).toContain("Not a valid value")
+  expect(editor(container)).not.toBeNull()
+  fireEvent.keyDown(editor(container) as Element, { key: "Escape" })
+  // Replace only: a date opens empty.
+  expect(
+    open(`d: ${previewText({ type: "date", iso: "2026-01-01T00:00:00.000Z" })}`)
+      .value,
+  ).toBe("")
+})
+
+test("Rename key and Delete: in the menu of rows under plain containers", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        a: 1,
+        b: 2,
+        list: { type: "array", id: 6, length: 2, items: [1, 2] },
+      }),
+      hooks: [{ name: "State", value: 0 }],
+      contexts: [{ name: "Theme", value: 1 }],
+    }),
+  )
+  await settled()
+  const writes = () =>
+    sent.filter((c) => c.type === "delete-path" || c.type === "rename-path")
+  const copies = ["Copy key", "Copy value", "Store as global variable"]
+  expect(menuOn(container, "a: 1")).toEqual([...copies, "Rename key", "Delete"])
+  choose("Delete")
+  expect(writes()).toEqual([
+    { type: "delete-path", id: 3, root: "props", path: ["a"] },
+  ])
+  fireEvent.click(toggle(container, "list") as Element)
+  expect(menuOn(container, "0: 1")).toEqual([...copies, "Delete"])
+  fireEvent.keyDown(document.activeElement as Element, { key: "Escape" })
+  expect(menuOn(container, "State: 0")).toEqual(copies)
+  fireEvent.keyDown(document.activeElement as Element, { key: "Escape" })
+  expect(menuOn(container, "Theme: 1")).toEqual(copies)
+  fireEvent.keyDown(document.activeElement as Element, { key: "Escape" })
+
+  // Renaming: the key turns into an input; a taken or empty name is refused.
+  menuOn(container, "a: 1")
+  choose("Rename key")
+  const input = () =>
+    container.querySelector<HTMLInputElement>("[data-testid=key-input]")
+  expect(input()?.value).toBe("a")
+  for (const name of ["b", " "]) {
+    fireEvent.input(input() as Element, { target: { value: name } })
+    fireEvent.keyDown(input() as Element, { key: "Enter" })
+    expect(container.textContent).toContain("Not a valid name")
+  }
+  expect(writes()).toHaveLength(1)
+  fireEvent.input(input() as Element, { target: { value: "c" } })
+  fireEvent.keyDown(input() as Element, { key: "Enter" })
+  expect(writes().at(-1)).toEqual({
+    type: "rename-path",
+    id: 3,
+    root: "props",
+    path: ["a"],
+    to: "c",
+  })
+  expect(input()).toBeNull()
+  menuOn(container, "a: 1")
+  choose("Rename key")
+  fireEvent.keyDown(input() as Element, { key: "Escape" })
+  expect(input()).toBeNull()
+  expect(writes()).toHaveLength(2)
+})
+
+test("Add key and Add item on plain objects and arrays only", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        o: object({ a: 1, newKey: 2 }, { id: 2 }),
+        list: { type: "array", id: 6, length: 2, items: [1, 2] },
+        m: { type: "map", id: 7, size: 1, entries: [["k", 1]] },
+        pt: object({ x: 1 }, { id: 8, className: "Point" }),
+      }),
+    }),
+  )
+  await settled()
+  const menuFor = (key: string) => {
+    const row = [...container.querySelectorAll("[data-testid=value]")].find(
+      (r) => r.textContent?.startsWith(`${key}:`),
+    )
+    fireEvent.contextMenu(row as Element)
+    return [...document.querySelectorAll("[role=menuitem]")].map(
+      (item) => item.textContent,
+    )
+  }
+  const edits = () => sent.filter((c) => c.type === "edit")
+  expect(menuFor("o")).toContain("Add key")
+  choose("Add key")
+  expect(menuFor("list")).toContain("Add item")
+  choose("Add item")
+  expect(edits()).toEqual([
+    { type: "edit", id: 3, root: "props", path: ["o", "newKey2"], value: "" },
+    {
+      type: "edit",
+      id: 3,
+      root: "props",
+      path: ["list", 2],
+      value: { type: "undefined" },
+    },
+  ])
+  for (const key of ["m", "pt"]) {
+    const items = menuFor(key)
+    expect(items).not.toContain("Add key")
+    expect(items).not.toContain("Add item")
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape" })
+  }
+})
+
+test("context rows edit through their provider; a default one is read-only and says so", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      contexts: [
+        { name: "Theme", value: "dark" },
+        { name: "Context", value: null, default: true },
+      ],
+    }),
+  )
+  await settled()
+  fireEvent.click(valuePart(container, 'Theme: "dark"'))
+  const input = editor(container) as Element
+  expect(input).toBeTruthy()
+  fireEvent.input(input, { target: { value: '"light"' } })
+  fireEvent.keyDown(input, { key: "Enter" })
+  expect(sent.filter((c) => c.type === "edit")).toEqual([
+    { type: "edit", id: 3, root: { context: 0 }, path: [], value: "light" },
+  ])
+  const row = [...container.querySelectorAll("[data-testid=value]")].find((r) =>
+    r.textContent?.startsWith("Context:"),
+  ) as Element
+  const badge = row.querySelector("[data-testid=badge]")
+  expect(badge?.textContent).toBe("default")
+  expect(badge?.getAttribute("title")).toBe(
+    "No provider above: its default value, read-only",
+  )
+  fireEvent.click(row.querySelector("[data-value]") as Element)
+  expect(editor(container)).toBeNull()
+})
+
+test("Force re-render in the header, for components but not DOM elements", () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({}) }))
+  const button = () =>
+    container.querySelector(
+      "[data-testid=inspector-header] [aria-label='Force re-render']",
+    )
+  expect(button()).toBeTruthy()
+  fireEvent.click(button() as Element)
+  expect(sent.at(-1)).toEqual({ type: "rerender", id: 3 })
+  const host = setup("host")
+  host.select()
+  host.inspector.receive(inspected(3, { props: object({}) }))
+  expect(
+    host.container.querySelector("[aria-label='Force re-render']"),
+  ).toBeNull()
+})
+
+test("Show fallback and Show error: only with a boundary, pressed while forced; turning one on selects the boundary", () => {
+  const { container, tree, inspector, sent, select } = setup()
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 5,
+        parentId: 0,
+        rootId: 1,
+        kind: "suspense",
+        name: "Suspense",
+        key: null,
+        index: 1,
+      },
+    ]),
+  )
+  select()
+  const toggle = (label: string) =>
+    container.querySelector(
+      `[data-testid=inspector-header] [aria-label='${label}']`,
+    )
+  inspector.receive(inspected(3, { props: object({}) }))
+  expect(toggle("Show fallback")).toBeNull()
+  expect(toggle("Show error")).toBeNull()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      boundaries: { fallback: { id: 5, on: false } },
+    }),
+  )
+  expect(toggle("Show fallback")?.getAttribute("aria-pressed")).toBe("false")
+  expect(toggle("Show error")).toBeNull()
+  fireEvent.click(toggle("Show fallback") as Element)
+  expect(sent.at(-1)).toEqual({
+    type: "force",
+    id: 3,
+    kind: "fallback",
+    on: true,
+  })
+  expect(tree.selected()).toBe(5)
+  // As main.tsx does on a selection change. The boundary's own inspection:
+  // forced, so pressed; a press turns it off.
+  inspector.inspect(5)
+  inspector.receive(
+    inspected(5, {
+      props: object({}),
+      boundaries: { fallback: { id: 5, on: true } },
+    }),
+  )
+  expect(toggle("Show fallback")?.getAttribute("aria-pressed")).toBe("true")
+  fireEvent.click(toggle("Show fallback") as Element)
+  expect(sent.at(-1)).toEqual({
+    type: "force",
+    id: 5,
+    kind: "fallback",
+    on: false,
+  })
+})
+
+test("a context hook's value opens its Context row's editor (Hooks shows it collapsed too); a default one's doesn't", async () => {
+  const { container, inspector, getByRole, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      hooks: [
+        { name: "Context(Theme)", value: "dark", context: 0 },
+        { name: "Context", value: null, context: 1 },
+      ],
+      contexts: [
+        { name: "Theme", value: "dark" },
+        { name: "Context", value: null, default: true },
+      ],
+    }),
+  )
+  await settled()
+  const hook = (text: string) => rowOf(container, text)
+  const marked = (text: string) =>
+    hook(text)
+      .querySelector("[data-value]")
+      ?.classList.contains("editable-value")
+  expect(marked('Context(Theme): "dark"')).toBe(true)
+  expect(marked("Context: null")).toBe(false)
+  fireEvent.click(getByRole("treeitem", { name: "Context" }))
+  fireEvent.click(valuePart(container, 'Context(Theme): "dark"'))
+  const input = editor(container) as HTMLInputElement
+  expect(input?.getAttribute("aria-label")).toBe("Edit Theme")
+  expect(document.activeElement).toBe(input)
+  fireEvent.keyDown(input, { key: "Escape" })
+  expect(document.activeElement).toBe(rowOf(container, 'Theme: "dark"'))
+  hook('Context(Theme): "dark"').focus()
+  press("Enter")
+  expect(editor(container)?.getAttribute("aria-label")).toBe("Edit Theme")
 })

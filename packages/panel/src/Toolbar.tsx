@@ -52,6 +52,32 @@ export function PickGlyph() {
   )
 }
 
+// A circular arrow, inside a 24-unit svg (Glyph).
+export function ReloadGlyph() {
+  return (
+    <>
+      <path d="M20 11a8 8 0 1 0-2.3 6.2" />
+      <path d="M20 4v7h-7" />
+    </>
+  )
+}
+
+// An hourglass (Show fallback) and a warning triangle (Show error), inside a
+// 24-unit svg (Glyph).
+export function SuspenseGlyph() {
+  return (
+    <path d="M6 3h12M6 21h12M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9s10 4 10 9" />
+  )
+}
+export function ErrorGlyph() {
+  return (
+    <>
+      <path d="M12 3 2 20h20z" />
+      <path d="M12 10v4M12 17v.5" />
+    </>
+  )
+}
+
 // A search box laid out like SnapQL's: an icon, the input, and while it holds
 // text, `children` (a count) and a clear button.
 export function SearchField(props: {

@@ -41,6 +41,41 @@ function Other() {
 function Deep(_: { data: unknown }) {
   return null
 }
+type User = { name: string; address: { city: string; zip: string } }
+const Child = React.memo(function Child(props: { user: User }) {
+  return h("em", null, `${props.user.address.city} ${props.user.address.zip}`)
+})
+class Point {
+  constructor(public x: number) {}
+}
+function Nested(props: {
+  user: User
+  items: number[]
+  tags: Map<string, number>
+  point: Point
+}) {
+  const [form] = React.useState({ name: "a", age: 1 })
+  return [
+    h(Child, { key: "c", user: props.user }),
+    h("s", { key: "s" }, `${form.name} ${form.age}`),
+  ]
+}
+function Reducing() {
+  const [state] = React.useReducer((s: { count: number; label: string }) => s, {
+    count: 1,
+    label: "x",
+  })
+  return h("del", null, state.count)
+}
+function Counted() {
+  const [count] = React.useState(5)
+  return h("var", null, count)
+}
+function Refs() {
+  React.useRef(1)
+  const [count] = React.useState(2)
+  return h("u", null, count)
+}
 
 // One hook and one agent per file: react-dom registers once per module load.
 beforeAll(async () => {
@@ -59,6 +94,16 @@ beforeAll(async () => {
       h(Clock, { key: "c" }),
       h(Other, { key: "o" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
+      h(Refs, { key: "r" }),
+      h(Counted, { key: "k", label: "x" }),
+      h(Reducing, { key: "red" }),
+      h(Nested, {
+        key: "n",
+        user: { name: "Ada", address: { city: "Paris", zip: "75" } },
+        items: [1, 2, 3],
+        tags: new Map([["k", 1]]),
+        point: new Point(1),
+      }),
     ]),
   )
 })
@@ -232,4 +277,226 @@ test("store-value keeps the value in the next free $reactdx<n> and logs it", () 
     delete scope.$reactdx1
     delete scope.$reactdx2
   }
+})
+
+const edit = (fields: Record<string, unknown>) =>
+  React.act(async () =>
+    send({ source: "reactdx-relay", type: "edit", path: [], ...fields }),
+  )
+const text = (selector: string) => document.querySelector(selector)?.textContent
+
+test("an edit of the inspected node's prop or state hook writes through React", async () => {
+  const greeting = idOf("Greeting")
+  inspect(greeting)
+  await edit({ id: greeting, root: "props", path: ["name"], value: "Grace" })
+  expect(text("span")).toBe("Grace")
+  await flushed()
+  expect(replies().at(-1)?.data?.props).toMatchObject({
+    props: { name: "Grace" },
+  })
+  const other = idOf("Other")
+  inspect(other)
+  await edit({ id: other, root: { hook: [0] }, value: 9 })
+  expect(text("i")).toBe("9")
+})
+
+test("an edit of another node, a hook that holds no state, or with nothing inspected does nothing", async () => {
+  const refs = idOf("Refs")
+  inspect(refs)
+  const sent = replies().length
+  await edit({ id: refs, root: { hook: [0] }, value: 5 })
+  await edit({ id: idOf("Other"), root: { hook: [0] }, value: 3 })
+  inspect(null)
+  await edit({ id: refs, root: { hook: [1] }, value: 7 })
+  await flushed()
+  expect(text("u")).toBe("2")
+  expect(text("i")).not.toBe("3")
+  expect(replies()).toHaveLength(sent)
+})
+
+test("an edit's result is sent as soon as React commits it, before the flush", async () => {
+  const other = idOf("Other")
+  inspect(other)
+  const sent = replies().length
+  await edit({ id: other, root: { hook: [0] }, value: 11 })
+  // Well before the 100 ms flush.
+  await React.act(() => new Promise((resolve) => setTimeout(resolve, 10)))
+  expect(replies()).toHaveLength(sent + 1)
+  expect(replies().at(-1)?.data?.hooks?.[0]?.value).toBe(11)
+  // The flush finds nothing new to send.
+  await flushed()
+  expect(replies()).toHaveLength(sent + 1)
+})
+
+const settle = () =>
+  React.act(() => new Promise((resolve) => setTimeout(resolve, 10)))
+const lastProps = () =>
+  (
+    replies().at(-1)?.data?.props as unknown as
+      | { props: Record<string, Record<string, unknown>> }
+      | undefined
+  )?.props ?? {}
+
+test("edits reach any depth, copying the path, through plain objects and arrays only", async () => {
+  const nested = idOf("Nested")
+  inspect(nested)
+  await edit({
+    id: nested,
+    root: "props",
+    path: ["user", "address", "city"],
+    value: "Lyon",
+  })
+  await settle()
+  // The memo child re-rendered: its prop is a new object.
+  expect(text("em")).toBe("Lyon 75")
+  expect(lastProps().user).toMatchObject({ props: { name: "Ada" } })
+  await edit({ id: nested, root: "props", path: ["items", 2], value: 9 })
+  await settle()
+  expect(lastProps().items).toMatchObject({ items: [1, 2, 9] })
+  await edit({ id: nested, root: { hook: [0] }, path: ["name"], value: "b" })
+  expect(text("s")).toBe("b 1")
+  await settle()
+  const sent = replies().length
+  await edit({ id: nested, root: "props", path: ["tags", "k"], value: 2 })
+  await edit({ id: nested, root: "props", path: ["point", "x"], value: 5 })
+  await settle()
+  expect(replies()).toHaveLength(sent)
+  expect(lastProps().tags?.type).toBe("map")
+  expect(lastProps().point?.className).toBe("Point")
+})
+
+test("class state and useReducer values edit and come back", async () => {
+  const clock = idOf("Clock")
+  inspect(clock)
+  await edit({ id: clock, root: "state", path: ["ticks"], value: 9 })
+  await settle()
+  expect(replies().at(-1)?.data?.state).toMatchObject({ props: { ticks: 9 } })
+  const reducing = idOf("Reducing")
+  inspect(reducing)
+  await edit({ id: reducing, root: { hook: [0] }, path: ["count"], value: 4 })
+  await settle()
+  expect(text("del")).toBe("4")
+  expect(replies().at(-1)?.data?.hooks?.[0]?.value).toMatchObject({
+    props: { count: 4, label: "x" },
+  })
+  // A function component has no class state.
+  const sent = replies().length
+  await edit({ id: reducing, root: "state", path: ["count"], value: 5 })
+  await settle()
+  expect(replies()).toHaveLength(sent)
+})
+
+const pathCommand = (fields: Record<string, unknown>) =>
+  React.act(async () => send({ source: "reactdx-relay", ...fields }))
+
+test("delete and rename write through React; adding is an edit at a new path", async () => {
+  const nested = idOf("Nested")
+  inspect(nested)
+  const at = { id: nested, root: "props" }
+  // Refused: renaming an array item or onto a key that's there, and anything
+  // through the Map.
+  const sent = replies().length
+  await pathCommand({ type: "rename-path", ...at, path: ["items", 0], to: "x" })
+  await pathCommand({
+    type: "rename-path",
+    ...at,
+    path: ["user", "name"],
+    to: "address",
+  })
+  await pathCommand({ type: "delete-path", ...at, path: ["tags", "k"] })
+  await pathCommand({
+    type: "rename-path",
+    ...at,
+    path: ["tags", "k"],
+    to: "j",
+  })
+  await settle()
+  expect(replies()).toHaveLength(sent)
+
+  // Earlier tests may have edited these: start from what was sent.
+  const items = (lastProps().items as { items: unknown[] }).items
+  await pathCommand({ type: "delete-path", ...at, path: ["items", 0] })
+  await settle()
+  expect(lastProps().items).toMatchObject({ items: items.slice(1) })
+  await pathCommand({ type: "delete-path", ...at, path: ["user", "name"] })
+  await settle()
+  expect(Object.keys(lastProps().user?.props as object)).toEqual(["address"])
+  await pathCommand({
+    type: "rename-path",
+    ...at,
+    path: ["user", "address", "city"],
+    to: "town",
+  })
+  expect(text("em")).toBe("undefined 75")
+  const hook = { id: nested, root: { hook: [0] } }
+  await pathCommand({ type: "delete-path", ...hook, path: ["age"] })
+  expect(text("s")).toMatch(/^\w+ undefined$/)
+  await pathCommand({
+    type: "rename-path",
+    ...hook,
+    path: ["name"],
+    to: "title",
+  })
+  expect(text("s")).toBe("undefined undefined")
+  // Adding: an edit at a path that isn't there yet.
+  await edit({ ...at, path: ["user", "newKey"], value: "" })
+  await edit({
+    ...at,
+    path: ["items", items.length - 1],
+    value: { type: "undefined" },
+  })
+  await settle()
+  expect(lastProps().user).toMatchObject({ props: { newKey: "" } })
+  expect(lastProps().items).toMatchObject({ length: items.length })
+})
+
+test("class state: a key added, renamed and deleted (the state replaced)", async () => {
+  const clock = idOf("Clock")
+  inspect(clock)
+  const at = { id: clock, root: "state" }
+  const keys = () =>
+    Object.keys(
+      (
+        replies().at(-1)?.data?.state as unknown as
+          | { props: object }
+          | undefined
+      )?.props ?? {},
+    )
+  await edit({ ...at, path: ["extra"], value: 1 })
+  await settle()
+  expect(keys()).toEqual(["ticks", "extra"])
+  await pathCommand({ type: "rename-path", ...at, path: ["extra"], to: "more" })
+  await settle()
+  expect(keys()).toEqual(["ticks", "more"])
+  await pathCommand({ type: "delete-path", ...at, path: ["more"] })
+  await settle()
+  expect(keys()).toEqual(["ticks"])
+})
+
+test("rerender renders the inspected component once, nothing changed", async () => {
+  const counted = idOf("Counted")
+  inspect(counted)
+  const before = replies().at(-1)?.data
+  const commits = () => {
+    send({ source: "reactdx-relay", type: "get-snapshot" })
+    const snapshot = posted
+      .filter((m) => (m as { type?: string }).type === "snapshot")
+      .at(-1) as { roots: { commits: number }[] }
+    return snapshot.roots[0]?.commits ?? 0
+  }
+  const committed = commits()
+  const rerender = (id: number) =>
+    React.act(async () =>
+      send({ source: "reactdx-relay", type: "rerender", id }),
+    )
+  await rerender(counted)
+  expect(commits()).toBe(committed + 1)
+  await settle()
+  const after = replies().at(-1)?.data
+  expect(after?.props).toEqual(before?.props)
+  expect(after?.hooks).toEqual(before?.hooks)
+  // Not for another node, nor a DOM element.
+  await rerender(idOf("Other"))
+  await rerender(idOf("var"))
+  expect(commits()).toBe(committed + 1)
 })

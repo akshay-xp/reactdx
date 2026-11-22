@@ -168,3 +168,140 @@ test("valueStored round-trips; only a $reactdx<n> name passes", () => {
       parseValueStored({ source: "reactdx", type: "value-stored", name }),
     ).toBeUndefined()
 })
+
+const edit = (fields: Record<string, unknown>) => ({
+  type: "edit",
+  id: 3,
+  root: "props",
+  path: ["label"],
+  value: "Total",
+  ...fields,
+})
+const nested = (depth: number): unknown =>
+  depth === 0 ? 1 : [nested(depth - 1)]
+
+test.each([
+  edit({}),
+  edit({ root: { hook: [1, 0] }, path: [], value: 7 }),
+  edit({ root: "state", path: ["a", 0], value: null }),
+  edit({ root: { context: 0 }, value: false }),
+  edit({ value: { type: "undefined" } }),
+  edit({ value: { type: "number", value: "NaN" } }),
+  edit({ value: [1, { type: "object", props: { a: true } }] }),
+  edit({ value: nested(16) }),
+])("keeps the edit %j", (command) => {
+  expect(parseTreeCommand(command)).toEqual(command)
+})
+
+test.each<[string, unknown]>([
+  ["id 0", edit({ id: 0 })],
+  ["an unknown root", edit({ root: "refs" })],
+  ["a hook path of 9 indexes", edit({ root: { hook: Array(9).fill(0) } })],
+  ["a negative context", edit({ root: { context: -1 } })],
+  ["a path of 33 keys", edit({ path: Array(33).fill("a") })],
+  ["a 1,001-char key", edit({ path: ["k".repeat(1001)] })],
+  ["a fractional index", edit({ path: [1.5] })],
+  ["no path", edit({ path: undefined })],
+  ["a 100,001-char string", edit({ value: "x".repeat(100_001) })],
+  ["a value nested 17 deep", edit({ value: nested(17) })],
+  ["10,001 values", edit({ value: Array(10_001).fill(1) })],
+  ["a raw Infinity", edit({ value: Number.POSITIVE_INFINITY })],
+  ["an untagged object", edit({ value: { a: 1 } })],
+  ["an unknown marker", edit({ value: { type: "symbol" } })],
+  ["an unknown number marker", edit({ value: { type: "number", value: "1" } })],
+  ["no value", edit({ value: undefined })],
+])("drops an edit with %s", (_, command) => {
+  expect(parseTreeCommand(command)).toBeUndefined()
+})
+
+test("an edit keeps only its fields, in its root and values too", () => {
+  expect(
+    parseTreeCommand(
+      edit({
+        extra: 1,
+        root: { hook: [0], context: 2 },
+        value: { type: "object", props: { a: 1 }, extra: 2 },
+      }),
+    ),
+  ).toEqual(
+    edit({ root: { hook: [0] }, value: { type: "object", props: { a: 1 } } }),
+  )
+})
+
+const pathCommand = (fields: Record<string, unknown>) => ({
+  type: "delete-path",
+  id: 3,
+  root: "props",
+  path: ["a"],
+  ...fields,
+})
+
+test.each([
+  pathCommand({}),
+  pathCommand({ type: "rename-path", root: { hook: [0] }, to: "b" }),
+  pathCommand({
+    type: "rename-path",
+    root: "state",
+    path: ["a", 0, "c"],
+    to: "d",
+  }),
+])("keeps the path command %j", (command) => {
+  expect(parseTreeCommand(command)).toEqual(command)
+})
+
+test.each<[string, unknown]>([
+  ["a delete with an empty path", pathCommand({ path: [] })],
+  [
+    "a rename with an empty path",
+    pathCommand({ type: "rename-path", path: [], to: "b" }),
+  ],
+  ["a rename to nothing", pathCommand({ type: "rename-path", to: "" })],
+  [
+    "a rename to 1,001 chars",
+    pathCommand({ type: "rename-path", to: "k".repeat(1001) }),
+  ],
+  ["a rename to a number", pathCommand({ type: "rename-path", to: 1 })],
+  ["a rename without a name", pathCommand({ type: "rename-path" })],
+  ["an unknown root", pathCommand({ root: "refs" })],
+  ["a path of 33 keys", pathCommand({ path: Array(33).fill("a") })],
+  ["id 0", pathCommand({ id: 0 })],
+])("drops %s", (_, command) => {
+  expect(parseTreeCommand(command)).toBeUndefined()
+})
+
+test("path commands keep only their fields", () => {
+  expect(
+    parseTreeCommand(pathCommand({ extra: 1, value: 2, to: "x" })),
+  ).toEqual(pathCommand({}))
+  expect(
+    parseTreeCommand(
+      pathCommand({ type: "rename-path", to: "b", value: 2, extra: 1 }),
+    ),
+  ).toEqual(pathCommand({ type: "rename-path", to: "b" }))
+})
+
+test("rerender keeps a valid id and only it", () => {
+  expect(parseTreeCommand({ type: "rerender", id: 3, extra: 1 })).toEqual({
+    type: "rerender",
+    id: 3,
+  })
+  for (const id of [0, "3", undefined])
+    expect(parseTreeCommand({ type: "rerender", id })).toBeUndefined()
+})
+
+test("force keeps a kind and a boolean for a valid id", () => {
+  const force = { type: "force", id: 3, kind: "fallback", on: true }
+  expect(parseTreeCommand({ ...force, extra: 1 })).toEqual(force)
+  expect(parseTreeCommand({ ...force, kind: "error", on: false })).toEqual({
+    ...force,
+    kind: "error",
+    on: false,
+  })
+  for (const bad of [
+    { kind: "suspend" },
+    { on: "yes" },
+    { id: 0 },
+    { on: undefined },
+  ])
+    expect(parseTreeCommand({ ...force, ...bad })).toBeUndefined()
+})

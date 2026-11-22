@@ -24,6 +24,9 @@ export type PanelText = (() => Promise<string>) & {
   pressed(name: string): Promise<boolean>
   // Replaces the text of the input with that accessible name ("" empties it).
   type(label: string, text: string): Promise<void>
+  // Edits the inspector value row reading `row`: opens its editor, enters `text`
+  // and presses Enter.
+  edit(row: string, text: string): Promise<void>
   selected(): Promise<string | undefined>
 }
 
@@ -102,6 +105,21 @@ export async function openPanelText(
       (await frame.evaluate(
         `${button(name)}.getAttribute("aria-pressed") === "true"`,
       )) as boolean
+    const edit = async (row: string, text: string) => {
+      const value = await frame.waitForFunction(
+        (row) =>
+          [...document.querySelectorAll("[data-testid=value]")]
+            .find((el) => el.textContent === row)
+            ?.querySelector("[data-value]"),
+        {},
+        row,
+      )
+      await (value as unknown as { click(): Promise<void> }).click()
+      const input = await frame.waitForSelector("[data-testid=value-input]")
+      await input?.evaluate((el) => (el as HTMLInputElement).select())
+      await frame.page().keyboard.type(text)
+      await frame.page().keyboard.press("Enter")
+    }
     const selected = () =>
       frame.evaluate(
         () =>
@@ -120,6 +138,7 @@ export async function openPanelText(
       press,
       pressed,
       type,
+      edit,
       selected,
     })
   }
@@ -173,7 +192,13 @@ export async function openPanelText(
         tip.beginInputTransactionForTests(window)
         const key = new KeyboardEvent("", { key: "End", code: "End", keyCode: KeyboardEvent.DOM_VK_END })
         for (const tree of trees) {
-          tree.takeFocus()
+          // A tree re-rendered since the walk leaves a stale accessible, which
+          // can't take focus: skip it; the next read's end() gets the new one.
+          try {
+            tree.takeFocus()
+          } catch {
+            continue
+          }
           await new Promise((r) => setTimeout(r, 50))
           tip.keydown(key)
           tip.keyup(key)
@@ -302,6 +327,52 @@ export async function openPanelText(
       return "ok"`,
     )
   }
+  // The row's accessible takes focus and gets a trusted Enter, which opens its
+  // editor; the entry's text is set, then a second Enter applies it.
+  const enter = `const tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor)
+      tip.beginInputTransactionForTests(window)
+      const key = new KeyboardEvent("", { key: "Enter", code: "Enter", keyCode: KeyboardEvent.DOM_VK_RETURN })`
+  const edit = async (row: string, text: string) => {
+    // This row's editor: a focus that missed (a stale accessible) would open
+    // the previously focused row's.
+    const editor = `node.role !== ${role("TEXT_LEAF")} && node.name === ${json(`Edit ${row.slice(0, row.indexOf(":"))}`)}`
+    const press = `return new Promise((r) => setTimeout(() => {
+        tip.keydown(key)
+        tip.keyup(key)
+        r("ok")
+      }, 50))`
+    // The row can be re-rendered (a re-send) before its lookup, its focus or
+    // the key (no row for a moment, a stale accessible whose takeFocus throws,
+    // or a focus that went nowhere): find, focus and press again until the
+    // editor shows.
+    const deadline = Date.now() + 5000
+    for (;;) {
+      const focused = await onAccessible(
+        `node.role === ${role("OUTLINEITEM")} && node.name === ${json(row)}`,
+        `${enter}
+        try {
+          node.takeFocus()
+        } catch {
+          return null
+        }
+        ${press}`,
+        false,
+      )
+      for (let i = 0; focused && i < 10; i++) {
+        const done = await onAccessible(
+          editor,
+          `node.QueryInterface(Ci.nsIAccessibleEditableText).setTextContents(${json(text)})
+          ${enter}
+          ${press}`,
+          false,
+        )
+        if (done) return
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      if (Date.now() > deadline) throw new Error(`no editor for ${row}`)
+      if (!focused) await new Promise((resolve) => setTimeout(resolve, 200))
+    }
+  }
   const pressed = async (name: string) =>
     (await onAccessible(
       button(name),
@@ -338,6 +409,7 @@ export async function openPanelText(
     press,
     pressed,
     type,
+    edit,
     selected,
   })
 }

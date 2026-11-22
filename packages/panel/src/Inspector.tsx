@@ -14,12 +14,15 @@ import {
   type JSX,
   Match,
   onCleanup,
+  onMount,
   Show,
   Switch,
 } from "solid-js"
 import { Empty, EmptyAction } from "./Empty"
 import type { InspectorStore } from "./inspection"
+import { childPath, type PathRoot, pathKey, type RowPath } from "./paths"
 import { type MenuItem, RowMenu } from "./RowMenu"
+import { keyboardRows } from "./rows"
 import { matches, searchRanges } from "./search"
 import {
   label,
@@ -27,10 +30,18 @@ import {
   type SourceLocation,
   type Sources,
 } from "./source"
-import { IconButton, PickGlyph, SearchField } from "./Toolbar"
+import {
+  ErrorGlyph,
+  IconButton,
+  PickGlyph,
+  ReloadGlyph,
+  SearchField,
+  SuspenseGlyph,
+} from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
-import { byName, previewText, sortedEntries } from "./value"
+import { editText, isPlain, parseTyped } from "./typed"
+import { byName, isContainer, previewText, sortedEntries } from "./value"
 
 // Text color per kind of value, from the theme's syntax tokens.
 function tone(value: Value) {
@@ -57,13 +68,13 @@ function tone(value: Value) {
 
 // `key`: where the page finds it in its container (ValueTarget).
 type Entry = { name: string; value: Value; arrow?: boolean; key?: ValueKey }
-type OnMenu = (event: MouseEvent, key: string, target?: ValueTarget) => void
-
-const isContainer = (value: Value): value is Container =>
-  value !== null &&
-  typeof value === "object" &&
-  "id" in value &&
-  value.type !== "ref"
+// `more`: a row's own items (Rename key, Delete), after the copies.
+type OnMenu = (
+  event: MouseEvent,
+  key: string,
+  target?: ValueTarget,
+  more?: MenuItem[],
+) => void
 
 // A container's loaded entries, and how many are still on the page.
 function entriesOf(value: Container): { entries: Entry[]; left: number } {
@@ -198,6 +209,9 @@ export type Settings = {
 }
 
 const STORED_MS = 4000
+// A value, hook or context row: one of the keyboard rows (src/rows.ts).
+const ROW =
+  "group flex min-h-5 items-center whitespace-nowrap pr-2 focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1"
 
 // The selected node's values (docs/panel.md, Inspector). Page data is text only.
 export function Inspector(props: {
@@ -250,6 +264,21 @@ export function Inspector(props: {
   }
   const nameFound = (site: CallSite, name: string) =>
     setFound(new Map(found()).set(JSON.stringify(site), name))
+  // Show fallback and Show error, for the boundaries the page found above.
+  const toggles = () => {
+    const found = props.inspector.data()?.boundaries
+    return [
+      {
+        kind: "fallback" as const,
+        label: "Show fallback",
+        glyph: <SuspenseGlyph />,
+      },
+      { kind: "error" as const, label: "Show error", glyph: <ErrorGlyph /> },
+    ].flatMap((toggle) => {
+      const boundary = found?.[toggle.kind]
+      return boundary ? [{ ...toggle, boundary }] : []
+    })
+  }
   // The open right-click menu (RowMenu): a row's key to copy, and where the page
   // finds its value to copy or store.
   const [menu, setMenu] = createSignal<{
@@ -257,7 +286,7 @@ export function Inspector(props: {
     y: number
     items: MenuItem[]
   }>()
-  const onMenu: OnMenu = (event, key, target) => {
+  const onMenu: OnMenu = (event, key, target, more = []) => {
     event.preventDefault()
     const items = [
       { label: "Copy key", run: () => props.inspector.copyKey(key) },
@@ -273,6 +302,7 @@ export function Inspector(props: {
           run: () => props.inspector.storeValue(target),
         },
       )
+    items.push(...more)
     setMenu({ x: event.clientX, y: event.clientY, items })
   }
   // Collapsed sections, kept while the panel is open.
@@ -288,7 +318,7 @@ export function Inspector(props: {
     entriesOf(value).entries.some((entry) =>
       entryShows(props.inspector, entry, query()),
     )
-  const section = (name: string, value: Value | undefined) => (
+  const section = (name: string, root: PathRoot, value: Value | undefined) => (
     <Show when={shown(value) && (value as Container)}>
       {(container) => (
         <Section
@@ -300,9 +330,10 @@ export function Inspector(props: {
           <Children
             inspector={props.inspector}
             value={container()}
-            path={name}
+            path={{ root, keys: [] }}
             depth={0}
             query={query()}
+            editable={isPlain(container())}
             onMenu={onMenu}
           />
         </Section>
@@ -315,6 +346,25 @@ export function Inspector(props: {
     (props.inspector.data()?.contexts ?? [])
       .map((context, read) => ({ ...context, read }))
       .sort((a, b) => byName(a.name, b.name))
+  // A context hook's value is edited in its Context row (the provider's value,
+  // which every reader sees): opening the section, that row's editor. None for
+  // a default value (read-only).
+  let values!: HTMLDivElement
+  const editContext = (read: number) => {
+    const context = props.inspector.data()?.contexts?.[read]
+    if (!context || context.default) return undefined
+    return () => {
+      if (collapsed().has("Context")) toggle("Context")
+      const key = pathKey({ root: { context: read }, keys: [] })
+      const row = [
+        ...values.querySelectorAll<HTMLElement>("[role=treeitem]"),
+      ].find((at) => at.dataset.path === key)
+      row?.focus()
+      row?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      )
+    }
+  }
   const contextShows = (context: Entry) =>
     entryShows(props.inspector, context, query())
   const hooksShow = () =>
@@ -378,7 +428,32 @@ export function Inspector(props: {
               <Show when={node().key !== null}>
                 <span class="truncate text-muted">{`key="${node().key}"`}</span>
               </Show>
-              <span class="ml-auto">
+              <span class="ml-auto flex">
+                <For each={toggles()}>
+                  {(toggle) => (
+                    <IconButton
+                      label={toggle.label}
+                      pressed={toggle.boundary.on}
+                      onClick={() => {
+                        props.inspector.force(toggle.kind, !toggle.boundary.on)
+                        // Showing it hides or unmounts this node: keep the
+                        // boundary, and the toggle to turn it off, in view.
+                        if (!toggle.boundary.on)
+                          props.tree.reveal(toggle.boundary.id)
+                      }}
+                    >
+                      {toggle.glyph}
+                    </IconButton>
+                  )}
+                </For>
+                <Show when={node().kind !== "host"}>
+                  <IconButton
+                    label="Force re-render"
+                    onClick={() => props.inspector.rerender()}
+                  >
+                    <ReloadGlyph />
+                  </IconButton>
+                </Show>
                 <IconButton
                   label="Hook names"
                   pressed={props.settings.hookNames()}
@@ -401,7 +476,16 @@ export function Inspector(props: {
                 onKeyDown={(event) => event.key === "Escape" && setQuery("")}
               />
             </div>
-            <div class="overflow-y-auto" ref={(el) => paintMatches(el, query)}>
+            <div
+              role="tree"
+              aria-label="Values"
+              class="overflow-y-auto"
+              ref={(el) => {
+                values = el
+                paintMatches(el, query)
+                keyboardRows(el)
+              }}
+            >
               <Show when={location()}>
                 {(at) => (
                   <div
@@ -435,8 +519,8 @@ export function Inspector(props: {
               <Show when={query() !== "" && !anyShown()}>
                 <p class="p-2 text-muted">No matches</p>
               </Show>
-              {section("Props", props.inspector.data()?.props)}
-              {section("State", props.inspector.data()?.state)}
+              {section("Props", "props", props.inspector.data()?.props)}
+              {section("State", "state", props.inspector.data()?.state)}
               <Show when={hooksShow()}>
                 <Section
                   name="Hooks"
@@ -454,12 +538,12 @@ export function Inspector(props: {
                     sources={props.sources}
                     settings={props.settings}
                     hooks={props.inspector.data()?.hooks ?? []}
-                    path="Hooks"
                     at={[]}
                     depth={0}
                     query={query()}
                     labelOf={labelOf}
                     nameFound={nameFound}
+                    editContext={editContext}
                     onMenu={onMenu}
                   />
                 </Section>
@@ -472,15 +556,25 @@ export function Inspector(props: {
                   onToggle={() => toggle("Context")}
                 >
                   <For each={contexts()}>
-                    {(context, index) => (
+                    {(context) => (
                       <Show when={contextShows(context)}>
                         <ValueRow
                           inspector={props.inspector}
                           entry={context}
-                          path={`Context.${index()}`}
+                          path={{ root: { context: context.read }, keys: [] }}
                           depth={0}
                           query={query()}
                           target={{ context: context.read }}
+                          editable={!context.default}
+                          badge={
+                            context.default
+                              ? {
+                                  text: "default",
+                                  title:
+                                    "No provider above: its default value, read-only",
+                                }
+                              : undefined
+                          }
                           onMenu={onMenu}
                         />
                       </Show>
@@ -574,10 +668,14 @@ function Section(props: {
   const open = () => props.open || props.forced
   return (
     <section data-testid="section" class="border-border border-b py-1">
+      {/* A row of the values tree (Keyboard), above its rows. */}
       <button
         type="button"
+        role="treeitem"
+        aria-level={1}
         aria-expanded={open()}
-        class="flex w-full items-center gap-1 px-2 py-0.5 font-medium text-muted hover:text-fg"
+        data-path={`section:${props.name}`}
+        class="flex w-full items-center gap-1 px-2 py-0.5 font-medium text-muted hover:text-fg focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1"
         onClick={props.onToggle}
       >
         <Triangle open={open()} />
@@ -603,9 +701,11 @@ function Triangle(props: { open: boolean }) {
 function Children(props: {
   inspector: InspectorStore
   value: Container
-  path: string
+  path: RowPath
   depth: number
   query: string
+  // Its entries can be written: every container down to it is plain.
+  editable: boolean
   onMenu: OnMenu
 }) {
   const loaded = () =>
@@ -623,7 +723,10 @@ function Children(props: {
           <ValueRow
             inspector={props.inspector}
             entry={entry}
-            path={`${props.path}.${entry.name}`}
+            path={childPath(props.path, entry.key as ValueKey)}
+            editable={props.editable}
+            objectKey={loaded().type === "object"}
+            siblings={list().entries.map((other) => other.name)}
             depth={props.depth}
             query={props.query}
             target={{ objectId: loaded().id, key: entry.key as ValueKey }}
@@ -652,21 +755,23 @@ function HookRows(props: {
   sources: Sources
   settings: Settings
   hooks: HookValue[]
-  path: string
-  // Call indexes from the top: the page's address for a hook (ValueTarget).
+  // Call indexes from the top: the hook's row path root and the page's address
+  // for it (ValueTarget).
   at: number[]
   depth: number
   query: string
   labelOf: (hook: HookValue) => string
   nameFound: (site: CallSite, name: string) => void
+  // A context hook's edit, by the context's read index (Inspector editContext).
+  editContext: (read: number) => (() => void) | undefined
   onMenu: OnMenu
 }) {
   return (
     <For each={props.hooks}>
       {(hook, index) => {
         // Paths are by call index, so hooks hidden by the search stay in the list.
-        const path = () => `${props.path}.${index()}`
         const at = () => [...props.at, index()]
+        const path = (): RowPath => ({ root: { hook: at() }, keys: [] })
         const target = () =>
           hook.value === undefined ? undefined : { hook: at() }
         const open = () => props.inspector.isOpen(path())
@@ -694,10 +799,14 @@ function HookRows(props: {
               <Match when={hook.hooks}>
                 {(hooks) => (
                   <>
-                    {/* biome-ignore lint/a11y/noStaticElementInteractions: a right-click shortcut; rows take no focus yet */}
                     <div
                       data-testid="value"
-                      class="flex min-h-5 items-center whitespace-nowrap pr-2"
+                      role="treeitem"
+                      tabIndex={-1}
+                      aria-level={props.depth + 2}
+                      aria-expanded={shownOpen()}
+                      data-path={pathKey(path())}
+                      class={ROW}
                       style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
                       onContextMenu={(event) =>
                         props.onMenu(event, label(), target())
@@ -732,12 +841,12 @@ function HookRows(props: {
                         sources={props.sources}
                         settings={props.settings}
                         hooks={hooks()}
-                        path={path()}
                         at={at()}
                         depth={props.depth + 1}
                         query={props.query}
                         labelOf={props.labelOf}
                         nameFound={props.nameFound}
+                        editContext={props.editContext}
                         onMenu={props.onMenu}
                       />
                     </Show>
@@ -748,6 +857,12 @@ function HookRows(props: {
                 <ValueRow
                   inspector={props.inspector}
                   entry={{ name: label(), value: hook.value as Value }}
+                  editable={hook.name === "State" || hook.name === "Reducer"}
+                  editAt={
+                    hook.context === undefined
+                      ? undefined
+                      : props.editContext(hook.context)
+                  }
                   path={path()}
                   depth={props.depth}
                   query={props.query}
@@ -756,11 +871,14 @@ function HookRows(props: {
                 />
               </Match>
               <Match when={hook.value === undefined}>
-                {/* biome-ignore lint/a11y/noStaticElementInteractions: a right-click shortcut; rows take no focus yet */}
                 <div
                   data-testid="value"
+                  role="treeitem"
+                  tabIndex={-1}
+                  aria-level={props.depth + 2}
+                  data-path={pathKey(path())}
                   data-search-text
-                  class="flex min-h-5 items-center whitespace-nowrap pr-2 text-syntax-key"
+                  class={`${ROW} text-syntax-key`}
                   style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
                   onContextMenu={(event) => props.onMenu(event, label())}
                 >
@@ -772,6 +890,54 @@ function HookRows(props: {
         )
       }}
     </For>
+  )
+}
+
+// A value's text being edited: focused on mount; Enter applies, Escape cancels,
+// leaving cancels.
+function ValueInput(props: {
+  text: string
+  // The input's accessible name and test id: a value's or a key's editor.
+  label: string
+  testid: string
+  // Why the last Enter was refused, shown until the next.
+  error?: string
+  onApply: (text: string) => void
+  onCancel: () => void
+  onBlur: () => void
+}) {
+  let input!: HTMLInputElement
+  onMount(() => input.focus())
+  return (
+    <>
+      <input
+        ref={input}
+        data-testid={props.testid}
+        // No form history: Firefox would make it an autocomplete combobox.
+        autocomplete="off"
+        aria-label={props.label}
+        aria-invalid={Boolean(props.error)}
+        value={props.text}
+        class="min-w-0 flex-1 rounded-sm bg-surface px-1 font-mono text-fg outline-none ring-1 ring-accent"
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault()
+            props.onApply(input.value)
+          } else if (event.key === "Escape") {
+            // DevTools opens its drawer on Escape.
+            event.preventDefault()
+            event.stopPropagation()
+            props.onCancel()
+          }
+        }}
+        onBlur={() => props.onBlur()}
+      />
+      <Show when={props.error}>
+        <span role="alert" class="ml-2 shrink-0 text-error">
+          {props.error}
+        </span>
+      </Show>
+    </>
   )
 }
 
@@ -796,14 +962,106 @@ function Toggle(props: { open: boolean; onClick: () => void }) {
 function ValueRow(props: {
   inspector: InspectorStore
   entry: Entry
-  path: string
+  path: RowPath
   depth: number
   query: string
   // Where the page finds the value; none: only the key can be copied.
   target?: ValueTarget
+  // The page can write it (a top-level prop, a state hook).
+  editable?: boolean
+  // Edited in another row instead (a context hook, in its Context row).
+  editAt?: () => void
+  // Its container is a plain object (its key can be renamed), and the names
+  // there (a rename can't take one).
+  objectKey?: boolean
+  siblings?: string[]
+  // A muted word after the value, its title saying why.
+  badge?: { text: string; title: string }
   onMenu: OnMenu
 }) {
   const value = () => props.entry.value
+  let row!: HTMLDivElement
+  // Any editable value but a boolean (which flips) is typed; what the panel holds
+  // only part of opens empty, to be replaced (editText).
+  const canEdit = () => (props.editable && !isFlag()) || Boolean(props.editAt)
+  // A boolean flips (its checkbox, or Space on the row); the page's re-send
+  // shows the result, so the checkbox never runs ahead of it.
+  const isFlag = () => props.editable && typeof value() === "boolean"
+  const flip = () => props.inspector.edit(props.path, !value())
+  const [editing, setEditing] = createSignal(false)
+  const [invalid, setInvalid] = createSignal(false)
+  const edit = () => {
+    if (props.editAt) return props.editAt()
+    if (!canEdit()) return
+    setInvalid(false)
+    setEditing(true)
+  }
+  const done = () => {
+    setEditing(false)
+    setRenaming(false)
+    row.focus()
+  }
+  // A key under a plain container can be deleted, and under an object renamed
+  // to a name its siblings don't have.
+  const [renaming, setRenaming] = createSignal(false)
+  const [badName, setBadName] = createSignal(false)
+  const rename = (name: string) => {
+    if (name === props.entry.name) return done()
+    if (!name.trim() || props.siblings?.includes(name)) return setBadName(true)
+    props.inspector.rename(props.path, name)
+    done()
+  }
+  const keyItems = () =>
+    props.editable && props.path.keys.length > 0
+      ? [
+          ...(props.objectKey
+            ? [
+                {
+                  label: "Rename key",
+                  run: () => {
+                    setBadName(false)
+                    setRenaming(true)
+                  },
+                },
+              ]
+            : []),
+          { label: "Delete", run: () => props.inspector.remove(props.path) },
+        ]
+      : []
+  // A plain container gets a key (`newKey`, else the first free `newKey<n>`)
+  // or an item at its end; the page's re-send shows it, to edit and rename.
+  const addItems = () => {
+    const container = target()
+    if (!props.editable || !container || !isPlain(container)) return []
+    if (container.type === "array")
+      return [
+        {
+          label: "Add item",
+          run: () =>
+            props.inspector.edit(childPath(props.path, container.length), {
+              type: "undefined",
+            }),
+        },
+      ]
+    const taken = new Set(entriesOf(container).entries.map((e) => e.name))
+    let name = "newKey"
+    for (let n = 2; taken.has(name); n++) name = `newKey${n}`
+    return [
+      {
+        label: "Add key",
+        run: () => props.inspector.edit(childPath(props.path, name), ""),
+      },
+    ]
+  }
+  // JSON plus markers (parseTyped); text that reads as nothing is a string
+  // over a string, and refused over anything else.
+  const apply = (text: string) => {
+    const next =
+      parseTyped(text) ?? (typeof value() === "string" ? text : undefined)
+    if (next === undefined) return setInvalid(true)
+    props.inspector.edit(props.path, next)
+    done()
+  }
   // A value the page sent as a ref (past its depth limit) loads when opened.
   const ref = () => {
     const v = value()
@@ -834,28 +1092,106 @@ function ValueRow(props: {
       : props.inspector.open(props.path, ref())
   return (
     <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: a right-click shortcut; rows take no focus yet */}
       <div
+        ref={row}
         data-testid="value"
-        class="flex min-h-5 items-center whitespace-nowrap pr-2"
+        role="treeitem"
+        tabIndex={-1}
+        aria-level={props.depth + 2}
+        aria-expanded={openable() ? shownOpen() : undefined}
+        data-path={pathKey(props.path)}
+        class={ROW}
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
         onContextMenu={(event) =>
-          props.onMenu(event, props.entry.name, props.target)
+          props.onMenu(event, props.entry.name, props.target, [
+            ...addItems(),
+            ...keyItems(),
+          ])
         }
+        // A click on the value edits it (Enter or F2 on the row too).
+        onClick={(event) => {
+          if ((event.target as Element).closest("[data-value]")) edit()
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== row) return
+          if (event.key === "Enter" || event.key === "F2") {
+            event.preventDefault()
+            edit()
+          } else if (event.key === " " && isFlag()) {
+            event.preventDefault()
+            flip()
+          }
+        }}
       >
         <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>
           <Toggle open={shownOpen()} onClick={toggle} />
         </Show>
+        <Show when={isFlag()}>
+          <input
+            type="checkbox"
+            tabIndex={-1}
+            aria-label={props.entry.name}
+            checked={value() as boolean}
+            class="mr-1 accent-accent"
+            onChange={(event) => {
+              event.currentTarget.checked = value() as boolean
+              flip()
+            }}
+          />
+        </Show>
+        <Show when={renaming()}>
+          <ValueInput
+            text={props.entry.name}
+            label={`Rename ${props.entry.name}`}
+            testid="key-input"
+            error={badName() ? "Not a valid name" : undefined}
+            onApply={rename}
+            onCancel={done}
+            onBlur={() => setRenaming(false)}
+          />
+        </Show>
         {/* Inline, not flex items: flex drops the spaces between them. */}
-        <span class="min-w-0 truncate">
+        <span class="min-w-0 truncate" classList={{ hidden: renaming() }}>
           <span data-search-text class="text-syntax-key">
             {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
           </span>
           {props.entry.arrow ? " => " : " "}
-          <span data-search-text class={tone(value())}>
-            {previewText(value())}
-          </span>
+          <Show when={!editing()}>
+            <span
+              data-search-text
+              data-value
+              class={tone(value())}
+              classList={{ "editable-value": canEdit() }}
+            >
+              {previewText(value())}
+            </span>
+          </Show>
+          <Show when={props.badge}>
+            {(badge) => (
+              <>
+                {" "}
+                <span
+                  data-testid="badge"
+                  class="text-muted"
+                  title={badge().title}
+                >
+                  {badge().text}
+                </span>
+              </>
+            )}
+          </Show>
         </span>
+        <Show when={editing()}>
+          <ValueInput
+            text={editText(value())}
+            label={`Edit ${props.entry.name}`}
+            testid="value-input"
+            error={invalid() ? "Not a valid value" : undefined}
+            onApply={apply}
+            onCancel={done}
+            onBlur={() => setEditing(false)}
+          />
+        </Show>
       </div>
       <Show when={shownOpen() && target()}>
         {(container) => (
@@ -865,6 +1201,7 @@ function ValueRow(props: {
             path={props.path}
             depth={props.depth + 1}
             query={props.query}
+            editable={Boolean(props.editable) && isPlain(container())}
             onMenu={props.onMenu}
           />
         )}

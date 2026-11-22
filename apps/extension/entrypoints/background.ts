@@ -1,7 +1,10 @@
 import {
   type ClearHighlightMessage,
+  type DeletePathMessage,
+  type EditMessage,
   type ExpandedMessage,
   type ExpandMessage,
+  type ForceMessage,
   type GetStateMessage,
   type HighlightMessage,
   type InjectAgentMessage,
@@ -9,6 +12,8 @@ import {
   type InspectMessage,
   type PickedMessage,
   type PickMessage,
+  type RenamePathMessage,
+  type RerenderMessage,
   type ResyncMessage,
   STALE_TITLE,
   type StateReply,
@@ -114,6 +119,11 @@ export default defineBackground(() => {
           | PickMessage
           | InspectMessage
           | ExpandMessage
+          | EditMessage
+          | DeletePathMessage
+          | RenamePathMessage
+          | RerenderMessage
+          | ForceMessage
           | ValueMessage,
       ) => {
         // Commands go to the tab's relay, which validates them (parseTreeCommand).

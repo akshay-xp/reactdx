@@ -1,20 +1,41 @@
 import type {
   Container,
+  EditRoot,
+  EditValue,
   ExpandedMessage,
   InspectedData,
   InspectedMessage,
   Value,
+  ValueKey,
   ValueStoredMessage,
   ValueTarget,
   ValueTextMessage,
 } from "@reactdx/messages"
 import { createSignal } from "solid-js"
+import { pathKey, type RowPath } from "./paths"
 
 // What the store asks the page for; the panel adds the tab (InspectMessage).
 export type InspectorCommand =
   | { type: "inspect"; id: number | null }
   | { type: "expand"; objectId: number; offset: number }
   | { type: "copy-value" | "store-value"; target: ValueTarget }
+  | {
+      type: "edit"
+      id: number
+      root: EditRoot
+      path: ValueKey[]
+      value: EditValue
+    }
+  | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
+  | { type: "rerender"; id: number }
+  | { type: "force"; id: number; kind: "fallback" | "error"; on: boolean }
+  | {
+      type: "rename-path"
+      id: number
+      root: EditRoot
+      path: ValueKey[]
+      to: string
+    }
 
 export type InspectorStore = ReturnType<typeof createInspectorStore>
 
@@ -45,7 +66,7 @@ export function createInspectorStore(
 ) {
   const [id, setId] = createSignal<number>()
   const [data, setData] = createSignal<InspectedData | null>()
-  // Open paths (dot-joined keys from the section) to the ref each one loads, if any.
+  // Open paths (by pathKey) to the ref each one loads, if any.
   const [open, setOpen] = createSignal(new Map<string, number | undefined>())
   const [expansions, setExpansions] = createSignal(new Map<number, Value>())
   let copyAsked = false
@@ -56,6 +77,18 @@ export function createInspectorStore(
   const expand = (objectId: number, offset = 0) =>
     send({ type: "expand", objectId, offset })
   const ask = () => send({ type: "inspect", id: id() ?? null })
+  // A write to the inspected node at a row's path; its re-send shows the result.
+  const write = (
+    path: RowPath,
+    command:
+      | { type: "edit"; value: EditValue }
+      | { type: "delete-path" }
+      | { type: "rename-path"; to: string },
+  ) => {
+    const at = id()
+    if (at === undefined) return
+    send({ ...command, id: at, root: path.root, path: path.keys })
+  }
 
   return {
     id,
@@ -87,19 +120,38 @@ export function createInspectorStore(
       )
       setExpansions(map)
     },
-    isOpen: (path: string) => open().has(path),
+    isOpen: (path: RowPath) => open().has(pathKey(path)),
     // `ref`: the object to load, for a value the page sent as a ref.
-    open(path: string, ref?: number) {
-      if (open().has(path)) return
-      setOpen(new Map(open()).set(path, ref))
+    open(path: RowPath, ref?: number) {
+      const key = pathKey(path)
+      if (open().has(key)) return
+      setOpen(new Map(open()).set(key, ref))
       if (ref !== undefined && !expansions().has(ref)) expand(ref)
     },
-    close(path: string) {
+    close(path: RowPath) {
       const map = new Map(open())
-      map.delete(path)
+      map.delete(pathKey(path))
       setOpen(map)
     },
     expansion: (objectId: number) => expansions().get(objectId),
+    // Writes a value at `path`.
+    edit: (path: RowPath, value: EditValue) =>
+      write(path, { type: "edit", value }),
+    // Renders the inspected node again, nothing changed.
+    rerender() {
+      const at = id()
+      if (at !== undefined) send({ type: "rerender", id: at })
+    },
+    // Shows the nearest boundary's fallback or error UI (on), or its children.
+    force(kind: "fallback" | "error", on: boolean) {
+      const at = id()
+      if (at !== undefined) send({ type: "force", id: at, kind, on })
+    },
+    // Deletes the key or item at `path`.
+    remove: (path: RowPath) => write(path, { type: "delete-path" }),
+    // Renames the key at `path` (its last) to `to`.
+    rename: (path: RowPath, to: string) =>
+      write(path, { type: "rename-path", to }),
     copyKey: copy,
     // Values are copied whole from the page: the panel's are cut and paged.
     copyValue(target: ValueTarget) {

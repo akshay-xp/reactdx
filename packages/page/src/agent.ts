@@ -26,10 +26,18 @@ import {
   valueStored,
   valueText,
 } from "@reactdx/messages"
+import {
+  type BoundaryKind,
+  boundariesOf,
+  createForcing,
+  type ForcingRenderer,
+} from "./boundaries.ts"
+import { applyEdit, type EditOp, fromEditValue, type Renderer } from "./edit.ts"
 import type { FiberRoot, Hook, HookRecord } from "./hook.ts"
 import {
   type DispatcherRef,
   type HooksFiber,
+  hookAt,
   inspectHooks,
   type RawHook,
 } from "./hooks.ts"
@@ -66,8 +74,20 @@ function contextsOf(fiber: Fiber) {
           ? name.slice(0, MAX_TREE_STRING)
           : "Context",
       value,
+      context,
     }
   })
+}
+
+// The nearest provider of `context` above the fiber (ContextProvider, tag 10):
+// React 19's provider is the context itself, React 18's its Provider object.
+// None: the fiber reads the context's default value.
+export function providerOf(fiber: Fiber, context: unknown) {
+  for (let at = fiber.return; at; at = at.return) {
+    const type = at.type as { _context?: unknown } | null
+    if (at.tag === 10 && (type === context || type?._context === context))
+      return at
+  }
 }
 
 const sameValues = (a: unknown[], b: unknown[]) =>
@@ -192,9 +212,9 @@ export function startAgent(
         hooks?: RawHook[]
       }
     | undefined
-  // The dispatcher of the renderer that owns the fiber's root (HostRoot, tag 3),
-  // from the global hook, which holds the renderer objects React injected.
-  const dispatcherOf = (fiber: Fiber) => {
+  // The renderer that owns the fiber's root (HostRoot, tag 3), from the global
+  // hook, which holds the renderer objects React injected.
+  const rendererOf = (fiber: Fiber) => {
     let at: Fiber | null = fiber
     while (at && at.tag !== 3) at = at.return
     const root = at?.stateNode as FiberRoot | undefined
@@ -202,11 +222,37 @@ export function startAgent(
       if (root && set.has(root)) {
         const hook = (scope as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook })
           .__REACT_DEVTOOLS_GLOBAL_HOOK__
-        const renderer = hook?.renderers.get(rendererId) as
-          | { currentDispatcherRef?: DispatcherRef }
+        return hook?.renderers.get(rendererId) as
+          | (Renderer & { currentDispatcherRef?: DispatcherRef })
           | undefined
-        return renderer?.currentDispatcherRef
       }
+  }
+  // One forcing per renderer, made on its first force.
+  const forcings = new Map<object, ReturnType<typeof createForcing>>()
+  const forcingOf = (renderer: ForcingRenderer) => {
+    let forcing = forcings.get(renderer)
+    if (!forcing) {
+      forcing = createForcing(renderer)
+      forcings.set(renderer, forcing)
+    }
+    return forcing
+  }
+  // The nearest boundaries the tree knows, by id, and whether each is forced.
+  const boundariesFor = (fiber: Fiber) => {
+    const found = boundariesOf(fiber)
+    const renderer = rendererOf(fiber)
+    const out: { [kind in BoundaryKind]?: { id: number; on: boolean } } = {}
+    for (const kind of ["fallback", "error"] as const) {
+      const boundary = found[kind]
+      const node = boundary && tree.known(boundary)
+      if (!boundary || !node) continue
+      const forcing = renderer && forcings.get(renderer)
+      out[kind] = {
+        id: node.id,
+        on: forcing?.isForced(kind, boundary) ?? false,
+      }
+    }
+    return out.fallback || out.error ? out : undefined
   }
   // Who rendered the fiber, nearest first: tree nodes by id, Server Components
   // (React 19 ReactComponentInfo, not in the tree) by name.
@@ -245,20 +291,29 @@ export function startAgent(
     data.owners = ownersOf(fiber)
     const source = sourceOf(fiber)
     if (source) data.source = source
+    const boundaries = boundariesFor(fiber)
+    if (boundaries) data.boundaries = boundaries
     if (contexts.length)
-      data.contexts = contexts.map(({ name, value }) => ({
+      data.contexts = contexts.map(({ name, value, context }) => ({
         name,
         value: serialize(value) as Value,
+        ...(!providerOf(fiber, context) && { default: true as const }),
       }))
-    const ref = dispatcherOf(fiber)
+    const ref = rendererOf(fiber)?.currentDispatcherRef
     const read = ref && inspectHooks(fiber as unknown as HooksFiber, ref)
     if (read) {
-      const describeHook = (hook: RawHook): HookValue => ({
-        name: hook.name,
-        ...("value" in hook && { value: serialize(hook.value) as Value }),
-        ...(hook.hooks && { hooks: hook.hooks.map(describeHook) }),
-        ...(hook.site && { site: hook.site }),
-      })
+      const describeHook = (hook: RawHook): HookValue => {
+        const context = contexts.findIndex(
+          (read) => read.context === hook.context,
+        )
+        return {
+          name: hook.name,
+          ...("value" in hook && { value: serialize(hook.value) as Value }),
+          ...(hook.hooks && { hooks: hook.hooks.map(describeHook) }),
+          ...(hook.site && { site: hook.site }),
+          ...(context !== -1 && { context }),
+        }
+      }
       data.hooks = read.hooks.map(describeHook)
       selected.hooks = read.hooks
       if (read.error !== undefined) data.hooksError = read.error
@@ -276,12 +331,7 @@ export function startAgent(
     if ("objectId" in target)
       return selected.values.find(target.objectId, target.key)
     if ("hook" in target) {
-      let hook: RawHook | undefined
-      let list = selected.hooks
-      for (const index of target.hook) {
-        hook = list?.[index]
-        list = hook?.hooks
-      }
+      const hook = hookAt(selected.hooks, target.hook)
       return hook && "value" in hook ? { value: hook.value } : undefined
     }
     const contexts = selected.sent?.contexts ?? []
@@ -361,6 +411,57 @@ export function startAgent(
         if (value !== undefined)
           post(expanded(objectId, offset, value as Value))
       }
+    } else if (
+      data.type === "edit" ||
+      data.type === "delete-path" ||
+      data.type === "rename-path"
+    ) {
+      const command = parseTreeCommand(data)
+      if (!command || !("root" in command) || command.id !== selected?.id)
+        return
+      const fiber = tree.fiber(command.id)
+      const renderer = fiber && rendererOf(fiber)
+      if (!renderer) return
+      const op: EditOp =
+        command.type === "edit"
+          ? { op: "set", value: fromEditValue(command.value) }
+          : command.type === "delete-path"
+            ? { op: "delete" }
+            : { op: "rename", to: command.to }
+      const { root, path } = command
+      if (typeof root === "object" && "context" in root) {
+        // A context is written through its provider's value, so every reader
+        // of that provider sees it. A default (no provider) can't be.
+        const read = contextsOf(fiber)[root.context]
+        const provider = read && providerOf(fiber, read.context)
+        if (provider)
+          applyEdit(renderer, provider, "props", ["value", ...path], op)
+      } else applyEdit(renderer, fiber, root, path, op, selected.hooks)
+      // React commits the edit in a microtask; send its result then, not on
+      // the next flush, since the developer is waiting on this one value.
+      setTimeout(refresh)
+    } else if (data.type === "force") {
+      const command = parseTreeCommand(data)
+      if (command?.type !== "force" || command.id !== selected?.id) return
+      const fiber = tree.fiber(command.id)
+      const boundary = fiber && boundariesOf(fiber)[command.kind]
+      const renderer = fiber && rendererOf(fiber)
+      if (!boundary || !renderer) return
+      forcingOf(renderer).force(command.kind, boundary, command.on)
+      // Its props and state didn't change, so the flush wouldn't re-send it:
+      // send whether the boundary is forced now, after React's commit.
+      const { id } = command
+      setTimeout(() => {
+        if (selected?.id === id) post(inspected(id, describe(id)))
+      })
+    } else if (data.type === "rerender") {
+      const command = parseTreeCommand(data)
+      if (command?.type !== "rerender" || command.id !== selected?.id) return
+      const fiber = tree.fiber(command.id)
+      // A DOM element (5) or text (6) has no render of its own.
+      if (!fiber || fiber.tag === 5 || fiber.tag === 6) return
+      rendererOf(fiber)?.scheduleUpdate?.(fiber)
+      setTimeout(refresh)
     } else if (data.type === "copy-value" || data.type === "store-value")
       useValue(parseTreeCommand(data))
     else if (data.type === "unwatch") {

@@ -34,12 +34,22 @@ function Nothing() {
 const dark = (child: React.ReactNode) =>
   h(Theme.Provider, { value: "dark" }, child)
 
-test("the contexts a function component reads, once each, in order", async () => {
+test("the contexts a function component reads, once each, in order; one with no provider is its default", async () => {
   const data = await inspect(dark(h(Reader)), "Reader")
   expect(data?.contexts).toEqual([
     { name: "Theme", value: "dark" },
-    { name: "Context", value: 1 },
+    { name: "Context", value: 1, default: true },
   ])
+})
+
+test("each context hook names its context by read index, for the panel to edit it there", async () => {
+  const data = await inspect(dark(h(Reader)), "Reader")
+  expect(data?.hooks?.map((hook) => hook.context)).toEqual([0, 0, 1])
+})
+
+test.skipIf(!react19)("so does use() of a context", async () => {
+  const data = await inspect(dark(h(UseReader)), "UseReader")
+  expect(data?.hooks?.map((hook) => hook.context)).toEqual([0])
 })
 
 test("copy-value copies a context read by index", async () => {
@@ -128,4 +138,52 @@ test("owners, nearest first, with the tree's ids", async () => {
     id: idOf("Leaf"),
     name: "Leaf",
   })
+})
+
+const Echo = React.memo(function Echo() {
+  return h("b", null, String(React.useContext(Theme)))
+})
+const Mode = React.createContext({ mode: "light", size: 1 })
+Mode.displayName = "Mode"
+function ModeReader() {
+  const { mode, size } = React.useContext(Mode)
+  return h("i", null, `${mode} ${size}`)
+}
+// Past the immediate re-send after an edit.
+const settle = () =>
+  React.act(() => new Promise((resolve) => setTimeout(resolve, 10)))
+const edit = (fields: Record<string, unknown>) =>
+  React.act(async () =>
+    send({ source: "reactdx-relay", type: "edit", path: [], ...fields }),
+  )
+
+test("a context edit writes its provider's value, so every reader sees it", async () => {
+  await inspect(dark(h(React.Fragment, null, h(Reader), h(Echo))), "Reader")
+  const id = idOf("Reader")
+  await edit({ id, root: { context: 0 }, value: "light" })
+  expect(document.querySelector("b")?.textContent).toBe("light")
+  await settle()
+  expect(replies().at(-1)?.data?.contexts?.[0]).toEqual({
+    name: "Theme",
+    value: "light",
+  })
+  // The default (no provider) can't be written.
+  const sent = replies().length
+  await edit({ id, root: { context: 1 }, value: 5 })
+  await settle()
+  expect(replies()).toHaveLength(sent)
+})
+
+test("a context edit at a path changes only that key of the provider's value", async () => {
+  await inspect(
+    h(Mode.Provider, { value: { mode: "dark", size: 2 } }, h(ModeReader)),
+    "ModeReader",
+  )
+  await edit({
+    id: idOf("ModeReader"),
+    root: { context: 0 },
+    path: ["mode"],
+    value: "light",
+  })
+  expect(document.querySelector("i")?.textContent).toBe("light 2")
 })

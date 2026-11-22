@@ -4,22 +4,12 @@ import { Empty, EmptyAction } from "./Empty"
 import { Inspector, type Settings } from "./Inspector"
 import type { InspectorStore } from "./inspection"
 import type { Sources } from "./source"
-import { Toolbar } from "./Toolbar"
+import { ReloadGlyph, Toolbar } from "./Toolbar"
 import { TreeView } from "./TreeView"
 import type { TreeStore } from "./tree"
 
 const build = (bundleType: number) =>
   bundleType === 1 ? "development" : "production"
-
-// A circular arrow, inside a 24-unit svg (Glyph).
-function ReloadGlyph() {
-  return (
-    <>
-      <path d="M20 11a8 8 0 1 0-2.3 6.2" />
-      <path d="M20 4v7h-7" />
-    </>
-  )
-}
 
 // Page data is only ever a text node: never markup.
 // `stale`: the page loaded before ReactDX was installed or updated, so React never

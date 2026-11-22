@@ -1,4 +1,14 @@
-import { parseValueTarget, type ValueTarget } from "./inspect.ts"
+import {
+  type EditRoot,
+  type EditValue,
+  MAX_VALUE_STRING,
+  parseEditPath,
+  parseEditRoot,
+  parseEditValue,
+  parseValueTarget,
+  type ValueKey,
+  type ValueTarget,
+} from "./inspect.ts"
 
 export type RendererInfo = {
   version: string
@@ -262,6 +272,47 @@ export type ExpandMessage = {
   offset: number
 }
 
+// Panel to background: write a value of the inspected node (`id`).
+export type EditMessage = {
+  type: "edit"
+  tabId: number
+  id: number
+  root: EditRoot
+  path: ValueKey[]
+  value: EditValue
+}
+
+// Panel to background: show the nearest Suspense boundary's fallback or error
+// boundary's error UI (`on`), or its children again.
+export type ForceMessage = {
+  type: "force"
+  tabId: number
+  id: number
+  kind: "fallback" | "error"
+  on: boolean
+}
+
+// Panel to background: render the inspected node again, nothing changed.
+export type RerenderMessage = { type: "rerender"; tabId: number; id: number }
+
+// Panel to background: delete a key or item of the inspected node's value, or
+// rename a key (the last in `path`) to `to`.
+export type DeletePathMessage = {
+  type: "delete-path"
+  tabId: number
+  id: number
+  root: EditRoot
+  path: ValueKey[]
+}
+export type RenamePathMessage = {
+  type: "rename-path"
+  tabId: number
+  id: number
+  root: EditRoot
+  path: ValueKey[]
+  to: string
+}
+
 // Panel to background: copy a row's value, or store it as a page global.
 export type ValueMessage = {
   type: "copy-value" | "store-value"
@@ -280,6 +331,23 @@ export type TreeCommand =
   | { type: "inspect"; id: number | null }
   | { type: "expand"; objectId: number; offset: number }
   | { type: "copy-value" | "store-value"; target: ValueTarget }
+  | {
+      type: "edit"
+      id: number
+      root: EditRoot
+      path: ValueKey[]
+      value: EditValue
+    }
+  | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
+  | { type: "rerender"; id: number }
+  | { type: "force"; id: number; kind: "fallback" | "error"; on: boolean }
+  | {
+      type: "rename-path"
+      id: number
+      root: EditRoot
+      path: ValueKey[]
+      to: string
+    }
 
 // Commands with no arguments.
 const BARE_COMMANDS = new Set<unknown>([
@@ -291,12 +359,49 @@ const BARE_COMMANDS = new Set<unknown>([
 
 export function parseTreeCommand(data: unknown): TreeCommand | undefined {
   if (typeof data !== "object" || data === null) return
-  const { type, id, objectId, offset, target } = data as Record<string, unknown>
+  const {
+    type,
+    id,
+    objectId,
+    offset,
+    target,
+    root,
+    path,
+    value,
+    to,
+    kind,
+    on,
+  } = data as Record<string, unknown>
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
   if (type === "inspect" && (id === null || isId(id))) return { type, id }
+  if (type === "rerender" && isId(id)) return { type, id }
+  if (
+    type === "force" &&
+    isId(id) &&
+    (kind === "fallback" || kind === "error") &&
+    typeof on === "boolean"
+  )
+    return { type, id, kind, on }
   if (type === "expand" && isId(objectId) && isCount(offset))
     return { type, objectId, offset }
+  if (type === "edit" && isId(id)) {
+    const parsed = {
+      root: parseEditRoot(root),
+      path: parseEditPath(path),
+      value: parseEditValue(value),
+    }
+    if (parsed.root && parsed.path && parsed.value !== undefined)
+      return { type, id, ...parsed } as TreeCommand
+  }
+  // Delete and rename name a key: the path isn't empty.
+  if ((type === "delete-path" || type === "rename-path") && isId(id)) {
+    const at = { root: parseEditRoot(root), path: parseEditPath(path) }
+    if (!at.root || !at.path?.length) return
+    if (type === "delete-path") return { type, id, ...at } as TreeCommand
+    if (isString(to, MAX_VALUE_STRING) && to !== "")
+      return { type, id, ...at, to } as TreeCommand
+  }
   if (type === "copy-value" || type === "store-value") {
     const parsed = parseValueTarget(target)
     if (parsed) return { type, target: parsed }

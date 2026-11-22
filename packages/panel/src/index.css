@@ -33,3 +33,18 @@ body {
   background-color: var(--color-highlight);
   color: var(--color-fg);
 }
+
+/* An editable value (Inspector ValueRow): an input-like box while its row is
+   hovered or keyboard-focused, where a click opens the editor. The padding is
+   always there, pulled into the space before it, so the box shifts nothing. */
+@utility editable-value {
+  cursor: text;
+  border-radius: 2px;
+  margin-left: -4px;
+  padding: 0 4px;
+  :where(.group):hover &,
+  :where(.group):focus-visible & {
+    background: var(--color-surface);
+    box-shadow: inset 0 0 0 1px var(--color-border);
+  }
+}

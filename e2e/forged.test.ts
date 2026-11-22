@@ -140,6 +140,28 @@ test("forged page messages can't break the relay or the panel", {
 // Inspector traffic a page can forge: one valid-shaped `inspected` for the
 // selected node (shown, as text), then malformed ones, each carrying DROPPED, and
 // commands the agent must refuse. Runs in the page.
+// Edits of Counter's state hook, each malformed: the agent's parse of what it
+// receives drops them, as the relay's does for the panel's.
+function forgeEdits(id: number) {
+  const edit = (fields: Record<string, unknown>) =>
+    window.postMessage(
+      {
+        source: "reactdx-relay",
+        type: "edit",
+        id,
+        root: { hook: [0] },
+        path: [],
+        value: 99,
+        ...fields,
+      },
+      "*",
+    )
+  edit({ path: Array(33).fill("a") })
+  edit({ value: "x".repeat(100_001) })
+  edit({ value: Number.POSITIVE_INFINITY })
+  edit({ root: "refs" })
+}
+
 function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
   const post = (data: unknown) => window.postMessage(data, "*")
   const object = (props: Record<string, unknown>) => ({
@@ -264,6 +286,18 @@ test("forged inspect messages and commands break nothing", {
     await page.click("[data-testid=counter]")
     const live = await until(panel.inspector, (t) => t.includes("State: 1"))
     assert.ok(live.includes("State: 1"), live)
+
+    // Malformed edits of the selected Counter (each past a bound) reach the
+    // agent and change nothing.
+    const selected = await page.evaluate(
+      () => (window as Inspecting).inspectedId,
+    )
+    await page.evaluate(forgeEdits, selected as number)
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    assert.equal(
+      await page.$eval("[data-testid=counter]", (el) => el.textContent),
+      "Count: 1",
+    )
   } finally {
     await browser.close()
   }

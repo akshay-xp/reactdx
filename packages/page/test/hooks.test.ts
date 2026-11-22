@@ -9,6 +9,11 @@ import type { Root } from "react-dom/client"
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest"
 import { startAgent } from "../src/agent.ts"
 import { installHook } from "../src/hook.ts"
+import {
+  type DispatcherRef,
+  type HooksFiber,
+  inspectHooks,
+} from "../src/hooks.ts"
 import { lineOf } from "./marker.ts"
 import { windowLike } from "./window.ts"
 
@@ -399,4 +404,48 @@ test("each hook and custom hook carries where it was called", async () => {
     ...lineOf(marks.inner),
     column: expect.any(Number),
   })
+})
+
+function Indexed() {
+  React.useRef(0)
+  React.useState(1)
+  React.useMemo(() => 2, [])
+  React.useTransition()
+  React.useReducer((s: number) => s, 3)
+  useCounted()
+  return h("b", { "data-indexed": true })
+}
+function useCounted() {
+  return React.useState(4)
+}
+
+test("state hooks carry their hook list index, what overrideHookState takes", async () => {
+  await mount(h(Indexed))
+  // The component's fiber, from its element's, and the renderer's dispatcher.
+  const element = document.querySelector("[data-indexed]") as object
+  const key = Object.keys(element).find((k) => k.startsWith("__reactFiber$"))
+  const fiber = (element as Record<string, { return: unknown }>)[key as string]
+    ?.return as HooksFiber
+  const hook = (
+    globalThis as unknown as {
+      __REACT_DEVTOOLS_GLOBAL_HOOK__: {
+        renderers: Map<number, { currentDispatcherRef: DispatcherRef }>
+      }
+    }
+  ).__REACT_DEVTOOLS_GLOBAL_HOOK__
+  const [renderer] = hook.renderers.values()
+  const read = inspectHooks(
+    fiber,
+    (renderer as { currentDispatcherRef: DispatcherRef }).currentDispatcherRef,
+  )
+  const indexes = read?.hooks.map((hook) => [hook.name, hook.index])
+  // A transition takes two entries; a custom hook's State gets its index too.
+  expect(indexes?.slice(0, 5)).toEqual([
+    ["Ref", undefined],
+    ["State", 1],
+    ["Memo", undefined],
+    ["Transition", undefined],
+    ["Reducer", 5],
+  ])
+  expect(read?.hooks[5]?.hooks?.[0]?.index).toBe(6)
 })

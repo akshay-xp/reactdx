@@ -305,3 +305,60 @@ test.each<[string, Record<string, unknown>]>([
     }),
   ).toBeUndefined()
 })
+
+test("a context hook names its context by read index; only a count passes", () => {
+  const data = { props: object({}), hooks: [{ name: "Context", context: 1 }] }
+  expect(parseInspected(inspected(3, data))).toEqual(inspected(3, data))
+  for (const context of [-1, 1.5, "1"])
+    expect(
+      parseInspected({
+        ...inspected(3, null),
+        data: { props: object({}), hooks: [{ name: "Context", context }] },
+      }),
+    ).toBeUndefined()
+})
+
+test("a context read can say it's the default value; nothing else passes there", () => {
+  const data = {
+    props: 1,
+    contexts: [
+      { name: "Theme", value: "dark" },
+      { name: "Context", value: null, default: true },
+    ],
+  }
+  expect(parseInspected(inspected(3, data as never))?.data).toEqual(data)
+  for (const bad of ["yes", false])
+    expect(
+      parseInspected(
+        inspected(3, {
+          props: 1,
+          contexts: [{ name: "C", value: 1, default: bad }],
+        } as never),
+      ),
+    ).toBeUndefined()
+})
+
+test("inspected boundaries: the nearest of each kind, by id, and whether forced", () => {
+  const boundaries = {
+    fallback: { id: 5, on: false },
+    error: { id: 6, on: true },
+  }
+  expect(
+    parseInspected(inspected(3, { props: 1, boundaries } as never))?.data,
+  ).toEqual({ props: 1, boundaries })
+  expect(
+    parseInspected(
+      inspected(3, {
+        props: 1,
+        boundaries: { error: { id: 6, on: true } },
+      } as never),
+    )?.data,
+  ).toEqual({ props: 1, boundaries: { error: { id: 6, on: true } } })
+  for (const bad of [
+    { fallback: { id: 0, on: true } },
+    { error: { id: 6, on: 1 } },
+  ])
+    expect(
+      parseInspected(inspected(3, { props: 1, boundaries: bad } as never)),
+    ).toBeUndefined()
+})
