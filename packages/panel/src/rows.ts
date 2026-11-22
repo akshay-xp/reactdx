@@ -2,7 +2,8 @@ import { onCleanup } from "solid-js"
 
 // Keyboard rows for the inspector (docs/panel.md, Keyboard): the `[role=treeitem]`
 // elements under `root`, in DOM order, are one tab stop. The row last focused
-// (by `data-path`) holds it, else the first; arrow keys move focus.
+// (by `data-path`) holds it, else the first; arrow keys move focus, and open
+// and close rows by their `aria-expanded` and toggle.
 export function keyboardRows(root: HTMLElement) {
   let focused: string | undefined
   const rows = () => [...root.querySelectorAll<HTMLElement>("[role=treeitem]")]
@@ -19,10 +20,31 @@ export function keyboardRows(root: HTMLElement) {
     focused = row.dataset.path
     sync()
   }
+  const level = (row: HTMLElement) => Number(row.getAttribute("aria-level"))
+  const toggle = (row: HTMLElement) =>
+    row.querySelector<HTMLElement>("[data-testid=value-toggle]")?.click()
+  // Right opens a closed row or moves into an open one; Left closes an open row
+  // or moves to its parent (the nearest earlier row a level up).
+  const sideways = (all: HTMLElement[], at: number, key: string) => {
+    const row = all[at] as HTMLElement
+    const open = row.getAttribute("aria-expanded")
+    if (key === "ArrowRight") {
+      if (open === "false") toggle(row)
+      else if (open === "true") all[at + 1]?.focus()
+      return
+    }
+    if (open === "true") return toggle(row)
+    for (let i = at - 1; i >= 0; i--)
+      if (level(all[i] as HTMLElement) < level(row)) return all[i]?.focus()
+  }
   const onKeyDown = (event: KeyboardEvent) => {
     const all = rows()
     const at = all.indexOf(document.activeElement as HTMLElement)
     if (at === -1) return
+    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+      event.preventDefault()
+      return sideways(all, at, event.key)
+    }
     const to = {
       ArrowDown: Math.min(at + 1, all.length - 1),
       ArrowUp: Math.max(at - 1, 0),

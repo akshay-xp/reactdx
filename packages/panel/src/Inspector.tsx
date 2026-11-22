@@ -711,6 +711,7 @@ function HookRows(props: {
                       role="treeitem"
                       tabIndex={-1}
                       aria-level={props.depth + 1}
+                      aria-expanded={shownOpen()}
                       data-path={pathKey(path())}
                       class={ROW}
                       style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
@@ -856,6 +857,7 @@ function ValueRow(props: {
         role="treeitem"
         tabIndex={-1}
         aria-level={props.depth + 1}
+        aria-expanded={openable() ? shownOpen() : undefined}
         data-path={pathKey(props.path)}
         class={ROW}
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}

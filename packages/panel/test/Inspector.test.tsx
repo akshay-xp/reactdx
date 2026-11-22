@@ -1000,3 +1000,50 @@ test("rows are one tab stop; Up, Down, Home and End move focus", async () => {
   press("ArrowUp")
   expect(document.activeElement).toBe(rowOf(container, "a: 1"))
 })
+
+test("Right and Left open, close and move between levels", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ obj: object({ x: 1 }, { id: 2 }), n: 1 }),
+      hooks,
+    }),
+  )
+  await settled()
+  const obj = () =>
+    [...container.querySelectorAll<HTMLElement>("[data-testid=value]")].find(
+      (row) => row.textContent?.startsWith("obj:"),
+    ) as HTMLElement
+  const expanded = () =>
+    obj()
+      .querySelector("[data-testid=value-toggle]")
+      ?.getAttribute("aria-expanded")
+  obj().focus()
+  press("ArrowRight")
+  expect(expanded()).toBe("true")
+  expect(document.activeElement).toBe(obj())
+  press("ArrowRight")
+  expect(document.activeElement).toBe(rowOf(container, "x: 1"))
+  press("ArrowLeft")
+  expect(document.activeElement).toBe(obj())
+  press("ArrowLeft")
+  expect(expanded()).toBe("false")
+  // Nothing to open, nowhere up to go.
+  press("ArrowLeft")
+  expect(document.activeElement).toBe(obj())
+  rowOf(container, "n: 1").focus()
+  press("ArrowRight")
+  expect(document.activeElement).toBe(rowOf(container, "n: 1"))
+  // A custom hook opens to its hooks.
+  const cart = () =>
+    [...container.querySelectorAll<HTMLElement>("[data-testid=value]")].find(
+      (row) => row.textContent?.startsWith("useCart"),
+    ) as HTMLElement
+  cart().focus()
+  press("ArrowRight")
+  press("ArrowRight")
+  expect(document.activeElement).toBe(rowOf(container, "State: 2"))
+  press("ArrowLeft")
+  expect(document.activeElement).toBe(cart())
+})
