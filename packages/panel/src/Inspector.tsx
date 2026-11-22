@@ -33,6 +33,7 @@ import {
 import { IconButton, PickGlyph, SearchField } from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
+import { isPlain } from "./typed"
 import { byName, previewText, sortedEntries } from "./value"
 
 // Text color per kind of value, from the theme's syntax tokens.
@@ -67,13 +68,6 @@ const isContainer = (value: Value): value is Container =>
   typeof value === "object" &&
   "id" in value &&
   value.type !== "ref"
-
-// A plain object or array: the page writes through these only (a Map, Set,
-// typed array or class instance is replaced whole, never edited inside).
-const isPlain = (value: Container) =>
-  value.type === "array" ||
-  (value.type === "object" &&
-    (value.className === "Object" || value.className === null))
 
 // A container's loaded entries, and how many are still on the page.
 function entriesOf(value: Container): { entries: Entry[]; left: number } {
