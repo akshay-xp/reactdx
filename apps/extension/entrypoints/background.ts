@@ -1,5 +1,6 @@
 import {
   type ClearHighlightMessage,
+  type EditMessage,
   type ExpandedMessage,
   type ExpandMessage,
   type GetStateMessage,
@@ -114,6 +115,7 @@ export default defineBackground(() => {
           | PickMessage
           | InspectMessage
           | ExpandMessage
+          | EditMessage
           | ValueMessage,
       ) => {
         // Commands go to the tab's relay, which validates them (parseTreeCommand).

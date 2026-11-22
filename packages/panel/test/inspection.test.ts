@@ -150,3 +150,16 @@ test("stored() names the global a Store as global variable went to, only when as
   store.clearStored()
   expect(store.stored()).toBeUndefined()
 })
+
+test("edit sends a write for the inspected node at a row path", () => {
+  const { sent, store } = setup()
+  store.edit({ root: "props", keys: ["label"] }, "Total")
+  expect(sent).toEqual([])
+  store.inspect(3)
+  store.edit({ root: "props", keys: ["label"] }, "Total")
+  store.edit({ root: { hook: [0] }, keys: [] }, 7)
+  expect(sent.slice(1)).toEqual([
+    { type: "edit", id: 3, root: "props", path: ["label"], value: "Total" },
+    { type: "edit", id: 3, root: { hook: [0] }, path: [], value: 7 },
+  ])
+})

@@ -1,9 +1,12 @@
 import type {
   Container,
+  EditRoot,
+  EditValue,
   ExpandedMessage,
   InspectedData,
   InspectedMessage,
   Value,
+  ValueKey,
   ValueStoredMessage,
   ValueTarget,
   ValueTextMessage,
@@ -16,6 +19,13 @@ export type InspectorCommand =
   | { type: "inspect"; id: number | null }
   | { type: "expand"; objectId: number; offset: number }
   | { type: "copy-value" | "store-value"; target: ValueTarget }
+  | {
+      type: "edit"
+      id: number
+      root: EditRoot
+      path: ValueKey[]
+      value: EditValue
+    }
 
 export type InspectorStore = ReturnType<typeof createInspectorStore>
 
@@ -102,6 +112,12 @@ export function createInspectorStore(
       setOpen(map)
     },
     expansion: (objectId: number) => expansions().get(objectId),
+    // Writes a value of the inspected node; its re-send shows the result.
+    edit(path: RowPath, value: string | number | boolean) {
+      const at = id()
+      if (at === undefined) return
+      send({ type: "edit", id: at, root: path.root, path: path.keys, value })
+    },
     copyKey: copy,
     // Values are copied whole from the page: the panel's are cut and paged.
     copyValue(target: ValueTarget) {
