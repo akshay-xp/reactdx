@@ -1,5 +1,5 @@
 import { expect, test } from "vitest"
-import { fromEditValue } from "../src/edit.ts"
+import { copyWithDelete, copyWithRename, fromEditValue } from "../src/edit.ts"
 
 test("fromEditValue turns markers and tagged objects into values", () => {
   expect(fromEditValue({ type: "undefined" })).toBeUndefined()
@@ -21,4 +21,18 @@ test("fromEditValue turns markers and tagged objects into values", () => {
       { type: "object", props: { b: [{ type: "undefined" }], c: true } },
     ]),
   ).toEqual(["a", 1, null, { b: [undefined], c: true }])
+})
+
+test("copyWithDelete and copyWithRename copy along the path, leaving the original", () => {
+  const value = { a: 1, b: { c: [1, 2, 3] } }
+  expect(copyWithDelete(value, ["a"])).toEqual({ b: { c: [1, 2, 3] } })
+  expect(copyWithDelete(value, ["b", "c", 0])).toEqual({
+    a: 1,
+    b: { c: [2, 3] },
+  })
+  expect(copyWithRename(value, ["a"], "z")).toEqual({
+    b: { c: [1, 2, 3] },
+    z: 1,
+  })
+  expect(value).toEqual({ a: 1, b: { c: [1, 2, 3] } })
 })

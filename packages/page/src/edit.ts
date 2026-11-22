@@ -96,29 +96,52 @@ function allowed(root: unknown, path: Path, op: EditOp) {
 
 const renamed = (path: Path, to: string) => [...path.slice(0, -1), to]
 
-// A copy of `value` with `next` at `path`: each container along it copied (an
-// array by slice, an object by spread), as React's overrides do.
-export function copyWithSet(
+type Box = Record<ValueKey, unknown>
+
+// `value` with each container along `path` copied (an array by slice, an object
+// by spread), as React's overrides do, and `change` done to the last one at
+// the path's last key.
+function copyAlong(
   value: unknown,
-  path: ValueKey[],
-  next: unknown,
+  path: Path,
+  change: (container: Box, key: ValueKey) => void,
 ): unknown {
-  if (path.length === 0) return next
   const [key, ...rest] = path as [ValueKey, ...ValueKey[]]
-  const copy = Array.isArray(value)
-    ? value.slice()
-    : { ...(value as Record<string, unknown>) }
-  ;(copy as Record<ValueKey, unknown>)[key] = copyWithSet(
-    (value as Record<ValueKey, unknown>)[key],
-    rest,
-    next,
-  )
+  const copy = (
+    Array.isArray(value) ? value.slice() : { ...(value as Box) }
+  ) as Box
+  if (rest.length) copy[key] = copyAlong((value as Box)[key], rest, change)
+  else change(copy, key)
   return copy
 }
 
+export const copyWithSet = (value: unknown, path: Path, next: unknown) =>
+  path.length === 0
+    ? next
+    : copyAlong(value, path, (container, key) => {
+        container[key] = next
+      })
+
+// An array item is spliced out (the items after it move up); a key deleted.
+export const copyWithDelete = (value: unknown, path: Path) =>
+  copyAlong(value, path, (container, key) => {
+    if (Array.isArray(container)) container.splice(key as number, 1)
+    else delete container[key]
+  })
+
+export const copyWithRename = (value: unknown, path: Path, to: string) =>
+  copyAlong(value, path, (container, key) => {
+    container[to] = container[key]
+    delete container[key]
+  })
+
+// A class instance and its updater, which `replaceState` (createReactClass)
+// also uses: it replaces the state whole through the update queue.
 type ClassInstance = {
   state: unknown
-  setState: (update: (previous: unknown) => unknown) => void
+  updater: {
+    enqueueReplaceState: (instance: ClassInstance, state: unknown) => void
+  }
 }
 
 // Does `op` at `path` under `root`. `hooks`: the fiber's hooks as last read.
@@ -141,15 +164,22 @@ export function applyEdit(
     return
   }
   // React has no override for class state, and a render recomputes it from the
-  // update queue (a mutated instance.state is reverted): an update through the
-  // queue, its copy holding every key, so the merge is the copy (class
-  // components are tag 1).
+  // update queue (a mutated instance.state is reverted; setState merges, so it
+  // can't delete): the copy replaces it through the queue (class components
+  // are tag 1).
   if (root === "state") {
     const { tag, stateNode } = fiber as { tag: number; stateNode: unknown }
     const instance = stateNode as ClassInstance | null
-    if (tag !== 1 || !instance || op.op !== "set") return
-    if (!allowed(instance.state, path, op)) return
-    instance.setState((previous) => copyWithSet(previous, path, op.value))
+    if (tag !== 1 || !instance || !allowed(instance.state, path, op)) return
+    const { state } = instance
+    instance.updater.enqueueReplaceState(
+      instance,
+      op.op === "set"
+        ? copyWithSet(state, path, op.value)
+        : op.op === "delete"
+          ? copyWithDelete(state, path)
+          : copyWithRename(state, path, op.to),
+    )
     return
   }
   if (typeof root !== "object" || !("hook" in root)) return

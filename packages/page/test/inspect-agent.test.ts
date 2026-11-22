@@ -444,3 +444,26 @@ test("delete and rename write through React; adding is an edit at a new path", a
   expect(lastProps().user).toMatchObject({ props: { newKey: "" } })
   expect(lastProps().items).toMatchObject({ length: items.length })
 })
+
+test("class state: a key added, renamed and deleted (the state replaced)", async () => {
+  const clock = idOf("Clock")
+  inspect(clock)
+  const at = { id: clock, root: "state" }
+  const keys = () =>
+    Object.keys(
+      (
+        replies().at(-1)?.data?.state as unknown as
+          | { props: object }
+          | undefined
+      )?.props ?? {},
+    )
+  await edit({ ...at, path: ["extra"], value: 1 })
+  await settle()
+  expect(keys()).toEqual(["ticks", "extra"])
+  await pathCommand({ type: "rename-path", ...at, path: ["extra"], to: "more" })
+  await settle()
+  expect(keys()).toEqual(["ticks", "more"])
+  await pathCommand({ type: "delete-path", ...at, path: ["more"] })
+  await settle()
+  expect(keys()).toEqual(["ticks"])
+})
