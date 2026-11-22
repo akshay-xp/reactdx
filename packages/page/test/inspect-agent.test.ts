@@ -67,6 +67,10 @@ function Reducing() {
   })
   return h("del", null, state.count)
 }
+function Counted() {
+  const [count] = React.useState(5)
+  return h("var", null, count)
+}
 function Refs() {
   React.useRef(1)
   const [count] = React.useState(2)
@@ -91,6 +95,7 @@ beforeAll(async () => {
       h(Other, { key: "o" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
       h(Refs, { key: "r" }),
+      h(Counted, { key: "k", label: "x" }),
       h(Reducing, { key: "red" }),
       h(Nested, {
         key: "n",
@@ -466,4 +471,32 @@ test("class state: a key added, renamed and deleted (the state replaced)", async
   await pathCommand({ type: "delete-path", ...at, path: ["more"] })
   await settle()
   expect(keys()).toEqual(["ticks"])
+})
+
+test("rerender renders the inspected component once, nothing changed", async () => {
+  const counted = idOf("Counted")
+  inspect(counted)
+  const before = replies().at(-1)?.data
+  const commits = () => {
+    send({ source: "reactdx-relay", type: "get-snapshot" })
+    const snapshot = posted
+      .filter((m) => (m as { type?: string }).type === "snapshot")
+      .at(-1) as { roots: { commits: number }[] }
+    return snapshot.roots[0]?.commits ?? 0
+  }
+  const committed = commits()
+  const rerender = (id: number) =>
+    React.act(async () =>
+      send({ source: "reactdx-relay", type: "rerender", id }),
+    )
+  await rerender(counted)
+  expect(commits()).toBe(committed + 1)
+  await settle()
+  const after = replies().at(-1)?.data
+  expect(after?.props).toEqual(before?.props)
+  expect(after?.hooks).toEqual(before?.hooks)
+  // Not for another node, nor a DOM element.
+  await rerender(idOf("Other"))
+  await rerender(idOf("var"))
+  expect(commits()).toBe(committed + 1)
 })

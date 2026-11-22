@@ -29,6 +29,8 @@ export function fromEditValue(value: EditValue): unknown {
 // The development renderer's override functions (react-dom 18 and 19).
 type Path = ValueKey[]
 export type Renderer = {
+  // Renders the fiber again, its props and state unchanged.
+  scheduleUpdate?: (fiber: object) => void
   overrideProps?: (fiber: object, path: Path, value: unknown) => void
   overridePropsDeletePath?: (fiber: object, path: Path) => void
   overridePropsRenamePath?: (fiber: object, from: Path, to: Path) => void

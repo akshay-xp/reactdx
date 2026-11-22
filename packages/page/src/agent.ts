@@ -399,6 +399,14 @@ export function startAgent(
       // React commits the edit in a microtask; send its result then, not on
       // the next flush, since the developer is waiting on this one value.
       setTimeout(refresh)
+    } else if (data.type === "rerender") {
+      const command = parseTreeCommand(data)
+      if (command?.type !== "rerender" || command.id !== selected?.id) return
+      const fiber = tree.fiber(command.id)
+      // A DOM element (5) or text (6) has no render of its own.
+      if (!fiber || fiber.tag === 5 || fiber.tag === 6) return
+      rendererOf(fiber)?.scheduleUpdate?.(fiber)
+      setTimeout(refresh)
     } else if (data.type === "copy-value" || data.type === "store-value")
       useValue(parseTreeCommand(data))
     else if (data.type === "unwatch") {
