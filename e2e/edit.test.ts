@@ -62,3 +62,26 @@ for (const { fixture, port } of fixtures)
       await browser.close()
     }
   })
+
+for (const { fixture, port } of fixtures)
+  test(`${fixture}: a context edit changes its provider's value`, async () => {
+    const { browser, page, panel } = await panelFor(
+      name,
+      `http://localhost:${port}/hooks.html`,
+      "after",
+    )
+    try {
+      await page.waitForSelector("[data-testid=hooks]")
+      await selectListed(panel, "Hooks", (t) => t.includes('Theme: "dark"'))
+      await panel.edit('Theme: "dark"', '"light"')
+      const shown = await until(
+        panel.inspector,
+        (t) =>
+          t.includes('Theme: "light"') && t.includes('Context(Theme): "light"'),
+      )
+      assert.ok(shown.includes('Theme: "light"'), shown)
+      assert.ok(shown.includes('Context(Theme): "light"'), shown)
+    } finally {
+      await browser.close()
+    }
+  })
