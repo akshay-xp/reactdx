@@ -1071,3 +1071,22 @@ test("the row menu opens from the keyboard and gives focus back", async () => {
   choose("Copy key")
   expect(document.activeElement).toBe(rowOf(container, "a: 1"))
 })
+
+test("focus stays on its row across a re-send", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ a: 1, b: 2 }) }))
+  await settled()
+  rowOf(container, "b: 2").focus()
+  inspector.receive(inspected(3, { props: object({ a: 1, b: 3 }) }))
+  await settled()
+  expect(document.activeElement).toBe(rowOf(container, "b: 3"))
+  // Focus elsewhere isn't pulled in.
+  const outside = document.createElement("button")
+  document.body.append(outside)
+  outside.focus()
+  inspector.receive(inspected(3, { props: object({ a: 1, b: 4 }) }))
+  await settled()
+  expect(document.activeElement).toBe(outside)
+  outside.remove()
+})

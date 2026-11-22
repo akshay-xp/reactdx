@@ -6,11 +6,17 @@ import { onCleanup } from "solid-js"
 // and close rows by their `aria-expanded` and toggle.
 export function keyboardRows(root: HTMLElement) {
   let focused: string | undefined
+  // A row had focus and it hasn't gone elsewhere: a re-render that replaces the
+  // row (a re-send) gives it to the row with the same path.
+  let holding = false
   const rows = () => [...root.querySelectorAll<HTMLElement>("[role=treeitem]")]
   const sync = () => {
     const all = rows()
     const stop = all.find((row) => row.dataset.path === focused) ?? all[0]
     for (const row of all) row.tabIndex = row === stop ? 0 : -1
+    const lost =
+      !document.activeElement || document.activeElement === document.body
+    if (holding && lost && stop?.dataset.path === focused) stop?.focus()
   }
   const onFocusIn = (event: FocusEvent) => {
     const row = (event.target as Element).closest<HTMLElement>(
@@ -18,7 +24,16 @@ export function keyboardRows(root: HTMLElement) {
     )
     if (!row) return
     focused = row.dataset.path
+    holding = true
     sync()
+  }
+  const onFocusOut = (event: FocusEvent) => {
+    const to = event.relatedTarget as Node | null
+    if (to && !root.contains(to)) holding = false
+  }
+  // A press elsewhere (even on something that takes no focus) lets go.
+  const onPointerDown = (event: PointerEvent) => {
+    if (!root.contains(event.target as Node)) holding = false
   }
   const level = (row: HTMLElement) => Number(row.getAttribute("aria-level"))
   const toggle = (row: HTMLElement) =>
@@ -76,11 +91,15 @@ export function keyboardRows(root: HTMLElement) {
   const observer = new MutationObserver(sync)
   observer.observe(root, { childList: true, subtree: true })
   root.addEventListener("focusin", onFocusIn)
+  root.addEventListener("focusout", onFocusOut)
+  document.addEventListener("pointerdown", onPointerDown, true)
   root.addEventListener("keydown", onKeyDown)
   sync()
   onCleanup(() => {
     observer.disconnect()
     root.removeEventListener("focusin", onFocusIn)
+    root.removeEventListener("focusout", onFocusOut)
+    document.removeEventListener("pointerdown", onPointerDown, true)
     root.removeEventListener("keydown", onKeyDown)
   })
 }
