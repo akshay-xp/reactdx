@@ -35,6 +35,9 @@ export type RawHook = {
   value?: unknown
   hooks?: RawHook[]
   site?: CallSite
+  // State and Reducer: the hook's position in the fiber's hook list, which
+  // overrideHookState takes (page-only, not sent).
+  index?: number
 }
 
 type Call = {
@@ -42,6 +45,7 @@ type Call = {
   value?: unknown
   hasValue: boolean
   frames: Frame[]
+  index?: number
 }
 
 // Frames on a stub's stack above the custom hook chain: record(), the stub
@@ -89,6 +93,7 @@ function group(calls: Call[], depth: number): RawHook[] {
     else {
       const hook: RawHook = { name: call.name }
       if (call.hasValue) hook.value = call.value
+      if (call.index !== undefined) hook.index = call.index
       // The frame below React's own hook is the one that called it.
       const site =
         call.frames[ABOVE] && frameLocation(call.frames[ABOVE].source)
@@ -165,9 +170,12 @@ export function inspectHooks(
   let hook = fiber.memoizedState as HookState | null
   let context = fiber.dependencies?.firstContext ?? null
   const calls: Call[] = []
+  // How many list entries were read: the next one's index.
+  let entries = 0
   const next = () => {
     const current = hook
     hook = current?.next ?? null
+    entries++
     return current
   }
   const read = (of: Context) => {
@@ -192,12 +200,18 @@ export function inspectHooks(
     record(name, value)
     return [value, noop, false]
   }
-  const record = (name: string, value?: unknown, hasValue = true) =>
+  const record = (
+    name: string,
+    value?: unknown,
+    hasValue = true,
+    index?: number,
+  ) =>
     calls.push({
       name,
       value,
       hasValue,
       frames: parseStack(new Error().stack ?? ""),
+      ...(index !== undefined && { index }),
     })
   const effect = (name: string) => () => {
     const deps = (next()?.memoizedState as { deps?: unknown } | undefined)?.deps
@@ -248,19 +262,21 @@ export function inspectHooks(
       return Array(size).fill(MEMO_CACHE_SENTINEL)
     },
     useState(initial: unknown) {
+      const index = entries
       const state = next()
       const value = state
         ? state.memoizedState
         : typeof initial === "function"
           ? initial()
           : initial
-      record("State", value)
+      record("State", value, true, index)
       return [value, noop]
     },
     useReducer(_: unknown, arg: unknown, init?: (arg: unknown) => unknown) {
+      const index = entries
       const state = next()
       const value = state ? state.memoizedState : init ? init(arg) : arg
-      record("Reducer", value)
+      record("Reducer", value, true, index)
       return [value, noop]
     },
     useRef(initial: unknown) {
