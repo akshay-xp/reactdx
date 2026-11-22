@@ -282,6 +282,9 @@ export type EditMessage = {
   value: EditValue
 }
 
+// Panel to background: render the inspected node again, nothing changed.
+export type RerenderMessage = { type: "rerender"; tabId: number; id: number }
+
 // Panel to background: delete a key or item of the inspected node's value, or
 // rename a key (the last in `path`) to `to`.
 export type DeletePathMessage = {
@@ -326,6 +329,7 @@ export type TreeCommand =
       value: EditValue
     }
   | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
+  | { type: "rerender"; id: number }
   | {
       type: "rename-path"
       id: number
@@ -349,6 +353,7 @@ export function parseTreeCommand(data: unknown): TreeCommand | undefined {
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
   if (type === "inspect" && (id === null || isId(id))) return { type, id }
+  if (type === "rerender" && isId(id)) return { type, id }
   if (type === "expand" && isId(objectId) && isCount(offset))
     return { type, objectId, offset }
   if (type === "edit" && isId(id)) {

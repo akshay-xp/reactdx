@@ -279,3 +279,12 @@ test("path commands keep only their fields", () => {
     ),
   ).toEqual(pathCommand({ type: "rename-path", to: "b" }))
 })
+
+test("rerender keeps a valid id and only it", () => {
+  expect(parseTreeCommand({ type: "rerender", id: 3, extra: 1 })).toEqual({
+    type: "rerender",
+    id: 3,
+  })
+  for (const id of [0, "3", undefined])
+    expect(parseTreeCommand({ type: "rerender", id })).toBeUndefined()
+})
