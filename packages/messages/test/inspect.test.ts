@@ -306,6 +306,18 @@ test.each<[string, Record<string, unknown>]>([
   ).toBeUndefined()
 })
 
+test("a context hook names its context by read index; only a count passes", () => {
+  const data = { props: object({}), hooks: [{ name: "Context", context: 1 }] }
+  expect(parseInspected(inspected(3, data))).toEqual(inspected(3, data))
+  for (const context of [-1, 1.5, "1"])
+    expect(
+      parseInspected({
+        ...inspected(3, null),
+        data: { props: object({}), hooks: [{ name: "Context", context }] },
+      }),
+    ).toBeUndefined()
+})
+
 test("a context read can say it's the default value; nothing else passes there", () => {
   const data = {
     props: 1,

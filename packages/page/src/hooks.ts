@@ -38,6 +38,8 @@ export type RawHook = {
   // State and Reducer: the hook's position in the fiber's hook list, which
   // overrideHookState takes (page-only, not sent).
   index?: number
+  // A context read (useContext, use): the context object (page-only).
+  context?: unknown
 }
 
 // The hook at `indexes`: call indexes from the top, through custom hooks.
@@ -57,6 +59,7 @@ type Call = {
   hasValue: boolean
   frames: Frame[]
   index?: number
+  context?: unknown
 }
 
 // Frames on a stub's stack above the custom hook chain: record(), the stub
@@ -105,6 +108,7 @@ function group(calls: Call[], depth: number): RawHook[] {
       const hook: RawHook = { name: call.name }
       if (call.hasValue) hook.value = call.value
       if (call.index !== undefined) hook.index = call.index
+      if (call.context !== undefined) hook.context = call.context
       // The frame below React's own hook is the one that called it.
       const site =
         call.frames[ABOVE] && frameLocation(call.frames[ABOVE].source)
@@ -216,6 +220,7 @@ export function inspectHooks(
     value?: unknown,
     hasValue = true,
     index?: number,
+    context?: unknown,
   ) =>
     calls.push({
       name,
@@ -223,6 +228,7 @@ export function inspectHooks(
       hasValue,
       frames: parseStack(new Error().stack ?? ""),
       ...(index !== undefined && { index }),
+      ...(context !== undefined && { context }),
     })
   const effect = (name: string) => () => {
     const deps = (next()?.memoizedState as { deps?: unknown } | undefined)?.deps
@@ -233,13 +239,13 @@ export function inspectHooks(
     readContext: read,
     useContext(of: Context) {
       const value = read(of)
-      record(contextName(of), value)
+      record(contextName(of), value, true, undefined, of)
       return value
     },
     use(usable: unknown) {
       if ((usable as { $$typeof?: unknown })?.$$typeof === CONTEXT) {
         const value = read(usable as Context)
-        record(contextName(usable as Context), value)
+        record(contextName(usable as Context), value, true, undefined, usable)
         return value
       }
       if (!isThenable(usable)) throw new Error("Unsupported use() argument")

@@ -36,8 +36,11 @@ export function keyboardRows(root: HTMLElement) {
     if (!root.contains(event.target as Node)) holding = false
   }
   const level = (row: HTMLElement) => Number(row.getAttribute("aria-level"))
+  // A section header is its own toggle.
   const toggle = (row: HTMLElement) =>
-    row.querySelector<HTMLElement>("[data-testid=value-toggle]")?.click()
+    (
+      row.querySelector<HTMLElement>("[data-testid=value-toggle]") ?? row
+    ).click()
   // Right opens a closed row or moves into an open one; Left closes an open row
   // or moves to its parent (the nearest earlier row a level up).
   const sideways = (all: HTMLElement[], at: number, key: string) => {

@@ -302,12 +302,18 @@ export function startAgent(
     const ref = rendererOf(fiber)?.currentDispatcherRef
     const read = ref && inspectHooks(fiber as unknown as HooksFiber, ref)
     if (read) {
-      const describeHook = (hook: RawHook): HookValue => ({
-        name: hook.name,
-        ...("value" in hook && { value: serialize(hook.value) as Value }),
-        ...(hook.hooks && { hooks: hook.hooks.map(describeHook) }),
-        ...(hook.site && { site: hook.site }),
-      })
+      const describeHook = (hook: RawHook): HookValue => {
+        const context = contexts.findIndex(
+          (read) => read.context === hook.context,
+        )
+        return {
+          name: hook.name,
+          ...("value" in hook && { value: serialize(hook.value) as Value }),
+          ...(hook.hooks && { hooks: hook.hooks.map(describeHook) }),
+          ...(hook.site && { site: hook.site }),
+          ...(context !== -1 && { context }),
+        }
+      }
       data.hooks = read.hooks.map(describeHook)
       selected.hooks = read.hooks
       if (read.error !== undefined) data.hooksError = read.error

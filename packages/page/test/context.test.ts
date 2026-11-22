@@ -42,6 +42,16 @@ test("the contexts a function component reads, once each, in order; one with no 
   ])
 })
 
+test("each context hook names its context by read index, for the panel to edit it there", async () => {
+  const data = await inspect(dark(h(Reader)), "Reader")
+  expect(data?.hooks?.map((hook) => hook.context)).toEqual([0, 0, 1])
+})
+
+test.skipIf(!react19)("so does use() of a context", async () => {
+  const data = await inspect(dark(h(UseReader)), "UseReader")
+  expect(data?.hooks?.map((hook) => hook.context)).toEqual([0])
+})
+
 test("copy-value copies a context read by index", async () => {
   await inspect(dark(h(Reader)), "Reader")
   send({ source: "reactdx-relay", type: "copy-value", target: { context: 1 } })

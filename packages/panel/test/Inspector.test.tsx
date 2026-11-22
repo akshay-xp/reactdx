@@ -328,7 +328,7 @@ test("search reaches loaded values, expanding their ancestors only while it filt
   expect(rows(container)).toEqual(["a: {b: {...}}", "deep: {...}", "other: 1"])
 
   // A collapsed section opens while filtering, and is collapsed again after.
-  fireEvent.click(getByRole("button", { name: "Props" }))
+  fireEvent.click(getByRole("treeitem", { name: "Props" }))
   expect(rows(container)).toEqual([])
   search(container, "other")
   expect(rows(container)).toEqual(["other: 1"])
@@ -992,17 +992,20 @@ test("rows are one tab stop; Up, Down, Home and End move focus", async () => {
     [...container.querySelectorAll("[data-testid=value]")].map((row) =>
       row.getAttribute("tabindex"),
     )
-  expect(tabs()).toEqual(["0", "-1", "-1"])
+  // The Props header holds it until a row is focused (it's a row too).
+  expect(tabs()).toEqual(["-1", "-1", "-1"])
   rowOf(container, "a: 1").focus()
   press("ArrowDown")
   expect(document.activeElement).toBe(rowOf(container, "b: 2"))
   expect(tabs()).toEqual(["-1", "0", "-1"])
   press("End")
   expect(document.activeElement).toBe(rowOf(container, "c: 3"))
-  press("Home")
-  expect(document.activeElement).toBe(rowOf(container, "a: 1"))
+  press("ArrowUp")
   press("ArrowUp")
   expect(document.activeElement).toBe(rowOf(container, "a: 1"))
+  press("Home")
+  press("ArrowUp")
+  expect(document.activeElement?.textContent).toBe("Props")
 })
 
 test("Right and Left open, close and move between levels", async () => {
@@ -1033,9 +1036,9 @@ test("Right and Left open, close and move between levels", async () => {
   expect(document.activeElement).toBe(obj())
   press("ArrowLeft")
   expect(expanded()).toBe("false")
-  // Nothing to open, nowhere up to go.
+  // Nothing to open: up to its section's header.
   press("ArrowLeft")
-  expect(document.activeElement).toBe(obj())
+  expect(document.activeElement?.textContent).toBe("Props")
   rowOf(container, "n: 1").focus()
   press("ArrowRight")
   expect(document.activeElement).toBe(rowOf(container, "n: 1"))
@@ -1050,6 +1053,57 @@ test("Right and Left open, close and move between levels", async () => {
   expect(document.activeElement).toBe(rowOf(container, "State: 2"))
   press("ArrowLeft")
   expect(document.activeElement).toBe(cart())
+})
+
+test("section headers are rows: Tab reaches each section's rows by arrows, Left and Right close and open it", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ a: 1 }), hooks }))
+  await settled()
+  const header = (name: string) =>
+    [...container.querySelectorAll<HTMLElement>("[role=treeitem]")].find(
+      (row) => row.tagName === "BUTTON" && row.textContent === name,
+    ) as HTMLElement
+  const stops = () =>
+    [...container.querySelectorAll<HTMLElement>("[tabindex='0']")].filter(
+      (el) => el.closest("[role=tree]"),
+    )
+  // One stop for the whole tree: the first header until a row is focused.
+  expect(stops()).toEqual([header("Props")])
+  rowOf(container, "a: 1").focus()
+  press("ArrowDown")
+  expect(document.activeElement).toBe(header("Hooks"))
+  press("ArrowDown")
+  expect(document.activeElement).toBe(rowOf(container, "State: 0"))
+  press("ArrowLeft")
+  expect(document.activeElement).toBe(header("Hooks"))
+  press("ArrowLeft")
+  expect(header("Hooks").getAttribute("aria-expanded")).toBe("false")
+  expect(rowOf(container, "State: 0")).toBeUndefined()
+  press("ArrowRight")
+  expect(header("Hooks").getAttribute("aria-expanded")).toBe("true")
+  press("ArrowRight")
+  expect(document.activeElement).toBe(rowOf(container, "State: 0"))
+  expect(stops()).toEqual([rowOf(container, "State: 0")])
+})
+
+test("an editable value is marked (on hover or focus); a read-only one isn't", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ a: 1 }),
+      hooks: [...hooks, { name: "Ref", value: 5 }],
+    }),
+  )
+  await settled()
+  const marked = (text: string) =>
+    rowOf(container, text)
+      .querySelector("[data-value]")
+      ?.classList.contains("editable-value")
+  expect(marked("a: 1")).toBe(true)
+  expect(marked("State: 0")).toBe(true)
+  expect(marked("Ref: 5")).toBe(false)
 })
 
 test("the row menu opens from the keyboard and gives focus back", async () => {
@@ -1533,4 +1587,40 @@ test("Show fallback and Show error: only with a boundary, pressed while forced; 
     kind: "fallback",
     on: false,
   })
+})
+
+test("a context hook's value opens its Context row's editor (Hooks shows it collapsed too); a default one's doesn't", async () => {
+  const { container, inspector, getByRole, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      hooks: [
+        { name: "Context(Theme)", value: "dark", context: 0 },
+        { name: "Context", value: null, context: 1 },
+      ],
+      contexts: [
+        { name: "Theme", value: "dark" },
+        { name: "Context", value: null, default: true },
+      ],
+    }),
+  )
+  await settled()
+  const hook = (text: string) => rowOf(container, text)
+  const marked = (text: string) =>
+    hook(text)
+      .querySelector("[data-value]")
+      ?.classList.contains("editable-value")
+  expect(marked('Context(Theme): "dark"')).toBe(true)
+  expect(marked("Context: null")).toBe(false)
+  fireEvent.click(getByRole("treeitem", { name: "Context" }))
+  fireEvent.click(valuePart(container, 'Context(Theme): "dark"'))
+  const input = editor(container) as HTMLInputElement
+  expect(input?.getAttribute("aria-label")).toBe("Edit Theme")
+  expect(document.activeElement).toBe(input)
+  fireEvent.keyDown(input, { key: "Escape" })
+  expect(document.activeElement).toBe(rowOf(container, 'Theme: "dark"'))
+  hook('Context(Theme): "dark"').focus()
+  press("Enter")
+  expect(editor(container)?.getAttribute("aria-label")).toBe("Edit Theme")
 })

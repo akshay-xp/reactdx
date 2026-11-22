@@ -79,6 +79,8 @@ export type HookValue = {
   value?: Value
   hooks?: HookValue[]
   site?: CallSite
+  // A context read: its index in `contexts` (read order), where it's edited.
+  context?: number
 }
 
 // A context the node read, by its displayName ("Context" without one).
@@ -463,7 +465,10 @@ function parseHooks(
   const out: HookValue[] = []
   for (const item of data) {
     if (--count.left < 0 || typeof item !== "object" || item === null) return
-    const { name, value, hooks, site } = item as Record<string, unknown>
+    const { name, value, hooks, site, context } = item as Record<
+      string,
+      unknown
+    >
     if (!isName(name)) return
     const hook: HookValue = { name }
     if (value !== undefined) {
@@ -480,6 +485,10 @@ function parseHooks(
       const parsed = parseCallSite(site)
       if (!parsed) return
       hook.site = parsed
+    }
+    if (context !== undefined) {
+      if (!isCount(context)) return
+      hook.context = context
     }
     out.push(hook)
   }

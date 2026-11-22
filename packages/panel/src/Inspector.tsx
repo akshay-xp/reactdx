@@ -211,7 +211,7 @@ export type Settings = {
 const STORED_MS = 4000
 // A value, hook or context row: one of the keyboard rows (src/rows.ts).
 const ROW =
-  "flex min-h-5 items-center whitespace-nowrap pr-2 focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1 focus:outline-none"
+  "group flex min-h-5 items-center whitespace-nowrap pr-2 focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1"
 
 // The selected node's values (docs/panel.md, Inspector). Page data is text only.
 export function Inspector(props: {
@@ -346,6 +346,25 @@ export function Inspector(props: {
     (props.inspector.data()?.contexts ?? [])
       .map((context, read) => ({ ...context, read }))
       .sort((a, b) => byName(a.name, b.name))
+  // A context hook's value is edited in its Context row (the provider's value,
+  // which every reader sees): opening the section, that row's editor. None for
+  // a default value (read-only).
+  let values!: HTMLDivElement
+  const editContext = (read: number) => {
+    const context = props.inspector.data()?.contexts?.[read]
+    if (!context || context.default) return undefined
+    return () => {
+      if (collapsed().has("Context")) toggle("Context")
+      const key = pathKey({ root: { context: read }, keys: [] })
+      const row = [
+        ...values.querySelectorAll<HTMLElement>("[role=treeitem]"),
+      ].find((at) => at.dataset.path === key)
+      row?.focus()
+      row?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      )
+    }
+  }
   const contextShows = (context: Entry) =>
     entryShows(props.inspector, context, query())
   const hooksShow = () =>
@@ -462,6 +481,7 @@ export function Inspector(props: {
               aria-label="Values"
               class="overflow-y-auto"
               ref={(el) => {
+                values = el
                 paintMatches(el, query)
                 keyboardRows(el)
               }}
@@ -523,6 +543,7 @@ export function Inspector(props: {
                     query={query()}
                     labelOf={labelOf}
                     nameFound={nameFound}
+                    editContext={editContext}
                     onMenu={onMenu}
                   />
                 </Section>
@@ -647,10 +668,14 @@ function Section(props: {
   const open = () => props.open || props.forced
   return (
     <section data-testid="section" class="border-border border-b py-1">
+      {/* A row of the values tree (Keyboard), above its rows. */}
       <button
         type="button"
+        role="treeitem"
+        aria-level={1}
         aria-expanded={open()}
-        class="flex w-full items-center gap-1 px-2 py-0.5 font-medium text-muted hover:text-fg"
+        data-path={`section:${props.name}`}
+        class="flex w-full items-center gap-1 px-2 py-0.5 font-medium text-muted hover:text-fg focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1"
         onClick={props.onToggle}
       >
         <Triangle open={open()} />
@@ -737,6 +762,8 @@ function HookRows(props: {
   query: string
   labelOf: (hook: HookValue) => string
   nameFound: (site: CallSite, name: string) => void
+  // A context hook's edit, by the context's read index (Inspector editContext).
+  editContext: (read: number) => (() => void) | undefined
   onMenu: OnMenu
 }) {
   return (
@@ -776,7 +803,7 @@ function HookRows(props: {
                       data-testid="value"
                       role="treeitem"
                       tabIndex={-1}
-                      aria-level={props.depth + 1}
+                      aria-level={props.depth + 2}
                       aria-expanded={shownOpen()}
                       data-path={pathKey(path())}
                       class={ROW}
@@ -819,6 +846,7 @@ function HookRows(props: {
                         query={props.query}
                         labelOf={props.labelOf}
                         nameFound={props.nameFound}
+                        editContext={props.editContext}
                         onMenu={props.onMenu}
                       />
                     </Show>
@@ -830,6 +858,11 @@ function HookRows(props: {
                   inspector={props.inspector}
                   entry={{ name: label(), value: hook.value as Value }}
                   editable={hook.name === "State" || hook.name === "Reducer"}
+                  editAt={
+                    hook.context === undefined
+                      ? undefined
+                      : props.editContext(hook.context)
+                  }
                   path={path()}
                   depth={props.depth}
                   query={props.query}
@@ -842,7 +875,7 @@ function HookRows(props: {
                   data-testid="value"
                   role="treeitem"
                   tabIndex={-1}
-                  aria-level={props.depth + 1}
+                  aria-level={props.depth + 2}
                   data-path={pathKey(path())}
                   data-search-text
                   class={`${ROW} text-syntax-key`}
@@ -936,6 +969,8 @@ function ValueRow(props: {
   target?: ValueTarget
   // The page can write it (a top-level prop, a state hook).
   editable?: boolean
+  // Edited in another row instead (a context hook, in its Context row).
+  editAt?: () => void
   // Its container is a plain object (its key can be renamed), and the names
   // there (a rename can't take one).
   objectKey?: boolean
@@ -948,7 +983,7 @@ function ValueRow(props: {
   let row!: HTMLDivElement
   // Any editable value but a boolean (which flips) is typed; what the panel holds
   // only part of opens empty, to be replaced (editText).
-  const canEdit = () => props.editable && !isFlag()
+  const canEdit = () => (props.editable && !isFlag()) || Boolean(props.editAt)
   // A boolean flips (its checkbox, or Space on the row); the page's re-send
   // shows the result, so the checkbox never runs ahead of it.
   const isFlag = () => props.editable && typeof value() === "boolean"
@@ -956,6 +991,7 @@ function ValueRow(props: {
   const [editing, setEditing] = createSignal(false)
   const [invalid, setInvalid] = createSignal(false)
   const edit = () => {
+    if (props.editAt) return props.editAt()
     if (!canEdit()) return
     setInvalid(false)
     setEditing(true)
@@ -1061,7 +1097,7 @@ function ValueRow(props: {
         data-testid="value"
         role="treeitem"
         tabIndex={-1}
-        aria-level={props.depth + 1}
+        aria-level={props.depth + 2}
         aria-expanded={openable() ? shownOpen() : undefined}
         data-path={pathKey(props.path)}
         class={ROW}
@@ -1125,7 +1161,7 @@ function ValueRow(props: {
               data-search-text
               data-value
               class={tone(value())}
-              classList={{ "cursor-text": canEdit() }}
+              classList={{ "editable-value": canEdit() }}
             >
               {previewText(value())}
             </span>
