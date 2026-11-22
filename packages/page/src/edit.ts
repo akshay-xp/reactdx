@@ -39,6 +39,24 @@ export type Renderer = {
 
 const STATE_HOOKS = new Set(["State", "Reducer"])
 
+const isPlain = (value: unknown) =>
+  Array.isArray(value) ||
+  (typeof value === "object" &&
+    value !== null &&
+    [Object.prototype, null].includes(Object.getPrototypeOf(value)))
+
+// Every container the path writes through, from `root`, is a plain object or
+// array: React's copy would turn a Map, Set or class instance into an object.
+// Read through descriptors, so no getter runs.
+export function plainPath(root: unknown, path: ValueKey[]) {
+  let at = root
+  for (const key of path.slice(0, -1)) {
+    if (!isPlain(at)) return false
+    at = Object.getOwnPropertyDescriptor(at, key)?.value
+  }
+  return path.length === 0 || isPlain(at)
+}
+
 // Writes `value` at `path` under `root`. `hooks`: the fiber's hooks as last read.
 // Anything it can't write (another root, a hook without state) is ignored.
 export function applyEdit(
@@ -49,9 +67,14 @@ export function applyEdit(
   value: unknown,
   hooks: RawHook[] = [],
 ) {
-  if (root === "props") return renderer.overrideProps?.(fiber, path, value)
+  if (root === "props") {
+    if (plainPath((fiber as { memoizedProps: unknown }).memoizedProps, path))
+      renderer.overrideProps?.(fiber, path, value)
+    return
+  }
   if (typeof root !== "object" || !("hook" in root)) return
   const hook = hookAt(hooks, root.hook)
-  if (hook && STATE_HOOKS.has(hook.name) && hook.index !== undefined)
+  if (!hook || !STATE_HOOKS.has(hook.name) || hook.index === undefined) return
+  if (plainPath(hook.value, path))
     renderer.overrideHookState?.(fiber, hook.index, path, value)
 }

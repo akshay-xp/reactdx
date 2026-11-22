@@ -41,6 +41,25 @@ function Other() {
 function Deep(_: { data: unknown }) {
   return null
 }
+type User = { name: string; address: { city: string; zip: string } }
+const Child = React.memo(function Child(props: { user: User }) {
+  return h("em", null, `${props.user.address.city} ${props.user.address.zip}`)
+})
+class Point {
+  constructor(public x: number) {}
+}
+function Nested(props: {
+  user: User
+  items: number[]
+  tags: Map<string, number>
+  point: Point
+}) {
+  const [form] = React.useState({ name: "a", age: 1 })
+  return [
+    h(Child, { key: "c", user: props.user }),
+    h("s", { key: "s" }, `${form.name} ${form.age}`),
+  ]
+}
 function Refs() {
   React.useRef(1)
   const [count] = React.useState(2)
@@ -65,6 +84,13 @@ beforeAll(async () => {
       h(Other, { key: "o" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
       h(Refs, { key: "r" }),
+      h(Nested, {
+        key: "n",
+        user: { name: "Ada", address: { city: "Paris", zip: "75" } },
+        items: [1, 2, 3],
+        tags: new Map([["k", 1]]),
+        point: new Point(1),
+      }),
     ]),
   )
 })
@@ -287,4 +313,41 @@ test("an edit's result is sent as soon as React commits it, before the flush", a
   // The flush finds nothing new to send.
   await flushed()
   expect(replies()).toHaveLength(sent + 1)
+})
+
+const settle = () =>
+  React.act(() => new Promise((resolve) => setTimeout(resolve, 10)))
+const lastProps = () =>
+  (
+    replies().at(-1)?.data?.props as unknown as
+      | { props: Record<string, Record<string, unknown>> }
+      | undefined
+  )?.props ?? {}
+
+test("edits reach any depth, copying the path, through plain objects and arrays only", async () => {
+  const nested = idOf("Nested")
+  inspect(nested)
+  await edit({
+    id: nested,
+    root: "props",
+    path: ["user", "address", "city"],
+    value: "Lyon",
+  })
+  await settle()
+  // The memo child re-rendered: its prop is a new object.
+  expect(text("em")).toBe("Lyon 75")
+  expect(lastProps().user).toMatchObject({ props: { name: "Ada" } })
+  await edit({ id: nested, root: "props", path: ["items", 2], value: 9 })
+  await settle()
+  expect(lastProps().items).toMatchObject({ items: [1, 2, 9] })
+  await edit({ id: nested, root: { hook: [0] }, path: ["name"], value: "b" })
+  expect(text("s")).toBe("b 1")
+  await settle()
+  const sent = replies().length
+  await edit({ id: nested, root: "props", path: ["tags", "k"], value: 2 })
+  await edit({ id: nested, root: "props", path: ["point", "x"], value: 5 })
+  await settle()
+  expect(replies()).toHaveLength(sent)
+  expect(lastProps().tags?.type).toBe("map")
+  expect(lastProps().point?.className).toBe("Point")
 })
