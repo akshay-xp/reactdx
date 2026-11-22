@@ -313,6 +313,61 @@ test("a selected Cell's hooks show within 100 ms", { skip }, async (t) => {
 
 type Counted = Window & { inspectedCount?: number }
 
+// An edit of the selected Cell's state, timed from Enter in its editor until the
+// inspector shows the page's re-send.
+const editCell = (
+  panel: Awaited<ReturnType<typeof benchPanel>>["panel"],
+  from: number,
+  to: number,
+) =>
+  panel.evaluate(
+    ({ from, to }) =>
+      new Promise<number>((resolve) => {
+        const row = [...document.querySelectorAll("[data-testid=value]")].find(
+          (el) => el.textContent === `State: ${from}`,
+        )
+        ;(row?.querySelector("[data-value]") as HTMLElement | null)?.click()
+        const input = document.querySelector(
+          "[data-testid=value-input]",
+        ) as HTMLInputElement
+        input.value = String(to)
+        const inspector = () =>
+          document.querySelector("[data-testid=inspector]")?.textContent ?? ""
+        const start = performance.now()
+        new MutationObserver((_, observer) => {
+          if (!inspector().includes(`State: ${to}`)) return
+          observer.disconnect()
+          resolve(performance.now() - start)
+        }).observe(document.body, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        })
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+        )
+      }),
+    { from, to },
+  )
+
+// The median of five edits, as for selections.
+test("an edited value shows within 100 ms", { skip }, async (t) => {
+  const { browser, panel } = await benchPanel()
+  try {
+    await selectCell(panel)
+    const times: number[] = []
+    for (const to of [1, 2, 3, 4, 5])
+      times.push(await editCell(panel, to - 1, to))
+    const median = [...times].sort((a, b) => a - b)[2] as number
+    t.diagnostic(
+      `median ${median.toFixed(0)} ms of ${times.map((ms) => ms.toFixed(0)).join(", ")}`,
+    )
+    assert.ok(median < 100, `${median} ms (${times.join(", ")})`)
+  } finally {
+    await browser.close()
+  }
+})
+
 test("an unrelated commit sends no inspected message", { skip }, async () => {
   const { browser, page, panel } = await benchPanel()
   try {

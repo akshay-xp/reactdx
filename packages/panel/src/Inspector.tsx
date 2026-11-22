@@ -815,6 +815,8 @@ function ValueInput(props: {
       <input
         ref={input}
         data-testid="value-input"
+        // No form history: Firefox would make it an autocomplete combobox.
+        autocomplete="off"
         aria-label={`Edit ${props.label}`}
         aria-invalid={props.invalid}
         value={props.text}
