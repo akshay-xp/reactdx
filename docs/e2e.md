@@ -109,3 +109,9 @@ Per fixture, with the store RDT installed, each case asserts that RDT's backend 
 - `docs/fixtures.md`: ports and test ids.
 - `docs/unit-tests.md`: Vitest unit tests on React 18 and 19.
 - `docs/ci.md`: the e2e matrix in CI.
+
+## Milestone checks (M5: Editing)
+
+- With RDT's hook installed first: `packages/page/test/rdt-edit.test.ts` (React 18 and 19) edits a prop and forces a Suspense fallback through the agent with a stand-in RDT hook defined on the window before ReactDX's (as RDT 8 does): both land, the agent reaching the renderer through RDT's hook. (`e2e/coexist.test.ts` checks both hooks see commits with the real RDT.)
+- Production builds show no edit controls: they get no inspector at all, only the production notice (`e2e/panel.test.ts`).
+- Keyboard: every edit and control is reachable without a mouse (unit tests in `packages/panel/test/Inspector.test.tsx`): rows are one tab stop with arrow keys; Enter or F2 opens a value's editor, Space flips a boolean; Shift+F10 or the context-menu key opens the row menu (Add key, Add item, Rename key, Delete); the header's Force re-render, Show fallback and Show error are buttons.
