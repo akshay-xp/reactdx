@@ -26,6 +26,12 @@ import {
   valueStored,
   valueText,
 } from "@reactdx/messages"
+import {
+  type BoundaryKind,
+  boundariesOf,
+  createForcing,
+  type ForcingRenderer,
+} from "./boundaries.ts"
 import { applyEdit, type EditOp, fromEditValue, type Renderer } from "./edit.ts"
 import type { FiberRoot, Hook, HookRecord } from "./hook.ts"
 import {
@@ -221,6 +227,33 @@ export function startAgent(
           | undefined
       }
   }
+  // One forcing per renderer, made on its first force.
+  const forcings = new Map<object, ReturnType<typeof createForcing>>()
+  const forcingOf = (renderer: ForcingRenderer) => {
+    let forcing = forcings.get(renderer)
+    if (!forcing) {
+      forcing = createForcing(renderer)
+      forcings.set(renderer, forcing)
+    }
+    return forcing
+  }
+  // The nearest boundaries the tree knows, by id, and whether each is forced.
+  const boundariesFor = (fiber: Fiber) => {
+    const found = boundariesOf(fiber)
+    const renderer = rendererOf(fiber)
+    const out: { [kind in BoundaryKind]?: { id: number; on: boolean } } = {}
+    for (const kind of ["fallback", "error"] as const) {
+      const boundary = found[kind]
+      const node = boundary && tree.known(boundary)
+      if (!boundary || !node) continue
+      const forcing = renderer && forcings.get(renderer)
+      out[kind] = {
+        id: node.id,
+        on: forcing?.isForced(kind, boundary) ?? false,
+      }
+    }
+    return out.fallback || out.error ? out : undefined
+  }
   // Who rendered the fiber, nearest first: tree nodes by id, Server Components
   // (React 19 ReactComponentInfo, not in the tree) by name.
   const ownersOf = (fiber: Fiber) => {
@@ -258,6 +291,8 @@ export function startAgent(
     data.owners = ownersOf(fiber)
     const source = sourceOf(fiber)
     if (source) data.source = source
+    const boundaries = boundariesFor(fiber)
+    if (boundaries) data.boundaries = boundaries
     if (contexts.length)
       data.contexts = contexts.map(({ name, value, context }) => ({
         name,
@@ -399,6 +434,20 @@ export function startAgent(
       // React commits the edit in a microtask; send its result then, not on
       // the next flush, since the developer is waiting on this one value.
       setTimeout(refresh)
+    } else if (data.type === "force") {
+      const command = parseTreeCommand(data)
+      if (command?.type !== "force" || command.id !== selected?.id) return
+      const fiber = tree.fiber(command.id)
+      const boundary = fiber && boundariesOf(fiber)[command.kind]
+      const renderer = fiber && rendererOf(fiber)
+      if (!boundary || !renderer) return
+      forcingOf(renderer).force(command.kind, boundary, command.on)
+      // Its props and state didn't change, so the flush wouldn't re-send it:
+      // send whether the boundary is forced now, after React's commit.
+      const { id } = command
+      setTimeout(() => {
+        if (selected?.id === id) post(inspected(id, describe(id)))
+      })
     } else if (data.type === "rerender") {
       const command = parseTreeCommand(data)
       if (command?.type !== "rerender" || command.id !== selected?.id) return
