@@ -345,7 +345,8 @@ export async function openPanelText(
     // the key (no row for a moment, a stale accessible whose takeFocus throws,
     // or a focus that went nowhere): find, focus and press again until the
     // editor shows.
-    for (let attempt = 1; ; attempt++) {
+    const deadline = Date.now() + 5000
+    for (;;) {
       const focused = await onAccessible(
         `node.role === ${role("OUTLINEITEM")} && node.name === ${json(row)}`,
         `${enter}
@@ -368,7 +369,7 @@ export async function openPanelText(
         if (done) return
         await new Promise((resolve) => setTimeout(resolve, 100))
       }
-      if (attempt === 3) throw new Error(`no editor for ${row}`)
+      if (Date.now() > deadline) throw new Error(`no editor for ${row}`)
       if (!focused) await new Promise((resolve) => setTimeout(resolve, 200))
     }
   }

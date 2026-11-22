@@ -17,15 +17,20 @@ before(async () => {
 })
 after(() => stop?.())
 
-// Polls an async check until it holds or 5 s pass; returns the last value.
+// Polls an async check until it holds or 5 s pass; returns the last value. A
+// read that throws is retried: Firefox replaces a button's accessible as it
+// re-renders (pressed), so it's missing for a moment.
 async function poll<T>(read: () => Promise<T>, done: (value: T) => boolean) {
   const deadline = Date.now() + 5000
-  let value = await read()
-  while (!done(value) && Date.now() < deadline) {
+  for (;;) {
+    try {
+      const value = await read()
+      if (done(value) || Date.now() > deadline) return value
+    } catch (error) {
+      if (Date.now() > deadline) throw error
+    }
     await new Promise((resolve) => setTimeout(resolve, 100))
-    value = await read()
   }
-  return value
 }
 
 async function pickerOn(panel: PanelText) {
