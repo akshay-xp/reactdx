@@ -26,10 +26,12 @@ import {
   valueStored,
   valueText,
 } from "@reactdx/messages"
+import { applyEdit, fromEditValue, type Renderer } from "./edit.ts"
 import type { FiberRoot, Hook, HookRecord } from "./hook.ts"
 import {
   type DispatcherRef,
   type HooksFiber,
+  hookAt,
   inspectHooks,
   type RawHook,
 } from "./hooks.ts"
@@ -192,9 +194,9 @@ export function startAgent(
         hooks?: RawHook[]
       }
     | undefined
-  // The dispatcher of the renderer that owns the fiber's root (HostRoot, tag 3),
-  // from the global hook, which holds the renderer objects React injected.
-  const dispatcherOf = (fiber: Fiber) => {
+  // The renderer that owns the fiber's root (HostRoot, tag 3), from the global
+  // hook, which holds the renderer objects React injected.
+  const rendererOf = (fiber: Fiber) => {
     let at: Fiber | null = fiber
     while (at && at.tag !== 3) at = at.return
     const root = at?.stateNode as FiberRoot | undefined
@@ -202,10 +204,9 @@ export function startAgent(
       if (root && set.has(root)) {
         const hook = (scope as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook })
           .__REACT_DEVTOOLS_GLOBAL_HOOK__
-        const renderer = hook?.renderers.get(rendererId) as
-          | { currentDispatcherRef?: DispatcherRef }
+        return hook?.renderers.get(rendererId) as
+          | (Renderer & { currentDispatcherRef?: DispatcherRef })
           | undefined
-        return renderer?.currentDispatcherRef
       }
   }
   // Who rendered the fiber, nearest first: tree nodes by id, Server Components
@@ -250,7 +251,7 @@ export function startAgent(
         name,
         value: serialize(value) as Value,
       }))
-    const ref = dispatcherOf(fiber)
+    const ref = rendererOf(fiber)?.currentDispatcherRef
     const read = ref && inspectHooks(fiber as unknown as HooksFiber, ref)
     if (read) {
       const describeHook = (hook: RawHook): HookValue => ({
@@ -276,12 +277,7 @@ export function startAgent(
     if ("objectId" in target)
       return selected.values.find(target.objectId, target.key)
     if ("hook" in target) {
-      let hook: RawHook | undefined
-      let list = selected.hooks
-      for (const index of target.hook) {
-        hook = list?.[index]
-        list = hook?.hooks
-      }
+      const hook = hookAt(selected.hooks, target.hook)
       return hook && "value" in hook ? { value: hook.value } : undefined
     }
     const contexts = selected.sent?.contexts ?? []
@@ -361,6 +357,20 @@ export function startAgent(
         if (value !== undefined)
           post(expanded(objectId, offset, value as Value))
       }
+    } else if (data.type === "edit") {
+      const command = parseTreeCommand(data)
+      if (command?.type !== "edit" || command.id !== selected?.id) return
+      const fiber = tree.fiber(command.id)
+      const renderer = fiber && rendererOf(fiber)
+      if (!renderer) return
+      applyEdit(
+        renderer,
+        fiber,
+        command.root,
+        command.path,
+        fromEditValue(command.value),
+        selected.hooks,
+      )
     } else if (data.type === "copy-value" || data.type === "store-value")
       useValue(parseTreeCommand(data))
     else if (data.type === "unwatch") {

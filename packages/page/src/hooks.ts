@@ -40,6 +40,17 @@ export type RawHook = {
   index?: number
 }
 
+// The hook at `indexes`: call indexes from the top, through custom hooks.
+export function hookAt(hooks: RawHook[] = [], indexes: number[]) {
+  let hook: RawHook | undefined
+  let list: RawHook[] | undefined = hooks
+  for (const index of indexes) {
+    hook = list?.[index]
+    list = hook?.hooks
+  }
+  return hook
+}
+
 type Call = {
   name: string
   value?: unknown

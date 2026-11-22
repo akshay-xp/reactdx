@@ -41,6 +41,11 @@ function Other() {
 function Deep(_: { data: unknown }) {
   return null
 }
+function Refs() {
+  React.useRef(1)
+  const [count] = React.useState(2)
+  return h("u", null, count)
+}
 
 // One hook and one agent per file: react-dom registers once per module load.
 beforeAll(async () => {
@@ -59,6 +64,7 @@ beforeAll(async () => {
       h(Clock, { key: "c" }),
       h(Other, { key: "o" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
+      h(Refs, { key: "r" }),
     ]),
   )
 })
@@ -232,4 +238,39 @@ test("store-value keeps the value in the next free $reactdx<n> and logs it", () 
     delete scope.$reactdx1
     delete scope.$reactdx2
   }
+})
+
+const edit = (fields: Record<string, unknown>) =>
+  React.act(async () =>
+    send({ source: "reactdx-relay", type: "edit", path: [], ...fields }),
+  )
+const text = (selector: string) => document.querySelector(selector)?.textContent
+
+test("an edit of the inspected node's prop or state hook writes through React", async () => {
+  const greeting = idOf("Greeting")
+  inspect(greeting)
+  await edit({ id: greeting, root: "props", path: ["name"], value: "Grace" })
+  expect(text("span")).toBe("Grace")
+  await flushed()
+  expect(replies().at(-1)?.data?.props).toMatchObject({
+    props: { name: "Grace" },
+  })
+  const other = idOf("Other")
+  inspect(other)
+  await edit({ id: other, root: { hook: [0] }, value: 9 })
+  expect(text("i")).toBe("9")
+})
+
+test("an edit of another node, a hook that holds no state, or with nothing inspected does nothing", async () => {
+  const refs = idOf("Refs")
+  inspect(refs)
+  const sent = replies().length
+  await edit({ id: refs, root: { hook: [0] }, value: 5 })
+  await edit({ id: idOf("Other"), root: { hook: [0] }, value: 3 })
+  inspect(null)
+  await edit({ id: refs, root: { hook: [1] }, value: 7 })
+  await flushed()
+  expect(text("u")).toBe("2")
+  expect(text("i")).not.toBe("3")
+  expect(replies()).toHaveLength(sent)
 })
