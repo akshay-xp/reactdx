@@ -47,6 +47,17 @@ for (const { fixture, port } of fixtures)
       )
       assert.ok(label.includes('label: "Total"'), label)
       assert.equal(await counter(), "Total: 7")
+
+      // Typed: a number over a string, then a quoted string back.
+      await panel.edit('label: "Total"', "5")
+      const number = await until(panel.inspector, (t) => t.includes("label: 5"))
+      assert.ok(number.includes("label: 5"), number)
+      assert.equal(await counter(), "5: 7")
+      await panel.edit("label: 5", '"Count"')
+      const back = await until(panel.inspector, (t) =>
+        t.includes('label: "Count"'),
+      )
+      assert.ok(back.includes('label: "Count"'), back)
     } finally {
       await browser.close()
     }
