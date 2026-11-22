@@ -14,6 +14,7 @@ import {
   type JSX,
   Match,
   onCleanup,
+  onMount,
   Show,
   Switch,
 } from "solid-js"
@@ -636,6 +637,9 @@ function Children(props: {
             inspector={props.inspector}
             entry={entry}
             path={childPath(props.path, entry.key as ValueKey)}
+            editable={
+              props.path.root === "props" && props.path.keys.length === 0
+            }
             depth={props.depth}
             query={props.query}
             target={{ objectId: loaded().id, key: entry.key as ValueKey }}
@@ -763,6 +767,7 @@ function HookRows(props: {
                 <ValueRow
                   inspector={props.inspector}
                   entry={{ name: label(), value: hook.value as Value }}
+                  editable={hook.name === "State" || hook.name === "Reducer"}
                   path={path()}
                   depth={props.depth}
                   query={props.query}
@@ -793,6 +798,49 @@ function HookRows(props: {
   )
 }
 
+// A value's text being edited: focused on mount; Enter applies, Escape cancels,
+// leaving cancels.
+function ValueInput(props: {
+  text: string
+  label: string
+  invalid: boolean
+  onApply: (text: string) => void
+  onCancel: () => void
+  onBlur: () => void
+}) {
+  let input!: HTMLInputElement
+  onMount(() => input.focus())
+  return (
+    <>
+      <input
+        ref={input}
+        data-testid="value-input"
+        aria-label={`Edit ${props.label}`}
+        aria-invalid={props.invalid}
+        value={props.text}
+        class="min-w-0 flex-1 rounded-sm bg-surface px-1 font-mono text-fg outline-none ring-1 ring-accent"
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault()
+            props.onApply(input.value)
+          } else if (event.key === "Escape") {
+            // DevTools opens its drawer on Escape.
+            event.preventDefault()
+            event.stopPropagation()
+            props.onCancel()
+          }
+        }}
+        onBlur={() => props.onBlur()}
+      />
+      <Show when={props.invalid}>
+        <span role="alert" class="ml-2 shrink-0 text-error">
+          Not a valid value
+        </span>
+      </Show>
+    </>
+  )
+}
+
 // Opens or closes a value or custom hook in place (the tree's triangle).
 function Toggle(props: { open: boolean; onClick: () => void }) {
   return (
@@ -819,9 +867,35 @@ function ValueRow(props: {
   query: string
   // Where the page finds the value; none: only the key can be copied.
   target?: ValueTarget
+  // The page can write it (a top-level prop, a state hook).
+  editable?: boolean
   onMenu: OnMenu
 }) {
   const value = () => props.entry.value
+  let row!: HTMLDivElement
+  // Strings and finite numbers edit as text (a cut string isn't whole).
+  const canEdit = () =>
+    props.editable &&
+    (typeof value() === "string" || typeof value() === "number")
+  const [editing, setEditing] = createSignal(false)
+  const [invalid, setInvalid] = createSignal(false)
+  const edit = () => {
+    if (!canEdit()) return
+    setInvalid(false)
+    setEditing(true)
+  }
+  const done = () => {
+    setEditing(false)
+    row.focus()
+  }
+  // Text to the value's own type; undefined: it doesn't read as one.
+  const apply = (text: string) => {
+    const next = typeof value() === "number" ? Number(text) : text
+    if (typeof next === "number" && (!text.trim() || !Number.isFinite(next)))
+      return setInvalid(true)
+    props.inspector.edit(props.path, next)
+    done()
+  }
   // A value the page sent as a ref (past its depth limit) loads when opened.
   const ref = () => {
     const v = value()
@@ -853,6 +927,7 @@ function ValueRow(props: {
   return (
     <>
       <div
+        ref={row}
         data-testid="value"
         role="treeitem"
         tabIndex={-1}
@@ -864,6 +939,17 @@ function ValueRow(props: {
         onContextMenu={(event) =>
           props.onMenu(event, props.entry.name, props.target)
         }
+        // A click on the value edits it (Enter or F2 on the row too).
+        onClick={(event) => {
+          if ((event.target as Element).closest("[data-value]")) edit()
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== row) return
+          if (event.key === "Enter" || event.key === "F2") {
+            event.preventDefault()
+            edit()
+          }
+        }}
       >
         <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>
           <Toggle open={shownOpen()} onClick={toggle} />
@@ -874,10 +960,27 @@ function ValueRow(props: {
             {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
           </span>
           {props.entry.arrow ? " => " : " "}
-          <span data-search-text class={tone(value())}>
-            {previewText(value())}
-          </span>
+          <Show when={!editing()}>
+            <span
+              data-search-text
+              data-value
+              class={tone(value())}
+              classList={{ "cursor-text": canEdit() }}
+            >
+              {previewText(value())}
+            </span>
+          </Show>
         </span>
+        <Show when={editing()}>
+          <ValueInput
+            text={String(value())}
+            label={props.entry.name}
+            invalid={invalid()}
+            onApply={apply}
+            onCancel={done}
+            onBlur={() => setEditing(false)}
+          />
+        </Show>
       </div>
       <Show when={shownOpen() && target()}>
         {(container) => (

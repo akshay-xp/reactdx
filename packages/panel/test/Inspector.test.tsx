@@ -1090,3 +1090,71 @@ test("focus stays on its row across a re-send", async () => {
   expect(document.activeElement).toBe(outside)
   outside.remove()
 })
+
+// The value part of the row reading `text` (after its key).
+const valuePart = (container: Element, text: string) =>
+  rowOf(container, text).querySelectorAll("[data-search-text]")[1] as Element
+const editor = (container: Element) =>
+  container.querySelector<HTMLInputElement>("[data-testid=value-input]")
+
+test("inline editor: strings and numbers in place, Enter applies, Escape and blur cancel", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ label: "Count", step: 1 }),
+      hooks: [
+        { name: "State", value: 0 },
+        { name: "Ref", value: 1 },
+      ],
+    }),
+  )
+  await settled()
+  const edits = () => sent.filter((command) => command.type === "edit")
+  fireEvent.click(valuePart(container, 'label: "Count"'))
+  const input = editor(container) as HTMLInputElement
+  expect(input).toBeTruthy()
+  expect(input.value).toBe("Count")
+  expect(document.activeElement).toBe(input)
+  fireEvent.input(input, { target: { value: "Total" } })
+  fireEvent.keyDown(input, { key: "Enter" })
+  expect(edits()).toEqual([
+    { type: "edit", id: 3, root: "props", path: ["label"], value: "Total" },
+  ])
+  expect(editor(container)).toBeNull()
+  expect(document.activeElement).toBe(rowOf(container, 'label: "Count"'))
+
+  // Enter or F2 on a focused row opens it; a number stays a number.
+  rowOf(container, "step: 1").focus()
+  press("Enter")
+  fireEvent.input(editor(container) as Element, { target: { value: "5" } })
+  fireEvent.keyDown(editor(container) as Element, { key: "Enter" })
+  expect(edits().at(-1)).toMatchObject({ path: ["step"], value: 5 })
+  rowOf(container, "step: 1").focus()
+  press("F2")
+  fireEvent.input(editor(container) as Element, { target: { value: "abc" } })
+  fireEvent.keyDown(editor(container) as Element, { key: "Enter" })
+  expect(container.textContent).toContain("Not a valid value")
+  expect(editor(container)).not.toBeNull()
+  fireEvent.keyDown(editor(container) as Element, { key: "Escape" })
+  expect(editor(container)).toBeNull()
+  rowOf(container, "step: 1").focus()
+  press("F2")
+  fireEvent.blur(editor(container) as Element)
+  expect(editor(container)).toBeNull()
+  expect(edits()).toHaveLength(2)
+
+  // A state hook is editable at its root; a ref isn't.
+  fireEvent.click(valuePart(container, "State: 0"))
+  fireEvent.input(editor(container) as Element, { target: { value: "3" } })
+  fireEvent.keyDown(editor(container) as Element, { key: "Enter" })
+  expect(edits().at(-1)).toEqual({
+    type: "edit",
+    id: 3,
+    root: { hook: [0] },
+    path: [],
+    value: 3,
+  })
+  fireEvent.click(valuePart(container, "Ref: 1"))
+  expect(editor(container)).toBeNull()
+})
