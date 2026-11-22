@@ -41,6 +41,24 @@ export function keyboardRows(root: HTMLElement) {
     const all = rows()
     const at = all.indexOf(document.activeElement as HTMLElement)
     if (at === -1) return
+    // The row's menu, as a right-click at its bottom left would open it.
+    if (
+      event.key === "ContextMenu" ||
+      (event.key === "F10" && event.shiftKey)
+    ) {
+      event.preventDefault()
+      const row = all[at] as HTMLElement
+      const { left, bottom } = row.getBoundingClientRect()
+      row.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: left,
+          clientY: bottom,
+        }),
+      )
+      return
+    }
     if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
       event.preventDefault()
       return sideways(all, at, event.key)

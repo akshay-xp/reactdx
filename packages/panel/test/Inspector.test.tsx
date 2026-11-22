@@ -1047,3 +1047,27 @@ test("Right and Left open, close and move between levels", async () => {
   press("ArrowLeft")
   expect(document.activeElement).toBe(cart())
 })
+
+test("the row menu opens from the keyboard and gives focus back", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ a: 1 }) }))
+  await settled()
+  const labels = () =>
+    [...document.querySelectorAll("[role=menuitem]")].map((i) => i.textContent)
+  rowOf(container, "a: 1").focus()
+  press("F10", { shiftKey: true })
+  expect(labels()).toEqual([
+    "Copy key",
+    "Copy value",
+    "Store as global variable",
+  ])
+  expect(document.activeElement?.textContent).toBe("Copy key")
+  press("Escape")
+  expect(menu()).toBeNull()
+  expect(document.activeElement).toBe(rowOf(container, "a: 1"))
+  press("ContextMenu")
+  expect(labels()).toHaveLength(3)
+  choose("Copy key")
+  expect(document.activeElement).toBe(rowOf(container, "a: 1"))
+})

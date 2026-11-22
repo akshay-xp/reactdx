@@ -12,6 +12,8 @@ export function RowMenu(props: {
   onClose: () => void
 }) {
   let menu!: HTMLDivElement
+  // Focus goes back where it was (the row) when the menu closes.
+  const before = document.activeElement as HTMLElement | null
   const items = () => [...menu.querySelectorAll<HTMLElement>("[role=menuitem]")]
   const outside = (event: Event) => {
     if (!menu.contains(event.target as Node)) props.onClose()
@@ -33,6 +35,7 @@ export function RowMenu(props: {
     document.removeEventListener("scroll", close, true)
     window.removeEventListener("blur", close)
     window.removeEventListener("resize", close)
+    if (before?.isConnected) before.focus()
   })
   const onKeyDown = (event: KeyboardEvent) => {
     const all = items()
