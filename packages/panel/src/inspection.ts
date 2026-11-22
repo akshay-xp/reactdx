@@ -27,6 +27,7 @@ export type InspectorCommand =
       value: EditValue
     }
   | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
+  | { type: "rerender"; id: number }
   | {
       type: "rename-path"
       id: number
@@ -135,6 +136,11 @@ export function createInspectorStore(
     // Writes a value at `path`.
     edit: (path: RowPath, value: EditValue) =>
       write(path, { type: "edit", value }),
+    // Renders the inspected node again, nothing changed.
+    rerender() {
+      const at = id()
+      if (at !== undefined) send({ type: "rerender", id: at })
+    },
     // Deletes the key or item at `path`.
     remove: (path: RowPath) => write(path, { type: "delete-path" }),
     // Renames the key at `path` (its last) to `to`.

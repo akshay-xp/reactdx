@@ -184,3 +184,12 @@ test("remove and rename send a delete or rename for the inspected node", () => {
     { type: "rename-path", id: 3, root: "state", path: ["a"], to: "b" },
   ])
 })
+
+test("rerender asks the page to render the inspected node again", () => {
+  const { sent, store } = setup()
+  store.rerender()
+  expect(sent).toEqual([])
+  store.inspect(3)
+  store.rerender()
+  expect(sent.slice(1)).toEqual([{ type: "rerender", id: 3 }])
+})

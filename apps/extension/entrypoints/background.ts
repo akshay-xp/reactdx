@@ -12,6 +12,7 @@ import {
   type PickedMessage,
   type PickMessage,
   type RenamePathMessage,
+  type RerenderMessage,
   type ResyncMessage,
   STALE_TITLE,
   type StateReply,
@@ -120,6 +121,7 @@ export default defineBackground(() => {
           | EditMessage
           | DeletePathMessage
           | RenamePathMessage
+          | RerenderMessage
           | ValueMessage,
       ) => {
         // Commands go to the tab's relay, which validates them (parseTreeCommand).
