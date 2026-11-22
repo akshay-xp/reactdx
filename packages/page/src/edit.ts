@@ -57,6 +57,31 @@ export function plainPath(root: unknown, path: ValueKey[]) {
   return path.length === 0 || isPlain(at)
 }
 
+// A copy of `value` with `next` at `path`: each container along it copied (an
+// array by slice, an object by spread), as React's overrides do.
+export function copyWithSet(
+  value: unknown,
+  path: ValueKey[],
+  next: unknown,
+): unknown {
+  if (path.length === 0) return next
+  const [key, ...rest] = path as [ValueKey, ...ValueKey[]]
+  const copy = Array.isArray(value)
+    ? value.slice()
+    : { ...(value as Record<string, unknown>) }
+  ;(copy as Record<ValueKey, unknown>)[key] = copyWithSet(
+    (value as Record<ValueKey, unknown>)[key],
+    rest,
+    next,
+  )
+  return copy
+}
+
+type ClassInstance = {
+  state: unknown
+  setState: (update: (previous: unknown) => unknown) => void
+}
+
 // Writes `value` at `path` under `root`. `hooks`: the fiber's hooks as last read.
 // Anything it can't write (another root, a hook without state) is ignored.
 export function applyEdit(
@@ -70,6 +95,17 @@ export function applyEdit(
   if (root === "props") {
     if (plainPath((fiber as { memoizedProps: unknown }).memoizedProps, path))
       renderer.overrideProps?.(fiber, path, value)
+    return
+  }
+  // React has no override for class state, and a render recomputes it from the
+  // update queue (a mutated instance.state is reverted): an update through the
+  // queue, its copy holding every key, so the merge is the copy (class
+  // components are tag 1).
+  if (root === "state") {
+    const { tag, stateNode } = fiber as { tag: number; stateNode: unknown }
+    const instance = stateNode as ClassInstance | null
+    if (tag !== 1 || !instance || !plainPath(instance.state, path)) return
+    instance.setState((previous) => copyWithSet(previous, path, value))
     return
   }
   if (typeof root !== "object" || !("hook" in root)) return

@@ -60,6 +60,13 @@ function Nested(props: {
     h("s", { key: "s" }, `${form.name} ${form.age}`),
   ]
 }
+function Reducing() {
+  const [state] = React.useReducer((s: { count: number; label: string }) => s, {
+    count: 1,
+    label: "x",
+  })
+  return h("del", null, state.count)
+}
 function Refs() {
   React.useRef(1)
   const [count] = React.useState(2)
@@ -84,6 +91,7 @@ beforeAll(async () => {
       h(Other, { key: "o" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
       h(Refs, { key: "r" }),
+      h(Reducing, { key: "red" }),
       h(Nested, {
         key: "n",
         user: { name: "Ada", address: { city: "Paris", zip: "75" } },
@@ -350,4 +358,25 @@ test("edits reach any depth, copying the path, through plain objects and arrays 
   expect(replies()).toHaveLength(sent)
   expect(lastProps().tags?.type).toBe("map")
   expect(lastProps().point?.className).toBe("Point")
+})
+
+test("class state and useReducer values edit and come back", async () => {
+  const clock = idOf("Clock")
+  inspect(clock)
+  await edit({ id: clock, root: "state", path: ["ticks"], value: 9 })
+  await settle()
+  expect(replies().at(-1)?.data?.state).toMatchObject({ props: { ticks: 9 } })
+  const reducing = idOf("Reducing")
+  inspect(reducing)
+  await edit({ id: reducing, root: { hook: [0] }, path: ["count"], value: 4 })
+  await settle()
+  expect(text("del")).toBe("4")
+  expect(replies().at(-1)?.data?.hooks?.[0]?.value).toMatchObject({
+    props: { count: 4, label: "x" },
+  })
+  // A function component has no class state.
+  const sent = replies().length
+  await edit({ id: reducing, root: "state", path: ["count"], value: 5 })
+  await settle()
+  expect(replies()).toHaveLength(sent)
 })
