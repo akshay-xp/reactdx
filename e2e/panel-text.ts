@@ -341,16 +341,23 @@ export async function openPanelText(
         tip.keyup(key)
         r("ok")
       }, 50))`
-    // The row can be re-rendered (a re-send) between its focus and the key:
-    // focus and press again until the editor shows.
+    // The row can be re-rendered (a re-send) before its lookup, its focus or
+    // the key (no row for a moment, a stale accessible whose takeFocus throws,
+    // or a focus that went nowhere): find, focus and press again until the
+    // editor shows.
     for (let attempt = 1; ; attempt++) {
-      await onAccessible(
+      const focused = await onAccessible(
         `node.role === ${role("OUTLINEITEM")} && node.name === ${json(row)}`,
         `${enter}
-        node.takeFocus()
+        try {
+          node.takeFocus()
+        } catch {
+          return null
+        }
         ${press}`,
+        false,
       )
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; focused && i < 10; i++) {
         const done = await onAccessible(
           editor,
           `node.QueryInterface(Ci.nsIAccessibleEditableText).setTextContents(${json(text)})
@@ -362,6 +369,7 @@ export async function openPanelText(
         await new Promise((resolve) => setTimeout(resolve, 100))
       }
       if (attempt === 3) throw new Error(`no editor for ${row}`)
+      if (!focused) await new Promise((resolve) => setTimeout(resolve, 200))
     }
   }
   const pressed = async (name: string) =>
