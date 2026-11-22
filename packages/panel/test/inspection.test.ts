@@ -193,3 +193,16 @@ test("rerender asks the page to render the inspected node again", () => {
   store.rerender()
   expect(sent.slice(1)).toEqual([{ type: "rerender", id: 3 }])
 })
+
+test("force asks the page to show a fallback or an error UI, or the children again", () => {
+  const { sent, store } = setup()
+  store.force("error", true)
+  expect(sent).toEqual([])
+  store.inspect(3)
+  store.force("error", true)
+  store.force("fallback", false)
+  expect(sent.slice(1)).toEqual([
+    { type: "force", id: 3, kind: "error", on: true },
+    { type: "force", id: 3, kind: "fallback", on: false },
+  ])
+})

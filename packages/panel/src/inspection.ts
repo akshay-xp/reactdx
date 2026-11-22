@@ -28,6 +28,7 @@ export type InspectorCommand =
     }
   | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
   | { type: "rerender"; id: number }
+  | { type: "force"; id: number; kind: "fallback" | "error"; on: boolean }
   | {
       type: "rename-path"
       id: number
@@ -140,6 +141,11 @@ export function createInspectorStore(
     rerender() {
       const at = id()
       if (at !== undefined) send({ type: "rerender", id: at })
+    },
+    // Shows the nearest boundary's fallback or error UI (on), or its children.
+    force(kind: "fallback" | "error", on: boolean) {
+      const at = id()
+      if (at !== undefined) send({ type: "force", id: at, kind, on })
     },
     // Deletes the key or item at `path`.
     remove: (path: RowPath) => write(path, { type: "delete-path" }),
