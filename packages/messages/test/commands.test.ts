@@ -227,3 +227,55 @@ test("an edit keeps only its fields, in its root and values too", () => {
     edit({ root: { hook: [0] }, value: { type: "object", props: { a: 1 } } }),
   )
 })
+
+const pathCommand = (fields: Record<string, unknown>) => ({
+  type: "delete-path",
+  id: 3,
+  root: "props",
+  path: ["a"],
+  ...fields,
+})
+
+test.each([
+  pathCommand({}),
+  pathCommand({ type: "rename-path", root: { hook: [0] }, to: "b" }),
+  pathCommand({
+    type: "rename-path",
+    root: "state",
+    path: ["a", 0, "c"],
+    to: "d",
+  }),
+])("keeps the path command %j", (command) => {
+  expect(parseTreeCommand(command)).toEqual(command)
+})
+
+test.each<[string, unknown]>([
+  ["a delete with an empty path", pathCommand({ path: [] })],
+  [
+    "a rename with an empty path",
+    pathCommand({ type: "rename-path", path: [], to: "b" }),
+  ],
+  ["a rename to nothing", pathCommand({ type: "rename-path", to: "" })],
+  [
+    "a rename to 1,001 chars",
+    pathCommand({ type: "rename-path", to: "k".repeat(1001) }),
+  ],
+  ["a rename to a number", pathCommand({ type: "rename-path", to: 1 })],
+  ["a rename without a name", pathCommand({ type: "rename-path" })],
+  ["an unknown root", pathCommand({ root: "refs" })],
+  ["a path of 33 keys", pathCommand({ path: Array(33).fill("a") })],
+  ["id 0", pathCommand({ id: 0 })],
+])("drops %s", (_, command) => {
+  expect(parseTreeCommand(command)).toBeUndefined()
+})
+
+test("path commands keep only their fields", () => {
+  expect(
+    parseTreeCommand(pathCommand({ extra: 1, value: 2, to: "x" })),
+  ).toEqual(pathCommand({}))
+  expect(
+    parseTreeCommand(
+      pathCommand({ type: "rename-path", to: "b", value: 2, extra: 1 }),
+    ),
+  ).toEqual(pathCommand({ type: "rename-path", to: "b" }))
+})

@@ -1,6 +1,7 @@
 import {
   type EditRoot,
   type EditValue,
+  MAX_VALUE_STRING,
   parseEditPath,
   parseEditRoot,
   parseEditValue,
@@ -281,6 +282,24 @@ export type EditMessage = {
   value: EditValue
 }
 
+// Panel to background: delete a key or item of the inspected node's value, or
+// rename a key (the last in `path`) to `to`.
+export type DeletePathMessage = {
+  type: "delete-path"
+  tabId: number
+  id: number
+  root: EditRoot
+  path: ValueKey[]
+}
+export type RenamePathMessage = {
+  type: "rename-path"
+  tabId: number
+  id: number
+  root: EditRoot
+  path: ValueKey[]
+  to: string
+}
+
 // Panel to background: copy a row's value, or store it as a page global.
 export type ValueMessage = {
   type: "copy-value" | "store-value"
@@ -306,6 +325,14 @@ export type TreeCommand =
       path: ValueKey[]
       value: EditValue
     }
+  | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
+  | {
+      type: "rename-path"
+      id: number
+      root: EditRoot
+      path: ValueKey[]
+      to: string
+    }
 
 // Commands with no arguments.
 const BARE_COMMANDS = new Set<unknown>([
@@ -317,7 +344,7 @@ const BARE_COMMANDS = new Set<unknown>([
 
 export function parseTreeCommand(data: unknown): TreeCommand | undefined {
   if (typeof data !== "object" || data === null) return
-  const { type, id, objectId, offset, target, root, path, value } =
+  const { type, id, objectId, offset, target, root, path, value, to } =
     data as Record<string, unknown>
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
@@ -332,6 +359,14 @@ export function parseTreeCommand(data: unknown): TreeCommand | undefined {
     }
     if (parsed.root && parsed.path && parsed.value !== undefined)
       return { type, id, ...parsed } as TreeCommand
+  }
+  // Delete and rename name a key: the path isn't empty.
+  if ((type === "delete-path" || type === "rename-path") && isId(id)) {
+    const at = { root: parseEditRoot(root), path: parseEditPath(path) }
+    if (!at.root || !at.path?.length) return
+    if (type === "delete-path") return { type, id, ...at } as TreeCommand
+    if (isString(to, MAX_VALUE_STRING) && to !== "")
+      return { type, id, ...at, to } as TreeCommand
   }
   if (type === "copy-value" || type === "store-value") {
     const parsed = parseValueTarget(target)
