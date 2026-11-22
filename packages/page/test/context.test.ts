@@ -34,11 +34,11 @@ function Nothing() {
 const dark = (child: React.ReactNode) =>
   h(Theme.Provider, { value: "dark" }, child)
 
-test("the contexts a function component reads, once each, in order", async () => {
+test("the contexts a function component reads, once each, in order; one with no provider is its default", async () => {
   const data = await inspect(dark(h(Reader)), "Reader")
   expect(data?.contexts).toEqual([
     { name: "Theme", value: "dark" },
-    { name: "Context", value: 1 },
+    { name: "Context", value: 1, default: true },
   ])
 })
 

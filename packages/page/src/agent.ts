@@ -68,8 +68,20 @@ function contextsOf(fiber: Fiber) {
           ? name.slice(0, MAX_TREE_STRING)
           : "Context",
       value,
+      context,
     }
   })
+}
+
+// The nearest provider of `context` above the fiber (ContextProvider, tag 10):
+// React 19's provider is the context itself, React 18's its Provider object.
+// None: the fiber reads the context's default value.
+export function providerOf(fiber: Fiber, context: unknown) {
+  for (let at = fiber.return; at; at = at.return) {
+    const type = at.type as { _context?: unknown } | null
+    if (at.tag === 10 && (type === context || type?._context === context))
+      return at
+  }
 }
 
 const sameValues = (a: unknown[], b: unknown[]) =>
@@ -247,9 +259,10 @@ export function startAgent(
     const source = sourceOf(fiber)
     if (source) data.source = source
     if (contexts.length)
-      data.contexts = contexts.map(({ name, value }) => ({
+      data.contexts = contexts.map(({ name, value, context }) => ({
         name,
         value: serialize(value) as Value,
+        ...(!providerOf(fiber, context) && { default: true as const }),
       }))
     const ref = rendererOf(fiber)?.currentDispatcherRef
     const read = ref && inspectHooks(fiber as unknown as HooksFiber, ref)
