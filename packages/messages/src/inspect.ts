@@ -170,6 +170,80 @@ export function parseValueTarget(data: unknown): ValueTarget | undefined {
   if (isCount(context)) return { context }
 }
 
+// Panel to agent: where an edit writes (docs/messages.md, Edits): the selected
+// node's props or class state, a hook by call indexes, or a context by read order.
+export type EditRoot =
+  | "props"
+  | "state"
+  | { hook: number[] }
+  | { context: number }
+
+// A value to write. Objects are tagged, so a user's `{ type: "undefined" }` is an
+// object, not the marker; what JSON can't hold has a marker.
+export type EditValue =
+  | string
+  | number
+  | boolean
+  | null
+  | { type: "undefined" }
+  | { type: "number"; value: "NaN" | "Infinity" | "-Infinity" | "-0" }
+  | EditValue[]
+  | { type: "object"; props: Record<string, EditValue> }
+
+const MAX_EDIT_PATH = 32
+const MAX_EDIT_STRING = 100_000
+const MAX_EDIT_NESTING = 16
+const MAX_EDIT_VALUES = 10_000
+
+export function parseEditRoot(data: unknown): EditRoot | undefined {
+  if (data === "props" || data === "state") return data
+  const target = parseValueTarget(data)
+  if (target && "hook" in target) return { hook: target.hook }
+  if (target && "context" in target) return { context: target.context }
+}
+
+export function parseEditPath(data: unknown): ValueKey[] | undefined {
+  if (!Array.isArray(data) || data.length > MAX_EDIT_PATH) return
+  if (!data.every((key) => isCount(key) || isText(key))) return
+  return [...data]
+}
+
+// A fresh copy within the bounds, or undefined.
+export function parseEditValue(data: unknown): EditValue | undefined {
+  let count = 0
+  const walk = (value: unknown, depth: number): EditValue | undefined => {
+    if (++count > MAX_EDIT_VALUES || depth > MAX_EDIT_NESTING) return
+    if (value === null || typeof value === "boolean") return value
+    if (typeof value === "number")
+      return Number.isFinite(value) ? value : undefined
+    if (typeof value === "string")
+      return value.length <= MAX_EDIT_STRING ? value : undefined
+    if (Array.isArray(value)) {
+      const items: EditValue[] = []
+      for (const item of value) {
+        const parsed = walk(item, depth + 1)
+        if (parsed === undefined) return
+        items.push(parsed)
+      }
+      return items
+    }
+    if (typeof value !== "object") return
+    const { type, value: marker, props } = value as Record<string, unknown>
+    if (type === "undefined") return { type }
+    if (type === "number" && NUMBERS.has(marker))
+      return { type, value: marker as "NaN" }
+    if (type !== "object" || typeof props !== "object" || props === null) return
+    const out: Record<string, EditValue> = {}
+    for (const [key, item] of Object.entries(props)) {
+      const parsed = walk(item, depth + 1)
+      if (parsed === undefined || !isText(key)) return
+      out[key] = parsed
+    }
+    return { type, props: out }
+  }
+  return walk(data, 0)
+}
+
 // Agent to panel: a value as text for the clipboard (docs/page.md, Copy).
 export const MAX_COPY = 10_000_000
 export type ValueTextMessage = {

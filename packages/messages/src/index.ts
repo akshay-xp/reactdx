@@ -1,4 +1,13 @@
-import { parseValueTarget, type ValueTarget } from "./inspect.ts"
+import {
+  type EditRoot,
+  type EditValue,
+  parseEditPath,
+  parseEditRoot,
+  parseEditValue,
+  parseValueTarget,
+  type ValueKey,
+  type ValueTarget,
+} from "./inspect.ts"
 
 export type RendererInfo = {
   version: string
@@ -262,6 +271,16 @@ export type ExpandMessage = {
   offset: number
 }
 
+// Panel to background: write a value of the inspected node (`id`).
+export type EditMessage = {
+  type: "edit"
+  tabId: number
+  id: number
+  root: EditRoot
+  path: ValueKey[]
+  value: EditValue
+}
+
 // Panel to background: copy a row's value, or store it as a page global.
 export type ValueMessage = {
   type: "copy-value" | "store-value"
@@ -280,6 +299,13 @@ export type TreeCommand =
   | { type: "inspect"; id: number | null }
   | { type: "expand"; objectId: number; offset: number }
   | { type: "copy-value" | "store-value"; target: ValueTarget }
+  | {
+      type: "edit"
+      id: number
+      root: EditRoot
+      path: ValueKey[]
+      value: EditValue
+    }
 
 // Commands with no arguments.
 const BARE_COMMANDS = new Set<unknown>([
@@ -291,12 +317,22 @@ const BARE_COMMANDS = new Set<unknown>([
 
 export function parseTreeCommand(data: unknown): TreeCommand | undefined {
   if (typeof data !== "object" || data === null) return
-  const { type, id, objectId, offset, target } = data as Record<string, unknown>
+  const { type, id, objectId, offset, target, root, path, value } =
+    data as Record<string, unknown>
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
   if (type === "inspect" && (id === null || isId(id))) return { type, id }
   if (type === "expand" && isId(objectId) && isCount(offset))
     return { type, objectId, offset }
+  if (type === "edit" && isId(id)) {
+    const parsed = {
+      root: parseEditRoot(root),
+      path: parseEditPath(path),
+      value: parseEditValue(value),
+    }
+    if (parsed.root && parsed.path && parsed.value !== undefined)
+      return { type, id, ...parsed } as TreeCommand
+  }
   if (type === "copy-value" || type === "store-value") {
     const parsed = parseValueTarget(target)
     if (parsed) return { type, target: parsed }
