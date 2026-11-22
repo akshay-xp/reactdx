@@ -58,6 +58,19 @@ for (const [script, port, version] of [
       await page.close()
     })
 
+    test("serves the edit page: a Suspense and an error boundary, and one outside both", async () => {
+      const page = await browser.newPage()
+      const errors: string[] = []
+      page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
+      await page.goto(`http://localhost:${port}/edit.html`)
+      await page.waitForSelector("[data-testid=ready]")
+      assert.equal(await text(page, "[data-testid=ready]"), "Inside")
+      assert.equal(await text(page, "[data-testid=child]"), "Child")
+      assert.equal(await text(page, "[data-testid=outside]"), "Outside")
+      assert.deepEqual(errors, [])
+      await page.close()
+    })
+
     test("serves the hook-cost bench page", async () => {
       const page = await browser.newPage()
       await openBench(page, port)
