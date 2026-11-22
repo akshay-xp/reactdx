@@ -30,7 +30,7 @@ import {
   type SourceLocation,
   type Sources,
 } from "./source"
-import { IconButton, PickGlyph, SearchField } from "./Toolbar"
+import { IconButton, PickGlyph, ReloadGlyph, SearchField } from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
 import { editText, isPlain, parseTyped } from "./typed"
@@ -387,7 +387,15 @@ export function Inspector(props: {
               <Show when={node().key !== null}>
                 <span class="truncate text-muted">{`key="${node().key}"`}</span>
               </Show>
-              <span class="ml-auto">
+              <span class="ml-auto flex">
+                <Show when={node().kind !== "host"}>
+                  <IconButton
+                    label="Force re-render"
+                    onClick={() => props.inspector.rerender()}
+                  >
+                    <ReloadGlyph />
+                  </IconButton>
+                </Show>
                 <IconButton
                   label="Hook names"
                   pressed={props.settings.hookNames()}

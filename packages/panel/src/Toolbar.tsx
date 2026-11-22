@@ -52,6 +52,16 @@ export function PickGlyph() {
   )
 }
 
+// A circular arrow, inside a 24-unit svg (Glyph).
+export function ReloadGlyph() {
+  return (
+    <>
+      <path d="M20 11a8 8 0 1 0-2.3 6.2" />
+      <path d="M20 4v7h-7" />
+    </>
+  )
+}
+
 // A search box laid out like SnapQL's: an icon, the input, and while it holds
 // text, `children` (a count) and a clear button.
 export function SearchField(props: {

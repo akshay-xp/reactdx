@@ -1456,3 +1456,22 @@ test("context rows edit through their provider; a default one is read-only and s
   fireEvent.click(row.querySelector("[data-value]") as Element)
   expect(editor(container)).toBeNull()
 })
+
+test("Force re-render in the header, for components but not DOM elements", () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({}) }))
+  const button = () =>
+    container.querySelector(
+      "[data-testid=inspector-header] [aria-label='Force re-render']",
+    )
+  expect(button()).toBeTruthy()
+  fireEvent.click(button() as Element)
+  expect(sent.at(-1)).toEqual({ type: "rerender", id: 3 })
+  const host = setup("host")
+  host.select()
+  host.inspector.receive(inspected(3, { props: object({}) }))
+  expect(
+    host.container.querySelector("[aria-label='Force re-render']"),
+  ).toBeNull()
+})
