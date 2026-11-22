@@ -274,3 +274,17 @@ test("an edit of another node, a hook that holds no state, or with nothing inspe
   expect(text("i")).not.toBe("3")
   expect(replies()).toHaveLength(sent)
 })
+
+test("an edit's result is sent as soon as React commits it, before the flush", async () => {
+  const other = idOf("Other")
+  inspect(other)
+  const sent = replies().length
+  await edit({ id: other, root: { hook: [0] }, value: 11 })
+  // Well before the 100 ms flush.
+  await React.act(() => new Promise((resolve) => setTimeout(resolve, 10)))
+  expect(replies()).toHaveLength(sent + 1)
+  expect(replies().at(-1)?.data?.hooks?.[0]?.value).toBe(11)
+  // The flush finds nothing new to send.
+  await flushed()
+  expect(replies()).toHaveLength(sent + 1)
+})
