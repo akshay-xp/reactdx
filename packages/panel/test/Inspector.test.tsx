@@ -1377,3 +1377,49 @@ test("Rename key and Delete: in the menu of rows under plain containers", async 
   expect(input()).toBeNull()
   expect(writes()).toHaveLength(2)
 })
+
+test("Add key and Add item on plain objects and arrays only", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        o: object({ a: 1, newKey: 2 }, { id: 2 }),
+        list: { type: "array", id: 6, length: 2, items: [1, 2] },
+        m: { type: "map", id: 7, size: 1, entries: [["k", 1]] },
+        pt: object({ x: 1 }, { id: 8, className: "Point" }),
+      }),
+    }),
+  )
+  await settled()
+  const menuFor = (key: string) => {
+    const row = [...container.querySelectorAll("[data-testid=value]")].find(
+      (r) => r.textContent?.startsWith(`${key}:`),
+    )
+    fireEvent.contextMenu(row as Element)
+    return [...document.querySelectorAll("[role=menuitem]")].map(
+      (item) => item.textContent,
+    )
+  }
+  const edits = () => sent.filter((c) => c.type === "edit")
+  expect(menuFor("o")).toContain("Add key")
+  choose("Add key")
+  expect(menuFor("list")).toContain("Add item")
+  choose("Add item")
+  expect(edits()).toEqual([
+    { type: "edit", id: 3, root: "props", path: ["o", "newKey2"], value: "" },
+    {
+      type: "edit",
+      id: 3,
+      root: "props",
+      path: ["list", 2],
+      value: { type: "undefined" },
+    },
+  ])
+  for (const key of ["m", "pt"]) {
+    const items = menuFor(key)
+    expect(items).not.toContain("Add key")
+    expect(items).not.toContain("Add item")
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape" })
+  }
+})

@@ -933,6 +933,31 @@ function ValueRow(props: {
           { label: "Delete", run: () => props.inspector.remove(props.path) },
         ]
       : []
+  // A plain container gets a key (`newKey`, else the first free `newKey<n>`)
+  // or an item at its end; the page's re-send shows it, to edit and rename.
+  const addItems = () => {
+    const container = target()
+    if (!props.editable || !container || !isPlain(container)) return []
+    if (container.type === "array")
+      return [
+        {
+          label: "Add item",
+          run: () =>
+            props.inspector.edit(childPath(props.path, container.length), {
+              type: "undefined",
+            }),
+        },
+      ]
+    const taken = new Set(entriesOf(container).entries.map((e) => e.name))
+    let name = "newKey"
+    for (let n = 2; taken.has(name); n++) name = `newKey${n}`
+    return [
+      {
+        label: "Add key",
+        run: () => props.inspector.edit(childPath(props.path, name), ""),
+      },
+    ]
+  }
   // JSON plus markers (parseTyped); text that reads as nothing is a string
   // over a string, and refused over anything else.
   const apply = (text: string) => {
@@ -983,7 +1008,10 @@ function ValueRow(props: {
         class={ROW}
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
         onContextMenu={(event) =>
-          props.onMenu(event, props.entry.name, props.target, keyItems())
+          props.onMenu(event, props.entry.name, props.target, [
+            ...addItems(),
+            ...keyItems(),
+          ])
         }
         // A click on the value edits it (Enter or F2 on the row too).
         onClick={(event) => {
