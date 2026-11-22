@@ -30,7 +30,14 @@ import {
   type SourceLocation,
   type Sources,
 } from "./source"
-import { IconButton, PickGlyph, ReloadGlyph, SearchField } from "./Toolbar"
+import {
+  ErrorGlyph,
+  IconButton,
+  PickGlyph,
+  ReloadGlyph,
+  SearchField,
+  SuspenseGlyph,
+} from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
 import { editText, isPlain, parseTyped } from "./typed"
@@ -257,6 +264,21 @@ export function Inspector(props: {
   }
   const nameFound = (site: CallSite, name: string) =>
     setFound(new Map(found()).set(JSON.stringify(site), name))
+  // Show fallback and Show error, for the boundaries the page found above.
+  const toggles = () => {
+    const found = props.inspector.data()?.boundaries
+    return [
+      {
+        kind: "fallback" as const,
+        label: "Show fallback",
+        glyph: <SuspenseGlyph />,
+      },
+      { kind: "error" as const, label: "Show error", glyph: <ErrorGlyph /> },
+    ].flatMap((toggle) => {
+      const boundary = found?.[toggle.kind]
+      return boundary ? [{ ...toggle, boundary }] : []
+    })
+  }
   // The open right-click menu (RowMenu): a row's key to copy, and where the page
   // finds its value to copy or store.
   const [menu, setMenu] = createSignal<{
@@ -388,6 +410,23 @@ export function Inspector(props: {
                 <span class="truncate text-muted">{`key="${node().key}"`}</span>
               </Show>
               <span class="ml-auto flex">
+                <For each={toggles()}>
+                  {(toggle) => (
+                    <IconButton
+                      label={toggle.label}
+                      pressed={toggle.boundary.on}
+                      onClick={() => {
+                        props.inspector.force(toggle.kind, !toggle.boundary.on)
+                        // Showing it hides or unmounts this node: keep the
+                        // boundary, and the toggle to turn it off, in view.
+                        if (!toggle.boundary.on)
+                          props.tree.reveal(toggle.boundary.id)
+                      }}
+                    >
+                      {toggle.glyph}
+                    </IconButton>
+                  )}
+                </For>
                 <Show when={node().kind !== "host"}>
                   <IconButton
                     label="Force re-render"

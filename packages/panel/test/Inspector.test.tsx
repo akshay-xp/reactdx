@@ -1475,3 +1475,62 @@ test("Force re-render in the header, for components but not DOM elements", () =>
     host.container.querySelector("[aria-label='Force re-render']"),
   ).toBeNull()
 })
+
+test("Show fallback and Show error: only with a boundary, pressed while forced; turning one on selects the boundary", () => {
+  const { container, tree, inspector, sent, select } = setup()
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 5,
+        parentId: 0,
+        rootId: 1,
+        kind: "suspense",
+        name: "Suspense",
+        key: null,
+        index: 1,
+      },
+    ]),
+  )
+  select()
+  const toggle = (label: string) =>
+    container.querySelector(
+      `[data-testid=inspector-header] [aria-label='${label}']`,
+    )
+  inspector.receive(inspected(3, { props: object({}) }))
+  expect(toggle("Show fallback")).toBeNull()
+  expect(toggle("Show error")).toBeNull()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      boundaries: { fallback: { id: 5, on: false } },
+    }),
+  )
+  expect(toggle("Show fallback")?.getAttribute("aria-pressed")).toBe("false")
+  expect(toggle("Show error")).toBeNull()
+  fireEvent.click(toggle("Show fallback") as Element)
+  expect(sent.at(-1)).toEqual({
+    type: "force",
+    id: 3,
+    kind: "fallback",
+    on: true,
+  })
+  expect(tree.selected()).toBe(5)
+  // As main.tsx does on a selection change. The boundary's own inspection:
+  // forced, so pressed; a press turns it off.
+  inspector.inspect(5)
+  inspector.receive(
+    inspected(5, {
+      props: object({}),
+      boundaries: { fallback: { id: 5, on: true } },
+    }),
+  )
+  expect(toggle("Show fallback")?.getAttribute("aria-pressed")).toBe("true")
+  fireEvent.click(toggle("Show fallback") as Element)
+  expect(sent.at(-1)).toEqual({
+    type: "force",
+    id: 5,
+    kind: "fallback",
+    on: false,
+  })
+})
