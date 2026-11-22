@@ -387,7 +387,15 @@ export function startAgent(
           : command.type === "delete-path"
             ? { op: "delete" }
             : { op: "rename", to: command.to }
-      applyEdit(renderer, fiber, command.root, command.path, op, selected.hooks)
+      const { root, path } = command
+      if (typeof root === "object" && "context" in root) {
+        // A context is written through its provider's value, so every reader
+        // of that provider sees it. A default (no provider) can't be.
+        const read = contextsOf(fiber)[root.context]
+        const provider = read && providerOf(fiber, read.context)
+        if (provider)
+          applyEdit(renderer, provider, "props", ["value", ...path], op)
+      } else applyEdit(renderer, fiber, root, path, op, selected.hooks)
       // React commits the edit in a microtask; send its result then, not on
       // the next flush, since the developer is waiting on this one value.
       setTimeout(refresh)
