@@ -1423,3 +1423,36 @@ test("Add key and Add item on plain objects and arrays only", async () => {
     fireEvent.keyDown(document.activeElement as Element, { key: "Escape" })
   }
 })
+
+test("context rows edit through their provider; a default one is read-only and says so", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      contexts: [
+        { name: "Theme", value: "dark" },
+        { name: "Context", value: null, default: true },
+      ],
+    }),
+  )
+  await settled()
+  fireEvent.click(valuePart(container, 'Theme: "dark"'))
+  const input = editor(container) as Element
+  expect(input).toBeTruthy()
+  fireEvent.input(input, { target: { value: '"light"' } })
+  fireEvent.keyDown(input, { key: "Enter" })
+  expect(sent.filter((c) => c.type === "edit")).toEqual([
+    { type: "edit", id: 3, root: { context: 0 }, path: [], value: "light" },
+  ])
+  const row = [...container.querySelectorAll("[data-testid=value]")].find((r) =>
+    r.textContent?.startsWith("Context:"),
+  ) as Element
+  const badge = row.querySelector("[data-testid=badge]")
+  expect(badge?.textContent).toBe("default")
+  expect(badge?.getAttribute("title")).toBe(
+    "No provider above: its default value, read-only",
+  )
+  fireEvent.click(row.querySelector("[data-value]") as Element)
+  expect(editor(container)).toBeNull()
+})

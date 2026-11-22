@@ -497,6 +497,16 @@ export function Inspector(props: {
                           depth={0}
                           query={query()}
                           target={{ context: context.read }}
+                          editable={!context.default}
+                          badge={
+                            context.default
+                              ? {
+                                  text: "default",
+                                  title:
+                                    "No provider above: its default value, read-only",
+                                }
+                              : undefined
+                          }
                           onMenu={onMenu}
                         />
                       </Show>
@@ -883,6 +893,8 @@ function ValueRow(props: {
   // there (a rename can't take one).
   objectKey?: boolean
   siblings?: string[]
+  // A muted word after the value, its title saying why.
+  badge?: { text: string; title: string }
   onMenu: OnMenu
 }) {
   const value = () => props.entry.value
@@ -1070,6 +1082,20 @@ function ValueRow(props: {
             >
               {previewText(value())}
             </span>
+          </Show>
+          <Show when={props.badge}>
+            {(badge) => (
+              <>
+                {" "}
+                <span
+                  data-testid="badge"
+                  class="text-muted"
+                  title={badge().title}
+                >
+                  {badge().text}
+                </span>
+              </>
+            )}
           </Show>
         </span>
         <Show when={editing()}>
