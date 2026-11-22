@@ -61,7 +61,13 @@ function tone(value: Value) {
 
 // `key`: where the page finds it in its container (ValueTarget).
 type Entry = { name: string; value: Value; arrow?: boolean; key?: ValueKey }
-type OnMenu = (event: MouseEvent, key: string, target?: ValueTarget) => void
+// `more`: a row's own items (Rename key, Delete), after the copies.
+type OnMenu = (
+  event: MouseEvent,
+  key: string,
+  target?: ValueTarget,
+  more?: MenuItem[],
+) => void
 
 // A container's loaded entries, and how many are still on the page.
 function entriesOf(value: Container): { entries: Entry[]; left: number } {
@@ -258,7 +264,7 @@ export function Inspector(props: {
     y: number
     items: MenuItem[]
   }>()
-  const onMenu: OnMenu = (event, key, target) => {
+  const onMenu: OnMenu = (event, key, target, more = []) => {
     event.preventDefault()
     const items = [
       { label: "Copy key", run: () => props.inspector.copyKey(key) },
@@ -274,6 +280,7 @@ export function Inspector(props: {
           run: () => props.inspector.storeValue(target),
         },
       )
+    items.push(...more)
     setMenu({ x: event.clientX, y: event.clientY, items })
   }
   // Collapsed sections, kept while the panel is open.
@@ -636,6 +643,8 @@ function Children(props: {
             entry={entry}
             path={childPath(props.path, entry.key as ValueKey)}
             editable={props.editable}
+            objectKey={loaded().type === "object"}
+            siblings={list().entries.map((other) => other.name)}
             depth={props.depth}
             query={props.query}
             target={{ objectId: loaded().id, key: entry.key as ValueKey }}
@@ -798,8 +807,11 @@ function HookRows(props: {
 // leaving cancels.
 function ValueInput(props: {
   text: string
+  // The input's accessible name and test id: a value's or a key's editor.
   label: string
-  invalid: boolean
+  testid: string
+  // Why the last Enter was refused, shown until the next.
+  error?: string
   onApply: (text: string) => void
   onCancel: () => void
   onBlur: () => void
@@ -810,11 +822,11 @@ function ValueInput(props: {
     <>
       <input
         ref={input}
-        data-testid="value-input"
+        data-testid={props.testid}
         // No form history: Firefox would make it an autocomplete combobox.
         autocomplete="off"
-        aria-label={`Edit ${props.label}`}
-        aria-invalid={props.invalid}
+        aria-label={props.label}
+        aria-invalid={Boolean(props.error)}
         value={props.text}
         class="min-w-0 flex-1 rounded-sm bg-surface px-1 font-mono text-fg outline-none ring-1 ring-accent"
         onKeyDown={(event) => {
@@ -830,9 +842,9 @@ function ValueInput(props: {
         }}
         onBlur={() => props.onBlur()}
       />
-      <Show when={props.invalid}>
+      <Show when={props.error}>
         <span role="alert" class="ml-2 shrink-0 text-error">
-          Not a valid value
+          {props.error}
         </span>
       </Show>
     </>
@@ -867,11 +879,14 @@ function ValueRow(props: {
   target?: ValueTarget
   // The page can write it (a top-level prop, a state hook).
   editable?: boolean
+  // Its container is a plain object (its key can be renamed), and the names
+  // there (a rename can't take one).
+  objectKey?: boolean
+  siblings?: string[]
   onMenu: OnMenu
 }) {
   const value = () => props.entry.value
   let row!: HTMLDivElement
-  // Strings and finite numbers edit as text (a cut string isn't whole).
   // Any editable value but a boolean (which flips) is typed; what the panel holds
   // only part of opens empty, to be replaced (editText).
   const canEdit = () => props.editable && !isFlag()
@@ -888,8 +903,36 @@ function ValueRow(props: {
   }
   const done = () => {
     setEditing(false)
+    setRenaming(false)
     row.focus()
   }
+  // A key under a plain container can be deleted, and under an object renamed
+  // to a name its siblings don't have.
+  const [renaming, setRenaming] = createSignal(false)
+  const [badName, setBadName] = createSignal(false)
+  const rename = (name: string) => {
+    if (name === props.entry.name) return done()
+    if (!name.trim() || props.siblings?.includes(name)) return setBadName(true)
+    props.inspector.rename(props.path, name)
+    done()
+  }
+  const keyItems = () =>
+    props.editable && props.path.keys.length > 0
+      ? [
+          ...(props.objectKey
+            ? [
+                {
+                  label: "Rename key",
+                  run: () => {
+                    setBadName(false)
+                    setRenaming(true)
+                  },
+                },
+              ]
+            : []),
+          { label: "Delete", run: () => props.inspector.remove(props.path) },
+        ]
+      : []
   // JSON plus markers (parseTyped); text that reads as nothing is a string
   // over a string, and refused over anything else.
   const apply = (text: string) => {
@@ -940,7 +983,7 @@ function ValueRow(props: {
         class={ROW}
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
         onContextMenu={(event) =>
-          props.onMenu(event, props.entry.name, props.target)
+          props.onMenu(event, props.entry.name, props.target, keyItems())
         }
         // A click on the value edits it (Enter or F2 on the row too).
         onClick={(event) => {
@@ -973,8 +1016,19 @@ function ValueRow(props: {
             }}
           />
         </Show>
+        <Show when={renaming()}>
+          <ValueInput
+            text={props.entry.name}
+            label={`Rename ${props.entry.name}`}
+            testid="key-input"
+            error={badName() ? "Not a valid name" : undefined}
+            onApply={rename}
+            onCancel={done}
+            onBlur={() => setRenaming(false)}
+          />
+        </Show>
         {/* Inline, not flex items: flex drops the spaces between them. */}
-        <span class="min-w-0 truncate">
+        <span class="min-w-0 truncate" classList={{ hidden: renaming() }}>
           <span data-search-text class="text-syntax-key">
             {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
           </span>
@@ -993,8 +1047,9 @@ function ValueRow(props: {
         <Show when={editing()}>
           <ValueInput
             text={editText(value())}
-            label={props.entry.name}
-            invalid={invalid()}
+            label={`Edit ${props.entry.name}`}
+            testid="value-input"
+            error={invalid() ? "Not a valid value" : undefined}
             onApply={apply}
             onCancel={done}
             onBlur={() => setEditing(false)}

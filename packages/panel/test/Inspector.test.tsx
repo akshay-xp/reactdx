@@ -868,6 +868,9 @@ test("right-clicking a row offers Copy key, Copy value and Store as global varia
     "Copy key",
     "Copy value",
     "Store as global variable",
+    // A prop can be renamed and deleted (#53).
+    "Rename key",
+    "Delete",
   ])
   choose("Copy key")
   expect(copied).toEqual(["label"])
@@ -1062,13 +1065,15 @@ test("the row menu opens from the keyboard and gives focus back", async () => {
     "Copy key",
     "Copy value",
     "Store as global variable",
+    "Rename key",
+    "Delete",
   ])
   expect(document.activeElement?.textContent).toBe("Copy key")
   press("Escape")
   expect(menu()).toBeNull()
   expect(document.activeElement).toBe(rowOf(container, "a: 1"))
   press("ContextMenu")
-  expect(labels()).toHaveLength(3)
+  expect(labels()).toHaveLength(5)
   choose("Copy key")
   expect(document.activeElement).toBe(rowOf(container, "a: 1"))
 })
@@ -1311,4 +1316,64 @@ test("typed edits: text reads as JSON plus markers, so a value can change type",
     open(`d: ${previewText({ type: "date", iso: "2026-01-01T00:00:00.000Z" })}`)
       .value,
   ).toBe("")
+})
+
+test("Rename key and Delete: in the menu of rows under plain containers", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        a: 1,
+        b: 2,
+        list: { type: "array", id: 6, length: 2, items: [1, 2] },
+      }),
+      hooks: [{ name: "State", value: 0 }],
+      contexts: [{ name: "Theme", value: 1 }],
+    }),
+  )
+  await settled()
+  const writes = () =>
+    sent.filter((c) => c.type === "delete-path" || c.type === "rename-path")
+  const copies = ["Copy key", "Copy value", "Store as global variable"]
+  expect(menuOn(container, "a: 1")).toEqual([...copies, "Rename key", "Delete"])
+  choose("Delete")
+  expect(writes()).toEqual([
+    { type: "delete-path", id: 3, root: "props", path: ["a"] },
+  ])
+  fireEvent.click(toggle(container, "list") as Element)
+  expect(menuOn(container, "0: 1")).toEqual([...copies, "Delete"])
+  fireEvent.keyDown(document.activeElement as Element, { key: "Escape" })
+  expect(menuOn(container, "State: 0")).toEqual(copies)
+  fireEvent.keyDown(document.activeElement as Element, { key: "Escape" })
+  expect(menuOn(container, "Theme: 1")).toEqual(copies)
+  fireEvent.keyDown(document.activeElement as Element, { key: "Escape" })
+
+  // Renaming: the key turns into an input; a taken or empty name is refused.
+  menuOn(container, "a: 1")
+  choose("Rename key")
+  const input = () =>
+    container.querySelector<HTMLInputElement>("[data-testid=key-input]")
+  expect(input()?.value).toBe("a")
+  for (const name of ["b", " "]) {
+    fireEvent.input(input() as Element, { target: { value: name } })
+    fireEvent.keyDown(input() as Element, { key: "Enter" })
+    expect(container.textContent).toContain("Not a valid name")
+  }
+  expect(writes()).toHaveLength(1)
+  fireEvent.input(input() as Element, { target: { value: "c" } })
+  fireEvent.keyDown(input() as Element, { key: "Enter" })
+  expect(writes().at(-1)).toEqual({
+    type: "rename-path",
+    id: 3,
+    root: "props",
+    path: ["a"],
+    to: "c",
+  })
+  expect(input()).toBeNull()
+  menuOn(container, "a: 1")
+  choose("Rename key")
+  fireEvent.keyDown(input() as Element, { key: "Escape" })
+  expect(input()).toBeNull()
+  expect(writes()).toHaveLength(2)
 })

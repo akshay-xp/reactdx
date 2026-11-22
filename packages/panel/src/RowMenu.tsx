@@ -35,7 +35,10 @@ export function RowMenu(props: {
     document.removeEventListener("scroll", close, true)
     window.removeEventListener("blur", close)
     window.removeEventListener("resize", close)
-    if (before?.isConnected) before.focus()
+    // Unless the chosen item moved focus on (a rename's input).
+    const at = document.activeElement
+    const kept = !at || at === document.body || menu.contains(at)
+    if (kept && before?.isConnected) before.focus()
   })
   const onKeyDown = (event: KeyboardEvent) => {
     const all = items()
