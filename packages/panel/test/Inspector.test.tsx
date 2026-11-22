@@ -1182,3 +1182,58 @@ test("a boolean flips with its checkbox or Space, shown as the page says", async
   expect(edits()).toHaveLength(2)
   expect(edits().at(-1)).toMatchObject({ value: false })
 })
+
+test("values edit at any depth through plain objects and arrays; other containers' entries don't", async () => {
+  const { container, inspector, sent, select } = setup("class")
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        user: object(
+          { address: object({ city: "Paris" }, { id: 11 }) },
+          { id: 10 },
+        ),
+        list: { type: "array", id: 12, length: 3, items: [1, 2, 3] },
+        m: { type: "map", id: 13, size: 1, entries: [["k", 1]] },
+        pt: object({ x: 1 }, { id: 14, className: "Point" }),
+      }),
+      state: object({ ticks: 2 }, { id: 15 }),
+      hooks: [
+        { name: "State", value: object({ a: 1 }, { id: 16 }) },
+        { name: "Ref", value: object({ b: 1 }, { id: 17 }) },
+      ],
+    }),
+  )
+  await settled()
+  const edits = () => sent.filter((command) => command.type === "edit")
+  const editTo = (row: string, text: string) => {
+    fireEvent.click(valuePart(container, row))
+    const input = editor(container) as Element
+    expect(input).toBeTruthy()
+    fireEvent.input(input, { target: { value: text } })
+    fireEvent.keyDown(input, { key: "Enter" })
+  }
+  for (const name of ["user", "address", "list", "m", "pt", "State"])
+    fireEvent.click(toggle(container, name) as Element)
+  fireEvent.click(
+    [...container.querySelectorAll("[data-testid=value]")]
+      .find((row) => row.textContent?.startsWith("Ref"))
+      ?.querySelector("[data-testid=value-toggle]") as Element,
+  )
+  editTo('city: "Paris"', "Lyon")
+  editTo("2: 3", "9")
+  editTo("ticks: 2", "5")
+  editTo("a: 1", "7")
+  expect(
+    edits().map(({ root, path, value }) => ({ root, path, value })),
+  ).toEqual([
+    { root: "props", path: ["user", "address", "city"], value: "Lyon" },
+    { root: "props", path: ["list", 2], value: 9 },
+    { root: "state", path: ["ticks"], value: 5 },
+    { root: { hook: [0] }, path: ["a"], value: 7 },
+  ])
+  for (const row of ['"k" => 1', "x: 1", "b: 1"]) {
+    fireEvent.click(valuePart(container, row))
+    expect(editor(container)).toBeNull()
+  }
+})

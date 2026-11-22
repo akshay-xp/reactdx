@@ -68,6 +68,13 @@ const isContainer = (value: Value): value is Container =>
   "id" in value &&
   value.type !== "ref"
 
+// A plain object or array: the page writes through these only (a Map, Set,
+// typed array or class instance is replaced whole, never edited inside).
+const isPlain = (value: Container) =>
+  value.type === "array" ||
+  (value.type === "object" &&
+    (value.className === "Object" || value.className === null))
+
 // A container's loaded entries, and how many are still on the page.
 function entriesOf(value: Container): { entries: Entry[]; left: number } {
   const named = (props: Record<string, Value> = {}) =>
@@ -309,6 +316,7 @@ export function Inspector(props: {
             path={{ root, keys: [] }}
             depth={0}
             query={query()}
+            editable={isPlain(container())}
             onMenu={onMenu}
           />
         </Section>
@@ -619,6 +627,8 @@ function Children(props: {
   path: RowPath
   depth: number
   query: string
+  // Its entries can be written: every container down to it is plain.
+  editable: boolean
   onMenu: OnMenu
 }) {
   const loaded = () =>
@@ -637,9 +647,7 @@ function Children(props: {
             inspector={props.inspector}
             entry={entry}
             path={childPath(props.path, entry.key as ValueKey)}
-            editable={
-              props.path.root === "props" && props.path.keys.length === 0
-            }
+            editable={props.editable}
             depth={props.depth}
             query={props.query}
             target={{ objectId: loaded().id, key: entry.key as ValueKey }}
@@ -1012,6 +1020,7 @@ function ValueRow(props: {
             path={props.path}
             depth={props.depth + 1}
             query={props.query}
+            editable={Boolean(props.editable) && isPlain(container())}
             onMenu={props.onMenu}
           />
         )}
