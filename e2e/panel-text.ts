@@ -333,7 +333,9 @@ export async function openPanelText(
       tip.beginInputTransactionForTests(window)
       const key = new KeyboardEvent("", { key: "Enter", code: "Enter", keyCode: KeyboardEvent.DOM_VK_RETURN })`
   const edit = async (row: string, text: string) => {
-    const editor = `node.role !== ${role("TEXT_LEAF")} && node.name?.startsWith("Edit ")`
+    // This row's editor: a focus that missed (a stale accessible) would open
+    // the previously focused row's.
+    const editor = `node.role !== ${role("TEXT_LEAF")} && node.name === ${json(`Edit ${row.slice(0, row.indexOf(":"))}`)}`
     const press = `return new Promise((r) => setTimeout(() => {
         tip.keydown(key)
         tip.keyup(key)
