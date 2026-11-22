@@ -113,3 +113,59 @@ for (const { fixture, port } of fixtures)
       await browser.close()
     }
   })
+
+for (const { fixture, port } of fixtures)
+  test(`${fixture}: Show fallback and Show error, on and off; neither without a boundary`, async () => {
+    const { browser, page, panel } = await panelFor(
+      name,
+      `http://localhost:${port}/edit.html`,
+      "after",
+    )
+    // On the page, and not hidden (React hides a suspended boundary's children).
+    const shows = (testid: string) =>
+      page
+        .waitForFunction(
+          (testid) => {
+            const el = document.querySelector(`[data-testid=${testid}]`)
+            return el && getComputedStyle(el).display !== "none"
+          },
+          { timeout: 5000 },
+          testid,
+        )
+        .then(() => true)
+    // The toggles come with the inspection, which Firefox mirrors a moment
+    // later: press once one shows, for up to 5 s.
+    const press = async (label: string) => {
+      for (let i = 0; ; i++)
+        try {
+          await panel.pressed(label)
+          return await panel.press(label)
+        } catch (error) {
+          if (i === 50) throw error
+          await new Promise((resolve) => setTimeout(resolve, 100))
+        }
+    }
+    try {
+      await page.waitForSelector("[data-testid=ready]")
+      await selectListed(panel, "Inside")
+      await press("Show fallback")
+      assert.ok(await shows("fallback"))
+      // The panel moved to the Suspense boundary, where it's pressed.
+      await until(panel.inspector, (t) => t.startsWith("Suspense"))
+      await press("Show fallback")
+      assert.ok(await shows("ready"))
+
+      await selectListed(panel, "Child")
+      await press("Show error")
+      assert.ok(await shows("error-ui"))
+      await until(panel.inspector, (t) => t.startsWith("Boundary"))
+      await press("Show error")
+      assert.ok(await shows("child"))
+
+      await selectListed(panel, "Outside")
+      await assert.rejects(panel.pressed("Show fallback"))
+      await assert.rejects(panel.pressed("Show error"))
+    } finally {
+      await browser.close()
+    }
+  })
