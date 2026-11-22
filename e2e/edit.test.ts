@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
 import type { BrowserName } from "./launch.ts"
-import { panelFor, selectListed, until } from "./panel-text.ts"
+import { panelFor, parseCopies, selectListed, until } from "./panel-text.ts"
 
 const name = process.env.E2E_BROWSER as BrowserName
 const only = process.env.E2E_FIXTURE
@@ -81,6 +81,34 @@ for (const { fixture, port } of fixtures)
       )
       assert.ok(shown.includes('Theme: "light"'), shown)
       assert.ok(shown.includes('Context(Theme): "light"'), shown)
+    } finally {
+      await browser.close()
+    }
+  })
+
+for (const { fixture, port } of fixtures)
+  test(`${fixture}: force re-render commits once and changes nothing`, async () => {
+    const { browser, page, panel } = await panelFor(
+      name,
+      `http://localhost:${port}`,
+      "after",
+    )
+    const commits = async () =>
+      parseCopies(await panel())[0]?.commits[0] ?? Number.NaN
+    try {
+      await page.waitForSelector("[data-testid=counter]")
+      await selectListed(panel, "Counter", (t) => t.includes("State: 0"))
+      const before = await commits()
+      await panel.press("Force re-render")
+      const after = await until(
+        panel,
+        (t) => (parseCopies(t)[0]?.commits[0] ?? 0) > before,
+      )
+      assert.equal(parseCopies(after)[0]?.commits[0], before + 1, after)
+      assert.equal(
+        await page.$eval("[data-testid=counter]", (el) => el.textContent),
+        "Count: 0",
+      )
     } finally {
       await browser.close()
     }
