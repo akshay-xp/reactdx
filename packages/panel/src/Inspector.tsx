@@ -19,8 +19,9 @@ import {
 } from "solid-js"
 import { Empty, EmptyAction } from "./Empty"
 import type { InspectorStore } from "./inspection"
-import { childPath, type PathRoot, type RowPath } from "./paths"
+import { childPath, type PathRoot, pathKey, type RowPath } from "./paths"
 import { type MenuItem, RowMenu } from "./RowMenu"
+import { keyboardRows } from "./rows"
 import { matches, searchRanges } from "./search"
 import {
   label,
@@ -199,6 +200,9 @@ export type Settings = {
 }
 
 const STORED_MS = 4000
+// A value, hook or context row: one of the keyboard rows (src/rows.ts).
+const ROW =
+  "flex min-h-5 items-center whitespace-nowrap pr-2 focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1 focus:outline-none"
 
 // The selected node's values (docs/panel.md, Inspector). Page data is text only.
 export function Inspector(props: {
@@ -402,7 +406,15 @@ export function Inspector(props: {
                 onKeyDown={(event) => event.key === "Escape" && setQuery("")}
               />
             </div>
-            <div class="overflow-y-auto" ref={(el) => paintMatches(el, query)}>
+            <div
+              role="tree"
+              aria-label="Values"
+              class="overflow-y-auto"
+              ref={(el) => {
+                paintMatches(el, query)
+                keyboardRows(el)
+              }}
+            >
               <Show when={location()}>
                 {(at) => (
                   <div
@@ -694,10 +706,13 @@ function HookRows(props: {
               <Match when={hook.hooks}>
                 {(hooks) => (
                   <>
-                    {/* biome-ignore lint/a11y/noStaticElementInteractions: a right-click shortcut; rows take no focus yet */}
                     <div
                       data-testid="value"
-                      class="flex min-h-5 items-center whitespace-nowrap pr-2"
+                      role="treeitem"
+                      tabIndex={-1}
+                      aria-level={props.depth + 1}
+                      data-path={pathKey(path())}
+                      class={ROW}
                       style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
                       onContextMenu={(event) =>
                         props.onMenu(event, label(), target())
@@ -755,11 +770,14 @@ function HookRows(props: {
                 />
               </Match>
               <Match when={hook.value === undefined}>
-                {/* biome-ignore lint/a11y/noStaticElementInteractions: a right-click shortcut; rows take no focus yet */}
                 <div
                   data-testid="value"
+                  role="treeitem"
+                  tabIndex={-1}
+                  aria-level={props.depth + 1}
+                  data-path={pathKey(path())}
                   data-search-text
-                  class="flex min-h-5 items-center whitespace-nowrap pr-2 text-syntax-key"
+                  class={`${ROW} text-syntax-key`}
                   style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
                   onContextMenu={(event) => props.onMenu(event, label())}
                 >
@@ -833,10 +851,13 @@ function ValueRow(props: {
       : props.inspector.open(props.path, ref())
   return (
     <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: a right-click shortcut; rows take no focus yet */}
       <div
         data-testid="value"
-        class="flex min-h-5 items-center whitespace-nowrap pr-2"
+        role="treeitem"
+        tabIndex={-1}
+        aria-level={props.depth + 1}
+        data-path={pathKey(props.path)}
+        class={ROW}
         style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
         onContextMenu={(event) =>
           props.onMenu(event, props.entry.name, props.target)

@@ -969,3 +969,34 @@ test("a key with a dot and the nested keys it spells open and close independentl
   expect(rows(container)).toContain("x: 1")
   expect(rows(container)).not.toContain("y: 2")
 })
+
+// The value row reading `text`.
+const rowOf = (container: Element, text: string) =>
+  [...container.querySelectorAll<HTMLElement>("[data-testid=value]")].find(
+    (row) => row.textContent === text,
+  ) as HTMLElement
+const press = (key: string, init: KeyboardEventInit = {}) =>
+  fireEvent.keyDown(document.activeElement as Element, { key, ...init })
+
+test("rows are one tab stop; Up, Down, Home and End move focus", async () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ a: 1, b: 2, c: 3 }) }))
+  // The tab stop follows rendered rows (a MutationObserver, a microtask later).
+  await settled()
+  const tabs = () =>
+    [...container.querySelectorAll("[data-testid=value]")].map((row) =>
+      row.getAttribute("tabindex"),
+    )
+  expect(tabs()).toEqual(["0", "-1", "-1"])
+  rowOf(container, "a: 1").focus()
+  press("ArrowDown")
+  expect(document.activeElement).toBe(rowOf(container, "b: 2"))
+  expect(tabs()).toEqual(["-1", "0", "-1"])
+  press("End")
+  expect(document.activeElement).toBe(rowOf(container, "c: 3"))
+  press("Home")
+  expect(document.activeElement).toBe(rowOf(container, "a: 1"))
+  press("ArrowUp")
+  expect(document.activeElement).toBe(rowOf(container, "a: 1"))
+})
