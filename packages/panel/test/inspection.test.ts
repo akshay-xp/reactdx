@@ -171,3 +171,16 @@ test("edit sends a write for the inspected node at a row path", () => {
     },
   ])
 })
+
+test("remove and rename send a delete or rename for the inspected node", () => {
+  const { sent, store } = setup()
+  store.remove({ root: "props", keys: ["a"] })
+  expect(sent).toEqual([])
+  store.inspect(3)
+  store.remove({ root: "props", keys: ["a"] })
+  store.rename({ root: "state", keys: ["a"] }, "b")
+  expect(sent.slice(1)).toEqual([
+    { type: "delete-path", id: 3, root: "props", path: ["a"] },
+    { type: "rename-path", id: 3, root: "state", path: ["a"], to: "b" },
+  ])
+})

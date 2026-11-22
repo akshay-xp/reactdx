@@ -26,6 +26,14 @@ export type InspectorCommand =
       path: ValueKey[]
       value: EditValue
     }
+  | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
+  | {
+      type: "rename-path"
+      id: number
+      root: EditRoot
+      path: ValueKey[]
+      to: string
+    }
 
 export type InspectorStore = ReturnType<typeof createInspectorStore>
 
@@ -67,6 +75,18 @@ export function createInspectorStore(
   const expand = (objectId: number, offset = 0) =>
     send({ type: "expand", objectId, offset })
   const ask = () => send({ type: "inspect", id: id() ?? null })
+  // A write to the inspected node at a row's path; its re-send shows the result.
+  const write = (
+    path: RowPath,
+    command:
+      | { type: "edit"; value: EditValue }
+      | { type: "delete-path" }
+      | { type: "rename-path"; to: string },
+  ) => {
+    const at = id()
+    if (at === undefined) return
+    send({ ...command, id: at, root: path.root, path: path.keys })
+  }
 
   return {
     id,
@@ -112,12 +132,14 @@ export function createInspectorStore(
       setOpen(map)
     },
     expansion: (objectId: number) => expansions().get(objectId),
-    // Writes a value of the inspected node; its re-send shows the result.
-    edit(path: RowPath, value: EditValue) {
-      const at = id()
-      if (at === undefined) return
-      send({ type: "edit", id: at, root: path.root, path: path.keys, value })
-    },
+    // Writes a value at `path`.
+    edit: (path: RowPath, value: EditValue) =>
+      write(path, { type: "edit", value }),
+    // Deletes the key or item at `path`.
+    remove: (path: RowPath) => write(path, { type: "delete-path" }),
+    // Renames the key at `path` (its last) to `to`.
+    rename: (path: RowPath, to: string) =>
+      write(path, { type: "rename-path", to }),
     copyKey: copy,
     // Values are copied whole from the page: the panel's are cut and paged.
     copyValue(target: ValueTarget) {
