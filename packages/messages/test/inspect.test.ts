@@ -305,3 +305,23 @@ test.each<[string, Record<string, unknown>]>([
     }),
   ).toBeUndefined()
 })
+
+test("a context read can say it's the default value; nothing else passes there", () => {
+  const data = {
+    props: 1,
+    contexts: [
+      { name: "Theme", value: "dark" },
+      { name: "Context", value: null, default: true },
+    ],
+  }
+  expect(parseInspected(inspected(3, data as never))?.data).toEqual(data)
+  for (const bad of ["yes", false])
+    expect(
+      parseInspected(
+        inspected(3, {
+          props: 1,
+          contexts: [{ name: "C", value: 1, default: bad }],
+        } as never),
+      ),
+    ).toBeUndefined()
+})

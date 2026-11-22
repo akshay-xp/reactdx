@@ -82,7 +82,8 @@ export type HookValue = {
 }
 
 // A context the node read, by its displayName ("Context" without one).
-export type ContextValue = { name: string; value: Value }
+// `default`: no provider above, so it's the context's default value (read-only).
+export type ContextValue = { name: string; value: Value; default?: true }
 // A component that rendered the node, nearest first. `id` null: not in the tree
 // (a Server Component).
 export type Owner = { id: number | null; name: string }
@@ -510,9 +511,10 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
   if (contexts !== undefined) {
     const list = parseList(contexts, MAX_CONTEXTS, (item) => {
       const value = parseValue(item.value, 0, budget)
-      return isName(item.name) && value !== undefined
-        ? { name: item.name, value }
-        : undefined
+      if (!isName(item.name) || value === undefined) return
+      if (item.default === undefined) return { name: item.name, value }
+      if (item.default === true)
+        return { name: item.name, value, default: true as const }
     })
     if (!list) return
     parsed.contexts = list
