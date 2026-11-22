@@ -877,6 +877,10 @@ function ValueRow(props: {
   const canEdit = () =>
     props.editable &&
     (typeof value() === "string" || typeof value() === "number")
+  // A boolean flips (its checkbox, or Space on the row); the page's re-send
+  // shows the result, so the checkbox never runs ahead of it.
+  const isFlag = () => props.editable && typeof value() === "boolean"
+  const flip = () => props.inspector.edit(props.path, !value())
   const [editing, setEditing] = createSignal(false)
   const [invalid, setInvalid] = createSignal(false)
   const edit = () => {
@@ -948,11 +952,27 @@ function ValueRow(props: {
           if (event.key === "Enter" || event.key === "F2") {
             event.preventDefault()
             edit()
+          } else if (event.key === " " && isFlag()) {
+            event.preventDefault()
+            flip()
           }
         }}
       >
         <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>
           <Toggle open={shownOpen()} onClick={toggle} />
+        </Show>
+        <Show when={isFlag()}>
+          <input
+            type="checkbox"
+            tabIndex={-1}
+            aria-label={props.entry.name}
+            checked={value() as boolean}
+            class="mr-1 accent-accent"
+            onChange={(event) => {
+              event.currentTarget.checked = value() as boolean
+              flip()
+            }}
+          />
         </Show>
         {/* Inline, not flex items: flex drops the spaces between them. */}
         <span class="min-w-0 truncate">

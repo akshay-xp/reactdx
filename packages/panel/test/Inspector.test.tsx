@@ -1158,3 +1158,27 @@ test("inline editor: strings and numbers in place, Enter applies, Escape and blu
   fireEvent.click(valuePart(container, "Ref: 1"))
   expect(editor(container)).toBeNull()
 })
+
+test("a boolean flips with its checkbox or Space, shown as the page says", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ on: true }) }))
+  await settled()
+  const edits = () => sent.filter((command) => command.type === "edit")
+  const box = () =>
+    rowOf(container, "on: true").querySelector<HTMLInputElement>(
+      "input[type=checkbox]",
+    )
+  expect(box()).toBeTruthy()
+  expect(box()?.checked).toBe(true)
+  fireEvent.click(box() as Element)
+  expect(edits()).toEqual([
+    { type: "edit", id: 3, root: "props", path: ["on"], value: false },
+  ])
+  // Not until the page re-sends it.
+  expect(box()?.checked).toBe(true)
+  rowOf(container, "on: true").focus()
+  press(" ")
+  expect(edits()).toHaveLength(2)
+  expect(edits().at(-1)).toMatchObject({ value: false })
+})
