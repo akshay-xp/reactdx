@@ -13,6 +13,7 @@ import { Inspector } from "../src/Inspector"
 import { createInspectorStore, type InspectorCommand } from "../src/inspection"
 import type { Sources } from "../src/source"
 import { createTreeStore } from "../src/tree"
+import { previewText } from "../src/value"
 
 const object = (
   props: Record<string, Value>,
@@ -1114,7 +1115,7 @@ test("inline editor: strings and numbers in place, Enter applies, Escape and blu
   fireEvent.click(valuePart(container, 'label: "Count"'))
   const input = editor(container) as HTMLInputElement
   expect(input).toBeTruthy()
-  expect(input.value).toBe("Count")
+  expect(input.value).toBe('"Count"')
   expect(document.activeElement).toBe(input)
   fireEvent.input(input, { target: { value: "Total" } })
   fireEvent.keyDown(input, { key: "Enter" })
@@ -1250,4 +1251,64 @@ test("a DOM element value is a leaf: its id isn't an object id", async () => {
   )
   const row = container.querySelector("[data-testid=value]") as Element
   expect(row.querySelector("[data-testid=value-toggle]")).toBeNull()
+})
+
+test("typed edits: text reads as JSON plus markers, so a value can change type", async () => {
+  const { container, inspector, sent, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({
+        n: null,
+        s: "5",
+        u: { type: "undefined" },
+        f: 1,
+        t: "Count",
+        d: { type: "date", iso: "2026-01-01T00:00:00.000Z" },
+      }),
+    }),
+  )
+  await settled()
+  const last = () => sent.filter((command) => command.type === "edit").at(-1)
+  const open = (row: string) => {
+    fireEvent.click(valuePart(container, row))
+    return editor(container) as HTMLInputElement
+  }
+  const type = (row: string, text: string) => {
+    const input = open(row)
+    expect(input).toBeTruthy()
+    fireEvent.input(input, { target: { value: text } })
+    fireEvent.keyDown(input, { key: "Enter" })
+  }
+  expect(open('t: "Count"').value).toBe('"Count"')
+  fireEvent.keyDown(editor(container) as Element, { key: "Escape" })
+  type("n: null", '{"a": 1}')
+  expect(last()).toMatchObject({
+    path: ["n"],
+    value: { type: "object", props: { a: 1 } },
+  })
+  type('s: "5"', "5")
+  expect(last()).toMatchObject({ path: ["s"], value: 5 })
+  for (const [text, value] of [
+    ["undefined", { type: "undefined" }],
+    ["NaN", { type: "number", value: "NaN" }],
+    ["-0", { type: "number", value: "-0" }],
+  ] as const) {
+    type("f: 1", text)
+    expect(last()).toMatchObject({ path: ["f"], value })
+  }
+  type("u: undefined", "2")
+  expect(last()).toMatchObject({ path: ["u"], value: 2 })
+  // Not JSON: a string over a string, refused over anything else.
+  type('t: "Count"', "Total")
+  expect(last()).toMatchObject({ path: ["t"], value: "Total" })
+  type("f: 1", "abc")
+  expect(container.textContent).toContain("Not a valid value")
+  expect(editor(container)).not.toBeNull()
+  fireEvent.keyDown(editor(container) as Element, { key: "Escape" })
+  // Replace only: a date opens empty.
+  expect(
+    open(`d: ${previewText({ type: "date", iso: "2026-01-01T00:00:00.000Z" })}`)
+      .value,
+  ).toBe("")
 })

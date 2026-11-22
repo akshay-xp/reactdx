@@ -113,7 +113,7 @@ export function createInspectorStore(
     },
     expansion: (objectId: number) => expansions().get(objectId),
     // Writes a value of the inspected node; its re-send shows the result.
-    edit(path: RowPath, value: string | number | boolean) {
+    edit(path: RowPath, value: EditValue) {
       const at = id()
       if (at === undefined) return
       send({ type: "edit", id: at, root: path.root, path: path.keys, value })

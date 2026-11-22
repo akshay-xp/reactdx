@@ -158,8 +158,16 @@ test("edit sends a write for the inspected node at a row path", () => {
   store.inspect(3)
   store.edit({ root: "props", keys: ["label"] }, "Total")
   store.edit({ root: { hook: [0] }, keys: [] }, 7)
+  store.edit({ root: "props", keys: ["n"] }, { type: "undefined" })
   expect(sent.slice(1)).toEqual([
     { type: "edit", id: 3, root: "props", path: ["label"], value: "Total" },
     { type: "edit", id: 3, root: { hook: [0] }, path: [], value: 7 },
+    {
+      type: "edit",
+      id: 3,
+      root: "props",
+      path: ["n"],
+      value: { type: "undefined" },
+    },
   ])
 })

@@ -33,7 +33,7 @@ import {
 import { IconButton, PickGlyph, SearchField } from "./Toolbar"
 import { BADGES, TRIANGLE } from "./TreeView"
 import type { TreeStore } from "./tree"
-import { isPlain } from "./typed"
+import { editText, isPlain, parseTyped } from "./typed"
 import { byName, isContainer, previewText, sortedEntries } from "./value"
 
 // Text color per kind of value, from the theme's syntax tokens.
@@ -872,9 +872,9 @@ function ValueRow(props: {
   const value = () => props.entry.value
   let row!: HTMLDivElement
   // Strings and finite numbers edit as text (a cut string isn't whole).
-  const canEdit = () =>
-    props.editable &&
-    (typeof value() === "string" || typeof value() === "number")
+  // Any editable value but a boolean (which flips) is typed; what the panel holds
+  // only part of opens empty, to be replaced (editText).
+  const canEdit = () => props.editable && !isFlag()
   // A boolean flips (its checkbox, or Space on the row); the page's re-send
   // shows the result, so the checkbox never runs ahead of it.
   const isFlag = () => props.editable && typeof value() === "boolean"
@@ -890,11 +890,12 @@ function ValueRow(props: {
     setEditing(false)
     row.focus()
   }
-  // Text to the value's own type; undefined: it doesn't read as one.
+  // JSON plus markers (parseTyped); text that reads as nothing is a string
+  // over a string, and refused over anything else.
   const apply = (text: string) => {
-    const next = typeof value() === "number" ? Number(text) : text
-    if (typeof next === "number" && (!text.trim() || !Number.isFinite(next)))
-      return setInvalid(true)
+    const next =
+      parseTyped(text) ?? (typeof value() === "string" ? text : undefined)
+    if (next === undefined) return setInvalid(true)
     props.inspector.edit(props.path, next)
     done()
   }
@@ -991,7 +992,7 @@ function ValueRow(props: {
         </span>
         <Show when={editing()}>
           <ValueInput
-            text={String(value())}
+            text={editText(value())}
             label={props.entry.name}
             invalid={invalid()}
             onApply={apply}
