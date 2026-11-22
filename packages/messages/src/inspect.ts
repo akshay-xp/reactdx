@@ -103,7 +103,13 @@ export type InspectedData = {
   contexts?: ContextValue[]
   owners?: Owner[]
   source?: SourceRef
+  boundaries?: Boundaries
 }
+
+// The nearest Suspense boundary (`fallback`) and error boundary at or above the
+// node, by tree id, and whether the panel forced each (M5 #56).
+export type Boundary = { id: number; on: boolean }
+export type Boundaries = { fallback?: Boundary; error?: Boundary }
 
 const MAX_CONTEXTS = 50
 export const MAX_OWNERS = 50
@@ -487,8 +493,16 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
   if (!isId(message.id)) return
   if (message.data === null) return inspected(message.id, null)
   if (typeof message.data !== "object") return
-  const { props, state, hooks, hooksError, contexts, owners, source } =
-    message.data as Record<string, unknown>
+  const {
+    props,
+    state,
+    hooks,
+    hooksError,
+    contexts,
+    owners,
+    source,
+    boundaries,
+  } = message.data as Record<string, unknown>
   const budget = { left: MAX_VALUES }
   const parsed: InspectedData = { props: null }
   const value = parseValue(props, 0, budget)
@@ -531,7 +545,25 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     if (!ref) return
     parsed.source = ref
   }
+  if (boundaries !== undefined) {
+    const found = parseBoundaries(boundaries)
+    if (!found) return
+    parsed.boundaries = found
+  }
   return inspected(message.id, parsed)
+}
+
+function parseBoundaries(data: unknown): Boundaries | undefined {
+  if (typeof data !== "object" || data === null) return
+  const out: Boundaries = {}
+  for (const kind of ["fallback", "error"] as const) {
+    const item = (data as Record<string, unknown>)[kind]
+    if (item === undefined) continue
+    const { id, on } = (item ?? {}) as Record<string, unknown>
+    if (!isId(id) || typeof on !== "boolean") return
+    out[kind] = { id, on }
+  }
+  return out
 }
 
 function parseSource(data: unknown): SourceRef | undefined {

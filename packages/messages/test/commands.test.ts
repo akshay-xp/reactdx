@@ -288,3 +288,20 @@ test("rerender keeps a valid id and only it", () => {
   for (const id of [0, "3", undefined])
     expect(parseTreeCommand({ type: "rerender", id })).toBeUndefined()
 })
+
+test("force keeps a kind and a boolean for a valid id", () => {
+  const force = { type: "force", id: 3, kind: "fallback", on: true }
+  expect(parseTreeCommand({ ...force, extra: 1 })).toEqual(force)
+  expect(parseTreeCommand({ ...force, kind: "error", on: false })).toEqual({
+    ...force,
+    kind: "error",
+    on: false,
+  })
+  for (const bad of [
+    { kind: "suspend" },
+    { on: "yes" },
+    { id: 0 },
+    { on: undefined },
+  ])
+    expect(parseTreeCommand({ ...force, ...bad })).toBeUndefined()
+})

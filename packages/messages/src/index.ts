@@ -282,6 +282,16 @@ export type EditMessage = {
   value: EditValue
 }
 
+// Panel to background: show the nearest Suspense boundary's fallback or error
+// boundary's error UI (`on`), or its children again.
+export type ForceMessage = {
+  type: "force"
+  tabId: number
+  id: number
+  kind: "fallback" | "error"
+  on: boolean
+}
+
 // Panel to background: render the inspected node again, nothing changed.
 export type RerenderMessage = { type: "rerender"; tabId: number; id: number }
 
@@ -330,6 +340,7 @@ export type TreeCommand =
     }
   | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
   | { type: "rerender"; id: number }
+  | { type: "force"; id: number; kind: "fallback" | "error"; on: boolean }
   | {
       type: "rename-path"
       id: number
@@ -348,12 +359,30 @@ const BARE_COMMANDS = new Set<unknown>([
 
 export function parseTreeCommand(data: unknown): TreeCommand | undefined {
   if (typeof data !== "object" || data === null) return
-  const { type, id, objectId, offset, target, root, path, value, to } =
-    data as Record<string, unknown>
+  const {
+    type,
+    id,
+    objectId,
+    offset,
+    target,
+    root,
+    path,
+    value,
+    to,
+    kind,
+    on,
+  } = data as Record<string, unknown>
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
   if (type === "inspect" && (id === null || isId(id))) return { type, id }
   if (type === "rerender" && isId(id)) return { type, id }
+  if (
+    type === "force" &&
+    isId(id) &&
+    (kind === "fallback" || kind === "error") &&
+    typeof on === "boolean"
+  )
+    return { type, id, kind, on }
   if (type === "expand" && isId(objectId) && isCount(offset))
     return { type, objectId, offset }
   if (type === "edit" && isId(id)) {
