@@ -1,4 +1,5 @@
 import {
+  type CommitsMessage,
   type ExpandedMessage,
   type InspectedMessage,
   type ReasonedMessage,
@@ -694,4 +695,36 @@ test("reason loads an older render; one out of the buffer loads as null", async 
   for (let n = 1; n <= 101; n++) await React.act(() => setEffecting(100 + n))
   send({ source: "reactdx-relay", type: "reason", id: reasoned, seq })
   expect(reasonedReplies().at(-1)).toMatchObject({ seq, render: null })
+})
+
+const commitLists = () =>
+  posted
+    .filter(
+      (m): m is CommitsMessage => (m as { type?: string }).type === "commits",
+    )
+    .map((m) => m.commits)
+
+test("the flush posts the commits recorded since the last, once each", async () => {
+  const reasoned = idOf("Reasoned")
+  await React.act(() => setReasoned(41))
+  await flushed()
+  await React.act(() => setReasoned(42))
+  await flushed()
+  const lists = commitLists()
+  expect(lists).toHaveLength(2)
+  const seqs = lists.flat().map((commit) => commit.seq)
+  expect([...seqs].sort((a, b) => a - b)).toEqual(seqs)
+  expect(new Set(seqs).size).toBe(seqs.length)
+  expect(lists[1]?.at(-1)).toMatchObject({ updaters: [reasoned], renders: 1 })
+  // A new watch starts the panel's list over: the buffer is sent again (this
+  // test's two commits at least; the oldest may have dropped since).
+  posted.length = 0
+  send(WATCH)
+  await React.act(() => setReasoned(43))
+  await flushed()
+  expect(
+    commitLists()
+      .flat()
+      .map((commit) => commit.seq),
+  ).toEqual(expect.arrayContaining(seqs.slice(-2)))
 })

@@ -1,4 +1,6 @@
 import {
+  type CommitsMessage,
+  commitsMessage,
   type ExpandedMessage,
   expanded,
   type HookValue,
@@ -81,6 +83,7 @@ export function startAgent(
       | PickedMessage
       | InspectedMessage
       | ExpandedMessage
+      | CommitsMessage
       | ReasonedMessage
       | ValueTextMessage
       | ValueStoredMessage,
@@ -111,6 +114,8 @@ export function startAgent(
   const inspectable = (rendererId: number) =>
     record.renderers.get(rendererId)?.bundleType === 1
   let seq = 1
+  // The last commit seq posted in `commits`.
+  let sentCommit = 0
   let watching = false
   // Diffed on every commit (the bail-out check only holds against the previous
   // commit), posted on the flush.
@@ -123,6 +128,8 @@ export function startAgent(
     watching = true
     buffer.length = 0
     seq = 1
+    // The panel's timeline starts over with the tree: send the buffer again.
+    sentCommit = 0
     const ops: TreeOp[] = [{ op: "reset" }]
     for (const [rendererId, set] of record.roots)
       if (inspectable(rendererId))
@@ -473,6 +480,11 @@ export function startAgent(
       pending = false
       snapshot()
       if (buffer.length) send(buffer.splice(0))
+      const commits = recorder.summaries(sentCommit)
+      if (commits.length) {
+        sentCommit = commits.at(-1)?.seq ?? sentCommit
+        post(commitsMessage(commits))
+      }
       refresh()
     }, THROTTLE_MS)
   })
