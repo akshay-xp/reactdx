@@ -2,12 +2,13 @@ import { createContext, memo, useContext, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 
 // One component per render reason (e2e/insight.test.ts): Late mounts on "add",
-// Shown's prop changes on "bump", Stateful's own state on "state", Reader's
-// context on "theme", and Plain (no props, not memo) renders only because its
-// parent did. Styled is memo but gets an inline object and callback, which are
-// new references on every render. Effects' "b" runs its [a, b] effect (b
-// changed) and its no-deps one, not its [a] one. "rekey" remounts Item by
-// its key; "wrap" swaps Inner's div for a section, remounting Inner.
+// Shown's prop changes on "bump", Stateful's own state on "state" (Counter's
+// on "count", which triggers its commit), Reader's context on "theme", and
+// Plain (no props, not memo) renders only because its parent did. Styled is
+// memo but gets an inline object and callback, which are new references on
+// every render. Effects' "b" runs its [a, b] effect (b changed) and its
+// no-deps one, not its [a] one. "rekey" remounts Item by its key; "wrap" swaps
+// Inner's div for a section, remounting Inner.
 const Theme = createContext("light")
 Theme.displayName = "Theme"
 
@@ -96,6 +97,21 @@ function Stateful() {
     </>
   )
 }
+function Counter() {
+  const [count, setCount] = useState(3)
+  return (
+    <>
+      <p data-testid="counted">Counter {count}</p>
+      <button
+        type="button"
+        data-testid="count"
+        onClick={() => setCount(count + 1)}
+      >
+        Count
+      </button>
+    </>
+  )
+}
 function Reader() {
   return <p data-testid="reader">Theme {useContext(Theme)}</p>
 }
@@ -111,6 +127,7 @@ function Insight() {
         <Styled style={{ color: "red" }} onPick={() => {}} data={{ count }} />
         <Plain />
         <Stateful />
+        <Counter />
         <Reader />
         <Effects />
         <Keyed />

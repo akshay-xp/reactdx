@@ -64,6 +64,10 @@ for (const { fixture, port } of fixtures)
       await page.click("[data-testid=state]")
       await shows("State changed", "State #1: 0 → 1")
 
+      await selectListed(panel, "Counter")
+      await page.click("[data-testid=count]")
+      await shows("Triggered by Counter (State #1: 3 → 4)")
+
       await selectListed(panel, "Reader")
       await page.click("[data-testid=theme]")
       await shows("Context changed", 'Theme: "dark" → "light"')
