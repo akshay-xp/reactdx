@@ -1,14 +1,18 @@
 import { createContext, useContext, useState } from "react"
 import { createRoot } from "react-dom/client"
 
-// One component per render reason (e2e/insight.test.ts): Shown's prop changes
-// on "bump", Stateful's own state on "state", Reader's context on "theme", and
-// Plain (no props, not memo) renders only because its parent did.
+// One component per render reason (e2e/insight.test.ts): Late mounts on "add",
+// Shown's prop changes on "bump", Stateful's own state on "state", Reader's
+// context on "theme", and Plain (no props, not memo) renders only because its
+// parent did.
 const Theme = createContext("light")
 Theme.displayName = "Theme"
 
 function Shown({ count }) {
   return <p data-testid="shown">Count {count}</p>
+}
+function Late() {
+  return <p data-testid="late">Late</p>
 }
 function Plain() {
   return <p>Plain</p>
@@ -35,6 +39,7 @@ function Reader() {
 function Insight() {
   const [count, setCount] = useState(1)
   const [theme, setTheme] = useState("dark")
+  const [late, setLate] = useState(false)
   return (
     <div data-testid="insight">
       <Theme.Provider value={theme}>
@@ -42,7 +47,11 @@ function Insight() {
         <Plain />
         <Stateful />
         <Reader />
+        {late && <Late />}
       </Theme.Provider>
+      <button type="button" data-testid="add" onClick={() => setLate(true)}>
+        Add
+      </button>
       <button
         type="button"
         data-testid="bump"

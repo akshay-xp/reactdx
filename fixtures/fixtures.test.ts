@@ -93,6 +93,8 @@ for (const [script, port, version] of [
       await shows("[data-testid=reader]", "Theme dark")
       await page.click("[data-testid=theme]")
       await shows("[data-testid=reader]", "Theme light")
+      await page.click("[data-testid=add]")
+      await page.waitForSelector("[data-testid=late]")
       assert.deepEqual(errors, [])
       await page.close()
     })
