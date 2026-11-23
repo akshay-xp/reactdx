@@ -191,6 +191,31 @@ export const inspected = (
   data: InspectedData | null,
 ): InspectedMessage => ({ source: "reactdx", type: "inspected", id, data })
 
+// Agent to panel: one recorded render the panel asked for (`reason`); null
+// once its commit left the page's buffer.
+export type ReasonedMessage = {
+  source: "reactdx"
+  type: "reasoned"
+  id: number
+  seq: number
+  render: RenderReason | null
+}
+export const reasoned = (
+  id: number,
+  seq: number,
+  render: RenderReason | null,
+): ReasonedMessage => ({ source: "reactdx", type: "reasoned", id, seq, render })
+
+export function parseReasoned(data: unknown): ReasonedMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, id, seq, render } = data as Record<string, unknown>
+  if (source !== "reactdx" || type !== "reasoned" || !isId(id) || !isId(seq))
+    return
+  if (render === null) return reasoned(id, seq, null)
+  const parsed = parseRender(render, { left: MAX_VALUES })
+  if (parsed?.seq === seq) return reasoned(id, seq, parsed)
+}
+
 // Agent to panel: one page of an object the panel asked to expand.
 export type ExpandedMessage = {
   source: "reactdx"

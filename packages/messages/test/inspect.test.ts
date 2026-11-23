@@ -4,7 +4,9 @@ import {
   inspected,
   parseExpanded,
   parseInspected,
+  parseReasoned,
   parseValue,
+  reasoned,
   type Value,
 } from "../src/index"
 
@@ -531,4 +533,19 @@ test("an inspection's history is at most 100 increasing commit ids", () => {
   expect(parse(long.slice(0, 100))?.history).toHaveLength(100)
   for (const bad of [[4, 1], [1, 1], [0], long, "1"])
     expect(parse(bad)).toBeUndefined()
+})
+
+test("a reasoned reply carries one render, or null once it's released", () => {
+  const render = { seq: 2, kinds: ["state" as const] }
+  expect(parseReasoned(reasoned(3, 2, render))).toEqual(reasoned(3, 2, render))
+  expect(parseReasoned(reasoned(3, 2, null))).toEqual(reasoned(3, 2, null))
+  const message = reasoned(3, 2, render) as Record<string, unknown>
+  for (const bad of [
+    { ...message, render: { seq: 2, kinds: ["DROPPED"] } },
+    { ...message, seq: "2" },
+    { ...message, render: undefined },
+    { ...message, render: { ...render, seq: 4 } },
+    { ...message, id: 0 },
+  ])
+    expect(parseReasoned(bad)).toBeUndefined()
 })

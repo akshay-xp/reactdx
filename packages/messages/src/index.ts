@@ -292,6 +292,15 @@ export type ForceMessage = {
   on: boolean
 }
 
+// Panel to background: load one recorded render of the inspected node (its
+// commit `seq`, from the inspection's `history`; M6 #66).
+export type ReasonMessage = {
+  type: "reason"
+  tabId: number
+  id: number
+  seq: number
+}
+
 // Panel to background: render the inspected node again, nothing changed.
 export type RerenderMessage = { type: "rerender"; tabId: number; id: number }
 
@@ -340,6 +349,7 @@ export type TreeCommand =
     }
   | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
   | { type: "rerender"; id: number }
+  | { type: "reason"; id: number; seq: number }
   | { type: "force"; id: number; kind: "fallback" | "error"; on: boolean }
   | {
       type: "rename-path"
@@ -371,11 +381,13 @@ export function parseTreeCommand(data: unknown): TreeCommand | undefined {
     to,
     kind,
     on,
+    seq,
   } = data as Record<string, unknown>
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
   if (type === "inspect" && (id === null || isId(id))) return { type, id }
   if (type === "rerender" && isId(id)) return { type, id }
+  if (type === "reason" && isId(id) && isId(seq)) return { type, id, seq }
   if (
     type === "force" &&
     isId(id) &&

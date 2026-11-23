@@ -305,3 +305,13 @@ test("force keeps a kind and a boolean for a valid id", () => {
   ])
     expect(parseTreeCommand({ ...force, ...bad })).toBeUndefined()
 })
+
+test("reason asks for one recorded render of a node", () => {
+  expect(parseTreeCommand({ type: "reason", id: 3, seq: 2, x: 1 })).toEqual({
+    type: "reason",
+    id: 3,
+    seq: 2,
+  })
+  expect(parseTreeCommand({ type: "reason", id: 3, seq: 0 })).toBeUndefined()
+  expect(parseTreeCommand({ type: "reason", seq: 2 })).toBeUndefined()
+})
