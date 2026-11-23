@@ -35,8 +35,8 @@ export type RawHook = {
   value?: unknown
   hooks?: RawHook[]
   site?: CallSite
-  // State and Reducer: the hook's position in the fiber's hook list, which
-  // overrideHookState takes (page-only, not sent).
+  // A hook read from the fiber's hook list: the position of its first entry
+  // (overrideHookState takes a state hook's; page-only, not sent).
   index?: number
   // A context read (useContext, use): the context object (page-only).
   context?: unknown
@@ -187,9 +187,12 @@ export function inspectHooks(
   const calls: Call[] = []
   // How many list entries were read: the next one's index.
   let entries = 0
+  // The current hook's first entry, taken by its record().
+  let first: number | undefined
   const next = () => {
     const current = hook
     hook = current?.next ?? null
+    first ??= entries
     entries++
     return current
   }
@@ -219,9 +222,10 @@ export function inspectHooks(
     name: string,
     value?: unknown,
     hasValue = true,
-    index?: number,
     context?: unknown,
-  ) =>
+  ) => {
+    const index = first
+    first = undefined
     calls.push({
       name,
       value,
@@ -230,6 +234,7 @@ export function inspectHooks(
       ...(index !== undefined && { index }),
       ...(context !== undefined && { context }),
     })
+  }
   const effect = (name: string) => () => {
     const deps = (next()?.memoizedState as { deps?: unknown } | undefined)?.deps
     record(name, deps, deps != null)
@@ -239,13 +244,13 @@ export function inspectHooks(
     readContext: read,
     useContext(of: Context) {
       const value = read(of)
-      record(contextName(of), value, true, undefined, of)
+      record(contextName(of), value, true, of)
       return value
     },
     use(usable: unknown) {
       if ((usable as { $$typeof?: unknown })?.$$typeof === CONTEXT) {
         const value = read(usable as Context)
-        record(contextName(usable as Context), value, true, undefined, usable)
+        record(contextName(usable as Context), value, true, usable)
         return value
       }
       if (!isThenable(usable)) throw new Error("Unsupported use() argument")
@@ -279,21 +284,19 @@ export function inspectHooks(
       return Array(size).fill(MEMO_CACHE_SENTINEL)
     },
     useState(initial: unknown) {
-      const index = entries
       const state = next()
       const value = state
         ? state.memoizedState
         : typeof initial === "function"
           ? initial()
           : initial
-      record("State", value, true, index)
+      record("State", value)
       return [value, noop]
     },
     useReducer(_: unknown, arg: unknown, init?: (arg: unknown) => unknown) {
-      const index = entries
       const state = next()
       const value = state ? state.memoizedState : init ? init(arg) : arg
-      record("Reducer", value, true, index)
+      record("Reducer", value)
       return [value, noop]
     },
     useRef(initial: unknown) {
