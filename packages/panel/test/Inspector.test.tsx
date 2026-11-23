@@ -1938,3 +1938,22 @@ test("a history stepper steps through the node's recorded renders", () => {
   expect(stepper()?.textContent).toBe("Render 4 of 4")
   expect(changes(container)).toEqual(["State #1: 2 → 3"])
 })
+
+test("a picked commit the node didn't render in says so", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      render: { seq: 9, kinds: ["parent"] },
+      history: [2, 9],
+    }),
+  )
+  inspector.pin(5)
+  expect(container.textContent).toContain("Didn't render in this commit.")
+  expect(reasons(container)).toEqual([])
+  expect(container.querySelector("[data-testid=history]")).not.toBeNull()
+  inspector.pin(undefined)
+  expect(container.textContent).not.toContain("Didn't render in this commit.")
+  expect(reasons(container)).toEqual(["Parent rendered"])
+})

@@ -669,9 +669,12 @@ function Reasons(props: {
         <History inspector={props.inspector} />
       </Show>
       <Show
-        when={props.inspector.render()}
+        when={!props.inspector.absent() && props.inspector.render()}
         fallback={
           <Switch>
+            <Match when={props.inspector.absent()}>
+              <p class="pl-6 text-muted">Didn't render in this commit.</p>
+            </Match>
             <Match when={props.inspector.render() === null}>
               <p class="pl-6 text-muted">This render is no longer recorded.</p>
             </Match>
