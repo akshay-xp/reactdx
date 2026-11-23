@@ -654,3 +654,17 @@ test("an inspection names what triggered its render, hooks labeled as in Hooks",
   inspect(triggering)
   expect(replies().at(-1)?.data?.render?.updaters).toEqual(expected)
 })
+
+test("an inspection lists the node's recorded renders, oldest first", async () => {
+  const reasoned = idOf("Reasoned")
+  inspect(reasoned)
+  const before = replies().at(-1)?.data?.history?.length ?? 0
+  for (const n of [21, 22, 23]) await React.act(() => setReasoned(n))
+  await flushed()
+  const { history = [], render } = replies().at(-1)?.data ?? {}
+  expect(history).toHaveLength(before + 3)
+  expect([...history].sort((a, b) => a - b)).toEqual(history)
+  expect(history.at(-1)).toBe(render?.seq)
+  inspect(idOf("Greeting"))
+  expect(replies().at(-1)?.data).not.toHaveProperty("history")
+})

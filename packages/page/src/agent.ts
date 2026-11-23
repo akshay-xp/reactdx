@@ -302,8 +302,10 @@ export function startAgent(
       selected.hooks = read.hooks
       if (read.error !== undefined) data.hooksError = read.error
     }
-    if (latest)
+    if (latest) {
       data.render = reasonOf(id, latest, read ? read.hooks : [], serialize)
+      data.history = recorder.history(id)
+    }
     return data
   }
   // A render record as sent: values serialized with the inspection's, keys and
