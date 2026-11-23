@@ -108,11 +108,25 @@ export function createTree() {
   const label = (fiber: Fiber) =>
     bounded(nameOf(fiber, kindOf(fiber) as TreeKind))
 
-  // Skipped fibers (fragments, text, modes...) pass their children up.
-  const visible = (fiber: Fiber, out: Fiber[] = []) => {
+  // A bailed-out fiber keeps its child fibers: nothing below it changed.
+  const bailedOut = (fiber: Fiber) =>
+    fiber.alternate !== null && fiber.child === fiber.alternate.child
+
+  // Skipped fibers (fragments, text, modes...) pass their children up. Kids
+  // under a skipped fiber that bailed out go in `stale` too: React didn't
+  // clone them, so they're last commit's fibers (no alternate, old flags).
+  const visible = (
+    fiber: Fiber,
+    out: Fiber[] = [],
+    stale?: Set<Fiber>,
+    under = false,
+  ) => {
     for (let child = fiber.child; child; child = child.sibling)
-      if (kindOf(child)) out.push(child)
-      else if (!isHidden(child)) visible(child, out)
+      if (kindOf(child)) {
+        out.push(child)
+        if (under) stale?.add(child)
+      } else if (!isHidden(child))
+        visible(child, out, stale, under || bailedOut(child))
     return out
   }
 
@@ -177,9 +191,9 @@ export function createTree() {
     ops: TreeOp[],
   ) => {
     const prev = children.get(key)
-    // A bailed-out subtree keeps its child fibers, so nothing below it changed.
-    if (prev && fiber.alternate && fiber.child === fiber.alternate.child) return
-    const kids = visible(fiber)
+    if (prev && bailedOut(fiber)) return
+    const stale = new Set<Fiber>()
+    const kids = visible(fiber, [], stale)
     const next = kids.map(idOf)
     const kept = new Set(next)
     for (const id of prev ?? [])
@@ -194,12 +208,14 @@ export function createTree() {
       const id = next[index] as number
       if (known.has(id)) {
         fibers.set(id, kid)
-        visit(kid, id)
         const name = label(kid)
         if (name !== names.get(id)) {
           names.set(id, name)
           ops.push({ op: "rename", id, name })
         }
+        // A stale kid's subtree is unchanged, like a bailed-out one's.
+        if (stale.has(kid)) return
+        visit(kid, id)
         update(kid, id, id, rootId, ops)
       } else {
         addSubtree(kid, parentId, rootId, index, ops)

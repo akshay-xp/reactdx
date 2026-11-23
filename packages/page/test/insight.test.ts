@@ -513,3 +513,27 @@ test("commits are summarized, with the ids each rendered", async () => {
   expect(recorder.rendered(seq)).toEqual([id("Counting")])
   expect(recorder.rendered(9999)).toBeUndefined()
 })
+
+function BenchCell(_: { index: number }) {
+  return null
+}
+const benchCells = [0, 1, 2].map((index) => h(BenchCell, { key: index, index }))
+let setBenchExtra: (on: boolean) => void = () => {}
+function BenchExtra() {
+  return null
+}
+function BenchParent() {
+  const [extra, set] = React.useState(false)
+  setBenchExtra = set
+  return h(React.Fragment, null, extra && h(BenchExtra), benchCells)
+}
+
+// A constant children array is a Fragment React bails out of without cloning
+// its children: the parent's new Fragment holds the same fibers, which keep no
+// alternate and their mount's flags.
+test("children under a wrapper that bailed out aren't recorded", async () => {
+  const { record, recorder, id } = await mount(h(BenchParent))
+  await record(() => setBenchExtra(true))
+  expect(recorder.latest(id("BenchCell"))).toBeUndefined()
+  expect(recorder.summaries(0).at(-1)?.renders).toBe(2)
+})
