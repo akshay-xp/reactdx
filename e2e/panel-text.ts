@@ -8,9 +8,9 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // hover(name) puts the pointer on
 // the tree row with that name; leave() moves it off the trees. close() closes DevTools.
 // press(name) clicks the button with that name (its text or aria-label), pressed(name)
-// reads its aria-pressed, key(text, key) presses a key on a row or the commit
-// strip, marked() names the tree rows the picked commit rendered,
-// selected() is the selected row's name, select(name) clicks the row with that name.
+// reads its aria-pressed, key(text, key) presses a key on a row or the commits
+// list, tab(name) selects the panel tab with that name, commits() reads the
+// commit rows as listed, selected() is the selected row's name, select(name) clicks the row with that name.
 // The text leaves out the inspector pane; inspector() reads only that.
 // frame is the panel's document (Chrome only: Firefox's is out of Puppeteer's reach).
 export type PanelText = (() => Promise<string>) & {
@@ -26,8 +26,10 @@ export type PanelText = (() => Promise<string>) & {
   // Focuses the row (or the listbox) whose text or name includes `text` and
   // presses `key`.
   key(text: string, key: Key): Promise<void>
-  // The names of the tree rows marked as rendered in the picked commit.
-  marked(): Promise<string[]>
+  // Selects the panel tab ("Components", "Commits") with that name.
+  tab(name: string): Promise<void>
+  // The commit rows' text, as listed (newest first).
+  commits(): Promise<string[]>
   // Replaces the text of the input with that accessible name ("" empties it).
   type(label: string, text: string): Promise<void>
   // Edits the inspector value row reading `row`: opens its editor, enters `text`
@@ -36,10 +38,20 @@ export type PanelText = (() => Promise<string>) & {
   selected(): Promise<string | undefined>
 }
 
-type Key = "ArrowLeft" | "ArrowRight" | "End" | "Escape"
+type Key =
+  | "ArrowLeft"
+  | "ArrowRight"
+  | "ArrowUp"
+  | "ArrowDown"
+  | "Home"
+  | "End"
+  | "Escape"
 const KEY_CODES: Record<Key, string> = {
   ArrowLeft: "LEFT",
   ArrowRight: "RIGHT",
+  ArrowUp: "UP",
+  ArrowDown: "DOWN",
+  Home: "HOME",
   End: "END",
   Escape: "ESCAPE",
 }
@@ -67,9 +79,12 @@ export async function openPanelText(
           if (!root) return ""
           const texts: string[] = []
           const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-          while (walker.nextNode())
+          while (walker.nextNode()) {
+            // A hidden tab isn't shown (nor in Firefox's accessibility tree).
+            if (walker.currentNode.parentElement?.closest("[hidden]")) continue
             if (inspector || !pane?.contains(walker.currentNode))
               texts.push(walker.currentNode.textContent ?? "")
+          }
           return texts.join(" ")
         }, inspector),
       )
@@ -105,7 +120,7 @@ export async function openPanelText(
     }
     const close = () => frame.page().close()
     const button = (name: string) =>
-      `[...document.querySelectorAll("button")].find((el) => (el.getAttribute("aria-label") ?? el.textContent.trim()) === ${json(name)})`
+      `[...document.querySelectorAll("button")].find((el) => !el.closest("[hidden]") && (el.getAttribute("aria-label") ?? el.textContent.trim()) === ${json(name)})`
     const press = async (name: string) => {
       await frame.evaluate(`${button(name)}.click()`)
     }
@@ -150,11 +165,22 @@ export async function openPanelText(
       )
       await frame.page().keyboard.press(key)
     }
-    const marked = () =>
+    const tab = async (name: string) => {
+      await frame.evaluate(
+        (name) =>
+          (
+            [...document.querySelectorAll("[role=tab]")].find(
+              (el) => el.textContent === name,
+            ) as HTMLElement | undefined
+          )?.click(),
+        name,
+      )
+    }
+    const commits = () =>
       frame.evaluate(() =>
-        [
-          ...document.querySelectorAll("[data-rendered] [data-testid=name]"),
-        ].map((el) => el.textContent ?? ""),
+        [...document.querySelectorAll("[role=option]")].map((el) =>
+          (el.textContent ?? "").trim(),
+        ),
       )
     const selected = () =>
       frame.evaluate(
@@ -174,7 +200,8 @@ export async function openPanelText(
       press,
       pressed,
       key,
-      marked,
+      tab,
+      commits,
       type,
       edit,
       selected,
@@ -426,31 +453,27 @@ export async function openPanelText(
       }, 50))`,
     )
   }
-  // Tree items described as rendered, by their first text leaf (the name).
-  const marked = async () =>
+  const tab = async (name: string) => {
+    await onAccessible(
+      `node.role === ${role("PAGETAB")} && node.name === ${json(name)}`,
+      `node.doAction(0); return "ok"`,
+    )
+  }
+  const commits = async () =>
     JSON.parse(
       (await chromeEval(
         browser,
         `(() => {
           ${panelBrowser}
           if (!panel) return "[]"
-          const names = []
-          const leaf = (at) => {
-            if (at.role === ${role("TEXT_LEAF")}) return at
-            for (let i = 0; i < at.childCount; i++) {
-              const found = leaf(at.getChildAt(i))
-              if (found) return found
-            }
-            return null
-          }
+          const rows = []
           const walk = (node) => {
             if (!node) return
-            if (node.role === ${role("OUTLINEITEM")} && node.description === "Rendered in this commit")
-              names.push(leaf(node)?.name ?? "")
+            if (node.role === ${role("OPTION")}) rows.push(node.name ?? "")
             for (let i = 0; i < node.childCount; i++) walk(node.getChildAt(i))
           }
           walk(service.getAccessibleFor(panel))
-          return JSON.stringify(names)
+          return JSON.stringify(rows)
         })()`,
       )) ?? "[]",
     ) as string[]
@@ -490,7 +513,8 @@ export async function openPanelText(
     press,
     pressed,
     key,
-    marked,
+    tab,
+    commits,
     type,
     edit,
     selected,

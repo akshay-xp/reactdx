@@ -266,7 +266,7 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
   command({ type: "inspect", id: 1e9 })
   command({ type: "expand", objectId: -1, offset: 0 })
   command({ type: "expand", objectId: 1, offset: "a" })
-  // Commit summaries and ids: seqs from 9001, so a forged bar would show.
+  // Commit summaries and replies: seqs from 9001, so a forged row would show.
   const summary = (seq: number) => ({
     seq,
     time: 1,
@@ -279,13 +279,12 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
   commits(Array.from({ length: 101 }, (_, i) => summary(9001 + i)))
   commits([summary(9002), summary(9001)])
   commits([{ ...summary(9001), renders: "x" }])
-  post({
-    source: "reactdx",
-    type: "committed",
-    seq: 1,
-    ids: Array(2001).fill(1),
-  })
-  post({ source: "reactdx", type: "committed", seq: 1, ids: [0] })
+  const forgedCommitted = (fields: Record<string, unknown>) =>
+    post({ source: "reactdx", type: "committed", seq: 1, ...fields })
+  forgedCommitted({ renders: Array(2001).fill({ id: 1, kinds: ["state"] }) })
+  forgedCommitted({ renders: [{ id: 0, kinds: ["state"] }] })
+  forgedCommitted({ renders: [{ id: 1, kinds: ["DROPPED"] }] })
+  forgedCommitted({ renders: [], updaters: [{ id: 1, hooks: [{ name: 1 }] }] })
   command({ type: "commit", seq: 0 })
   command({ type: "commit", seq: "x" })
   command({ type: "reason", id: 1, seq: 0 })
@@ -337,11 +336,9 @@ test("forged inspect messages and commands break nothing", {
     if (name === "chrome") {
       const frame = await openPanel(browser)
       assert.equal(await frame.$("img"), null)
-      // No forged commit joined the strip.
-      const bars = await frame.$$eval("[role=option]", (options) =>
-        options.map((option) => option.getAttribute("aria-label")),
-      )
-      assert.ok(!bars.some((bar) => bar?.startsWith("Commit 9")), String(bars))
+      // No forged commit joined the list.
+      const rows = await panel.commits()
+      assert.ok(!rows.some((row) => row.startsWith("#9")), String(rows))
     }
 
     // The agent and panel still work. A forged inspect command (valid-shaped ids)

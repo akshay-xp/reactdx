@@ -60,11 +60,7 @@ for (const { fixture, port } of fixtures)
       // Mounted with Late, after the panel opened: its mount is recorded too.
       await selectListed(panel, "Stepped", (t) => t.includes("Mounted"))
       for (let i = 0; i < 3; i++) await page.click("[data-testid=step]")
-      await shows("Render 4 of 4", "State #1: 2 → 3")
-      await panel.press("Previous render")
-      await shows("Render 3 of 4", "State #1: 1 → 2")
-      await panel.key("Render 3 of 4", "ArrowLeft")
-      await shows("Render 2 of 4", "State #1: 0 → 1")
+      await shows("4 renders recorded", "State #1: 2 → 3")
       await selectListed(panel, "Plain", (t) => t.includes("Parent rendered"))
       await panel.press("Force re-render")
       await shows("Forced")
@@ -105,7 +101,7 @@ for (const { fixture, port } of fixtures)
   })
 
 for (const { fixture, port } of fixtures)
-  test(`${fixture}: the commit timeline marks, names and steps to a commit`, async () => {
+  test(`${fixture}: Commits lists what rendered and why, and links to it`, async () => {
     const { browser, page, panel } = await panelFor(
       name,
       `http://localhost:${port}/insight.html`,
@@ -115,48 +111,62 @@ for (const { fixture, port } of fixtures)
       const text = await until(panel.inspector, (t) => t.includes(part))
       assert.ok(text.includes(part), text)
     }
-    const stripShows = async (part: string) => {
+    const panelShows = async (part: string) => {
       const text = await until(panel, (t) => t.includes(part))
       assert.ok(text.includes(part), text)
     }
-    const marked = async (expected: string[]) => {
+    const inspectorLacks = async (part: string) => {
+      const text = await until(panel.inspector, (t) => !t.includes(part))
+      assert.ok(!text.includes(part), text)
+    }
+    const rows = async (check: (rows: string[]) => boolean) => {
       const deadline = Date.now() + 5000
-      let names = await panel.marked()
-      while (JSON.stringify(names) !== JSON.stringify(expected)) {
-        if (Date.now() > deadline) break
+      let list = await panel.commits()
+      while (!check(list) && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 100))
-        names = await panel.marked()
+        list = await panel.commits()
       }
-      assert.deepEqual(names, expected)
+      assert.ok(check(list), JSON.stringify(list))
+      return list
     }
     try {
       await page.waitForSelector("[data-testid=insight]")
       await selectListed(panel, "Counter")
       await page.click("[data-testid=count]")
       await page.click("[data-testid=count]")
-      await inspectorShows("Render 2 of 2")
-      // The newest commit: Counter's second update.
-      await panel.key("Commits", "ArrowLeft")
-      await stripShows("rendered. Triggered by Counter")
-      await marked(["Counter"])
-      await inspectorShows("Render 2 of 2")
-      await panel.key("Commits", "ArrowLeft")
-      await inspectorShows("Render 1 of 2")
+      await inspectorShows("2 renders recorded")
+
+      await panel.tab("Commits")
+      await rows((list) => /· 1 component · Counter$/.test(list[0] ?? ""))
+      // The newest: Counter's second update.
+      await panel.key("Commits", "Home")
+      await panelShows("Counter (State #1: 4 → 5)")
+      await panelShows("Counter State changed")
+      // Its name opens Counter, the inspector pinned to that commit.
+      await panel.press("Counter")
+      await inspectorShows("Show latest")
+      await inspectorShows("State #1: 4 → 5")
       await selectListed(panel, "Shown", (t) =>
         t.includes("Didn't render in this commit."),
       )
-      await panel.key("Commits", "End")
-      await stripShows("Live")
-      await marked([])
-      await selectListed(panel, "Counter", (t) => t.includes("Render 2 of 2"))
+      await panel.press("Show latest")
+      await inspectorLacks("Didn't render in this commit.")
 
-      await page.click("[data-testid=bump]")
-      await selectListed(panel, "Shown", (t) => t.includes("Props changed"))
-      await panel.key("Commits", "ArrowLeft")
-      await stripShows("Triggered by Insight")
+      // A commit Counter didn't render in, for the filter to leave out.
+      await page.click("[data-testid=state]")
+      await selectListed(panel, "Counter", (t) =>
+        t.includes("2 renders recorded"),
+      )
+      await panel.press("2 renders recorded")
+      await panelShows("Pick a commit to see what rendered and why.")
+      assert.equal(await panel.pressed("Only Counter"), true)
+      await rows((list) => list.length === 2)
+      await panel.key("Commits", "End")
+      await panelShows("Counter (State #1: 3 → 4)")
       await panel.key("Commits", "Escape")
-      await stripShows("Live")
-      await marked([])
+      await panelShows("Pick a commit to see what rendered and why.")
+      await panel.press("Only Counter")
+      await rows((list) => list.length === 3)
     } finally {
       await browser.close()
     }
