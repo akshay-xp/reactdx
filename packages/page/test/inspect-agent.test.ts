@@ -38,6 +38,15 @@ function Other() {
   setOther = set
   return h("i", null, value)
 }
+// Taken in an effect: an inspection's shadow render gets stub setters.
+let setReasoned = (_: number) => {}
+function Reasoned() {
+  const [value, set] = React.useState(0)
+  React.useEffect(() => {
+    setReasoned = set
+  })
+  return h("b", null, value)
+}
 function Deep(_: { data: unknown }) {
   return null
 }
@@ -93,6 +102,7 @@ beforeAll(async () => {
       h(Greeting, { key: "g", name: "Ada" }),
       h(Clock, { key: "c" }),
       h(Other, { key: "o" }),
+      h(Reasoned, { key: "why" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
       h(Refs, { key: "r" }),
       h(Counted, { key: "k", label: "x" }),
@@ -499,4 +509,15 @@ test("rerender renders the inspected component once, nothing changed", async () 
   await rerender(idOf("Other"))
   await rerender(idOf("var"))
   expect(commits()).toBe(committed + 1)
+})
+
+test("an inspection carries why its node last rendered, while watched", async () => {
+  const reasoned = idOf("Reasoned")
+  inspect(reasoned)
+  await React.act(() => setReasoned(1))
+  await flushed()
+  expect(replies().at(-1)?.data?.render).toMatchObject({
+    kinds: ["state"],
+    hooks: [{ hook: [0], old: 0, new: 1 }],
+  })
 })

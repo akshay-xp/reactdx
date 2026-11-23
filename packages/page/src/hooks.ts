@@ -53,14 +53,16 @@ export function hookAt(hooks: RawHook[] = [], indexes: number[]) {
   return hook
 }
 
-// The hook whose first hook list entry is `index`, through custom hooks.
-export function hookByIndex(
+// The call indexes of the hook whose first hook list entry is `index`, through
+// custom hooks (what hookAt takes).
+export function hookPath(
   hooks: RawHook[] = [],
   index: number,
-): RawHook | undefined {
-  for (const hook of hooks) {
-    const found = hook.index === index ? hook : hookByIndex(hook.hooks, index)
-    if (found) return found
+): number[] | undefined {
+  for (const [at, hook] of hooks.entries()) {
+    if (hook.index === index) return [at]
+    const inner = hookPath(hook.hooks, index)
+    if (inner) return [at, ...inner]
   }
 }
 

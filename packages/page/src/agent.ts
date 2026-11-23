@@ -5,6 +5,7 @@ import {
   type InspectedData,
   type InspectedMessage,
   inspected,
+  MAX_CHANGES,
   MAX_COPY,
   MAX_OPS,
   MAX_OWNERS,
@@ -14,6 +15,7 @@ import {
   type PickedMessage,
   parseTreeCommand,
   picked,
+  type RenderReason,
   type RootInfo,
   snapshotMessage,
   type TreeBatchMessage,
@@ -38,10 +40,11 @@ import {
   type DispatcherRef,
   type HooksFiber,
   hookAt,
+  hookPath,
   inspectHooks,
   type RawHook,
 } from "./hooks.ts"
-import { contextsOf } from "./insight.ts"
+import { contextsOf, createRecorder, type RenderRecord } from "./insight.ts"
 import { copyText, createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
 import { sourceOf } from "./source.ts"
@@ -99,6 +102,7 @@ export function startAgent(
   }
 
   const tree = createTree()
+  const recorder = createRecorder()
   // Production builds have minified names and aren't inspected.
   const inspectable = (rendererId: number) =>
     record.renderers.get(rendererId)?.bundleType === 1
@@ -179,7 +183,13 @@ export function startAgent(
     | {
         id: number
         values: ReturnType<typeof createInspector>
-        sent?: { props: unknown; state: unknown; contexts: unknown[] }
+        sent?: {
+          props: unknown
+          state: unknown
+          contexts: unknown[]
+          // The render record sent, by commit seq.
+          render?: number
+        }
         hooks?: RawHook[]
       }
     | undefined
@@ -247,10 +257,12 @@ export function startAgent(
     const fiber = tree.fiber(id)
     if (!fiber || !selected) return null
     const contexts = contextsOf(fiber)
+    const latest = recorder.latest(id)
     selected.sent = {
       props: fiber.memoizedProps,
       state: fiber.memoizedState,
       contexts: contexts.map(({ value }) => value),
+      render: latest?.seq,
     }
     const { serialize } = selected.values
     const data: InspectedData = {
@@ -289,7 +301,42 @@ export function startAgent(
       selected.hooks = read.hooks
       if (read.error !== undefined) data.hooksError = read.error
     }
+    if (latest)
+      data.render = reasonOf(latest, read ? read.hooks : [], serialize)
     return data
+  }
+  // A render record as sent: values serialized with the inspection's, keys and
+  // lists within the validator's bounds, hooks by call indexes.
+  const reasonOf = (
+    record: RenderRecord,
+    hooks: RawHook[],
+    serialize: (value: unknown) => unknown,
+  ): RenderReason => {
+    const both = (change: { old: unknown; new: unknown }) => ({
+      old: serialize(change.old) as Value,
+      new: serialize(change.new) as Value,
+    })
+    const keyed = (changes: RenderRecord["props"] = []) =>
+      changes.slice(0, MAX_CHANGES).map((change) => ({
+        key: change.key.slice(0, MAX_TREE_STRING),
+        ...both(change),
+      }))
+    const reason: RenderReason = { seq: record.seq, kinds: record.kinds }
+    if (record.props) reason.props = keyed(record.props)
+    if (record.state) reason.state = keyed(record.state)
+    if (record.hooks) {
+      const list = []
+      for (const change of record.hooks.slice(0, MAX_CHANGES)) {
+        const hook = hookPath(hooks, change.index)
+        if (hook) list.push({ hook, ...both(change) })
+      }
+      reason.hooks = list
+    }
+    if (record.contexts)
+      reason.contexts = record.contexts
+        .slice(0, MAX_CHANGES)
+        .map((change) => ({ context: change.read, ...both(change) }))
+    return reason
   }
   const inspect = (id: number | null) => {
     selected?.values.release()
@@ -339,6 +386,7 @@ export function startAgent(
       fiber &&
       sent &&
       fiber.memoizedProps === sent.props &&
+      recorder.latest(id)?.seq === sent.render &&
       fiber.memoizedState === sent.state &&
       sameValues(
         contextsOf(fiber).map(({ value }) => value),
@@ -354,7 +402,16 @@ export function startAgent(
   record.listeners.add((rendererId, root) => {
     const entry = info(root)
     entry.commits++
-    if (watching && inspectable(rendererId)) tree.commit(root, entry.id, buffer)
+    if (watching && inspectable(rendererId))
+      // React clears memoizedUpdaters once this returns (dev builds keep them
+      // while a devtools hook was present at load).
+      recorder.commit(
+        entry.id,
+        new Set(
+          (root as { memoizedUpdaters?: Set<unknown> }).memoizedUpdaters ?? [],
+        ),
+        (visit) => tree.commit(root, entry.id, buffer, visit),
+      )
     if (pending) return
     pending = true
     setTimeout(() => {
