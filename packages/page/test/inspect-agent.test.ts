@@ -521,3 +521,17 @@ test("an inspection carries why its node last rendered, while watched", async ()
     hooks: [{ hook: [0], old: 0, new: 1 }],
   })
 })
+
+test("renders before watch, or before an unwatch, aren't kept", async () => {
+  const reasoned = idOf("Reasoned")
+  send(UNWATCH)
+  await React.act(() => setReasoned(10))
+  send(WATCH)
+  inspect(reasoned)
+  expect(replies().at(-1)?.data?.render).toBeUndefined()
+  await React.act(() => setReasoned(11))
+  send(UNWATCH)
+  send(WATCH)
+  inspect(reasoned)
+  expect(replies().at(-1)?.data?.render).toBeUndefined()
+})

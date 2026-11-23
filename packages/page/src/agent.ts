@@ -498,6 +498,7 @@ export function startAgent(
       watching = false
       buffer.length = 0
       tree.clear()
+      recorder.clear()
     }
   })
   snapshot()
