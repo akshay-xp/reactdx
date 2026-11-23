@@ -357,6 +357,15 @@ export function createRecorder() {
         hooks: found?.records.get(id)?.hooks ?? [],
       }))
     },
+    // The seqs of an id's records still in the buffer, oldest first.
+    history(id: number) {
+      return commits.flatMap((commit) =>
+        commit.records.has(id) ? [commit.seq] : [],
+      )
+    },
+    record(id: number, seq: number) {
+      return commits.find((commit) => commit.seq === seq)?.records.get(id)
+    },
     latest(id: number) {
       for (let i = commits.length - 1; i >= 0; i--) {
         const found = commits[i]?.records.get(id)

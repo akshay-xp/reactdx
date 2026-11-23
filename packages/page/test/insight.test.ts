@@ -473,3 +473,27 @@ test("a commit lists its updaters with the state they changed", async () => {
   expect(recorder.updatersOf(rendered)).toEqual([])
   expect(recorder.updatersOf(9999)).toEqual([])
 })
+
+test("history lists a node's records in the buffer, oldest first", async () => {
+  const { record, recorder, id } = await mount(h(StatefulParent))
+  for (const n of [1, 2, 3]) await record(() => setStateful(n))
+  const stateful = id("Stateful")
+  const seqs = recorder.history(stateful)
+  expect(seqs).toHaveLength(3)
+  expect([...seqs].sort((a, b) => a - b)).toEqual(seqs)
+  expect(seqs.at(-1)).toBe(recorder.latest(stateful)?.seq)
+  expect(recorder.record(stateful, seqs[0] ?? 0)?.hooks).toEqual([
+    { index: 1, old: 0, new: 1 },
+  ])
+})
+
+test("history and records drop with the commits that fall out", async () => {
+  const { record, recorder, id } = await mount(h(Parent))
+  await record(() => setParent(1))
+  const late = id("Late")
+  expect(recorder.history(late)).toEqual([1])
+  for (let i = 1; i <= 100; i++) await record(() => setParent(1 + 2 * i))
+  expect(recorder.history(late)).toEqual([])
+  expect(recorder.record(late, 1)).toBeUndefined()
+  expect(recorder.history(id("Child"))).toHaveLength(100)
+})
