@@ -503,3 +503,19 @@ test("every list-backed built-in hook carries its index; context reads don't", a
   for (let at = fiber.memoizedState as Entry | null; at; at = at.next) entries++
   expect(entries).toBe(15)
 })
+
+test.skipIf(!react19)(
+  "React 19 hooks carry their hook list index",
+  async () => {
+    await mount(h(Theme.Provider, { value: "dark" }, h(Modern)))
+    expect(indexesOf(rawHooksOf("Modern").hooks)).toEqual([
+      ["Context(Theme)", undefined],
+      ["Use", undefined],
+      ["ActionState", 0],
+      ["Optimistic", 3],
+      ["FormStatus", undefined],
+      ["EffectEvent", 4],
+      ["State", 5],
+    ])
+  },
+)
