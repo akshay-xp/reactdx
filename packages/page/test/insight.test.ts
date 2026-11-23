@@ -396,3 +396,33 @@ test("an ancestor's type change remounts the components inside it", async () => 
     ancestor: id("section"),
   })
 })
+
+let setShown: (on: boolean) => void = () => {}
+function Toggle() {
+  const [on, set] = React.useState(true)
+  setShown = set
+  return on ? h(Item) : null
+}
+let setList: (keys: string[]) => void = () => {}
+function List() {
+  const [keys, set] = React.useState(["a"])
+  setList = set
+  return keys.map((key) => h(Item, { key }))
+}
+
+test("a mount in a later commit, or a moved sibling, isn't a remount", async () => {
+  const toggled = await mount(h(Toggle))
+  await toggled.record(() => setShown(false))
+  await toggled.record(() => setShown(true))
+  expect(toggled.kinds("Item")).toEqual(["mount"])
+  expect(toggled.recorder.latest(toggled.id("Item"))).not.toHaveProperty(
+    "remount",
+  )
+  const listed = await mount(h(List))
+  const first = listed.id("Item")
+  await listed.record(() => setList(["b", "a"]))
+  const added = listed.id("Item")
+  expect(added).not.toBe(first)
+  expect(listed.recorder.latest(added)).not.toHaveProperty("remount")
+  expect(listed.kinds("Item")).toEqual(["mount"])
+})
