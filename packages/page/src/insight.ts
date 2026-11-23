@@ -122,7 +122,11 @@ export function createRecorder() {
   let seq = 1
   const commits: Commit[] = []
 
-  const reasons = (at: number, fiber: Fiber): RenderRecord => {
+  const reasons = (
+    at: number,
+    fiber: Fiber,
+    updated: boolean,
+  ): RenderRecord => {
     const prev = fiber.alternate
     if (!prev) return { seq: at, kinds: ["mount"] }
     const record: RenderRecord = { seq: at, kinds: [] }
@@ -141,7 +145,7 @@ export function createRecorder() {
     else
       note("state", "hooks", diffHooks(prev.memoizedState, fiber.memoizedState))
     note("context", "contexts", diffContexts(prev, fiber))
-    if (!record.kinds.length) record.kinds.push("parent")
+    if (!record.kinds.length) record.kinds.push(updated ? "force" : "parent")
     return record
   }
 
@@ -149,17 +153,21 @@ export function createRecorder() {
     // `walk` visits the commit's fibers (the tree's commit walk).
     commit(
       rootId: number,
-      _updaters: Set<unknown>,
+      // The fibers whose updates this commit rendered (root.memoizedUpdaters).
+      updaters: Set<unknown>,
       walk: (visit: (fiber: Fiber, id: number) => void) => void,
     ) {
       const records = new Map<number, RenderRecord>()
       const at = seq++
       walk((fiber, id) => {
-        if (
-          COMPONENTS.has(fiber.tag) &&
-          (fiber as Flagged).flags & PERFORMED_WORK
-        )
-          records.set(id, reasons(at, fiber))
+        if (!COMPONENTS.has(fiber.tag)) return
+        // A function component re-run by its own update with nothing changed
+        // bails out before React flags the work: still a render.
+        const updated =
+          updaters.has(fiber) ||
+          (fiber.alternate !== null && updaters.has(fiber.alternate))
+        if (updated || (fiber as Flagged).flags & PERFORMED_WORK)
+          records.set(id, reasons(at, fiber, updated))
       })
       commits.push({ seq: at, time: performance.now(), rootId, records })
     },

@@ -82,7 +82,7 @@ async function mount(node: React.ReactNode) {
     return found
   }
   const kinds = (name: string) => recorder.latest(id(name))?.kinds
-  return { recorder, record, id, kinds, fiberRoot }
+  return { recorder, record, id, kinds, tree }
 }
 
 let setParent: (n: number) => void = () => {}
@@ -212,4 +212,20 @@ test("changed contexts are recorded by read order", async () => {
   expect(recorder.latest(id("Reader"))?.contexts).toEqual([
     { read: 0, old: "dark", new: "light" },
   ])
+})
+
+test("a render by its own update with nothing changed is forced", async () => {
+  const { record, kinds, tree, id } = await mount(h(Parent))
+  const fiber = tree.fiber(id("Child"))
+  const renderer = [
+    ...(
+      globalThis as unknown as {
+        __REACT_DEVTOOLS_GLOBAL_HOOK__: {
+          renderers: Map<number, { scheduleUpdate(fiber: unknown): void }>
+        }
+      }
+    ).__REACT_DEVTOOLS_GLOBAL_HOOK__.renderers.values(),
+  ][0]
+  await record(() => renderer?.scheduleUpdate(fiber))
+  expect(kinds("Child")).toEqual(["force"])
 })
