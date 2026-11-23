@@ -305,3 +305,22 @@ test("a new reference past 1,000 values counts as changed", async () => {
     "same-value",
   )
 })
+
+let setB: (b: number) => void = () => {}
+const noop = () => {}
+function Effects() {
+  const [a] = React.useState(1)
+  const [b, set] = React.useState(1)
+  setB = set
+  React.useEffect(noop, [a, b])
+  React.useEffect(noop, [a])
+  return null
+}
+
+test("a re-render records the effects it ran, with the deps that changed", async () => {
+  const { record, recorder, id } = await mount(h(Effects))
+  await record(() => setB(2))
+  expect(recorder.latest(id("Effects"))?.effects).toEqual([
+    { index: 2, changed: [{ dep: 1, old: 1, new: 2 }] },
+  ])
+})

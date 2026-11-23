@@ -33,6 +33,14 @@ export type RenderRecord = {
   hooks?: HookChange[]
   // Contexts by read order (the Context section's).
   contexts?: ContextChange[]
+  // Effects this render ran, by hook list index (re-renders only).
+  effects?: EffectRun[]
+}
+
+// `changed`: the deps that differ from the last render's.
+export type EffectRun = {
+  index: number
+  changed?: { dep: number; old: unknown; new: unknown }[]
 }
 
 export type ContextChange = { read: number; old: unknown; new: unknown }
@@ -178,6 +186,36 @@ function diffContexts(prev: Fiber, next: Fiber): ContextChange[] {
   return changes
 }
 
+type Effect = { tag: number; deps: unknown[] | null; next: Effect }
+// React's HasEffect tag bit: the effect runs after this commit.
+const HAS_EFFECT = 1
+
+// Effects that will run: the hook list entries holding an effect of the
+// fiber's effect ring with HasEffect, and which of their deps changed.
+function diffEffects(prev: Fiber, next: Fiber): EffectRun[] {
+  const ring = new Set<unknown>()
+  const last = (next as { updateQueue?: { lastEffect?: Effect | null } | null })
+    .updateQueue?.lastEffect
+  for (let at = last?.next; at; at = at === last ? undefined : at.next)
+    ring.add(at)
+  const runs: EffectRun[] = []
+  let a = prev.memoizedState as HookState | null
+  let b = next.memoizedState as HookState | null
+  for (let index = 0; a && b; index++, a = a.next, b = b.next) {
+    if (!ring.has(b.memoizedState)) continue
+    const effect = b.memoizedState as Effect
+    if (!(effect.tag & HAS_EFFECT)) continue
+    const before = (a.memoizedState as Effect).deps ?? []
+    const changed = (effect.deps ?? []).flatMap((value, dep) =>
+      Object.is(before[dep], value)
+        ? []
+        : [{ dep, old: before[dep], new: value }],
+    )
+    runs.push({ index, changed })
+  }
+  return runs
+}
+
 export function createRecorder() {
   let seq = 1
   const commits: Commit[] = []
@@ -209,6 +247,10 @@ export function createRecorder() {
     else
       note("state", "hooks", diffHooks(prev.memoizedState, fiber.memoizedState))
     note("context", "contexts", diffContexts(prev, fiber))
+    if (fiber.tag !== 1) {
+      const effects = diffEffects(prev, fiber)
+      if (effects.length) record.effects = effects
+    }
     if (!record.kinds.length) record.kinds.push(updated ? "force" : "parent")
     return record
   }
