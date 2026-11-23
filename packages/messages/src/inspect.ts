@@ -151,7 +151,12 @@ export type RenderReason = {
   contexts?: ContextChange[]
   effects?: EffectRun[]
   remount?: Remount
+  // What triggered the render's commit (M6 #65): the components whose update
+  // scheduled it, with their changed state hooks labeled as in Hooks.
+  updaters?: Updater[]
 }
+export type UpdaterHook = { name: string; old: Value; new: Value }
+export type Updater = { id: number; hooks: UpdaterHook[] }
 // A mount in place of a same-type fiber deleted in that commit (M6 #64): its
 // key changed, or an ancestor (a tree id) remounted or changed type.
 export type Remount =
@@ -632,8 +637,17 @@ function parseRender(
   budget: { left: number },
 ): RenderReason | undefined {
   if (typeof data !== "object" || data === null) return
-  const { seq, kinds, props, state, hooks, contexts, effects, remount } =
-    data as Record<string, unknown>
+  const {
+    seq,
+    kinds,
+    props,
+    state,
+    hooks,
+    contexts,
+    effects,
+    remount,
+    updaters,
+  } = data as Record<string, unknown>
   if (!isId(seq) || !Array.isArray(kinds) || kinds.length === 0) return
   if (
     new Set(kinds).size !== kinds.length ||
@@ -705,6 +719,21 @@ function parseRender(
     const parsed = parseRemount(remount)
     if (!parsed) return
     reason.remount = parsed
+  }
+  if (updaters !== undefined) {
+    const list = parseList(updaters, MAX_CHANGES, (item) => {
+      const changes = parseList(item.hooks, MAX_CHANGES, (hook) => {
+        const both = sides(hook)
+        return both && isName(hook.name)
+          ? { name: hook.name, ...both }
+          : undefined
+      })
+      return changes && isId(item.id)
+        ? { id: item.id, hooks: changes }
+        : undefined
+    })
+    if (!list) return
+    reason.updaters = list
   }
   return reason
 }

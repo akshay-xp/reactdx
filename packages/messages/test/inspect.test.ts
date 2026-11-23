@@ -489,3 +489,35 @@ test("a render's remount is a key change or an ancestor, exactly", () => {
   ])
     expect(parse(bad)).toBeUndefined()
 })
+
+test("a render's updaters are ids with their labeled hook changes", () => {
+  const parse = (updaters: unknown) =>
+    parseInspected(
+      inspected(3, {
+        props: 1,
+        render: { seq: 1, kinds: ["parent"], updaters },
+      } as never),
+    )?.data?.render
+  for (const updaters of [
+    [{ id: 3, hooks: [{ name: "State #1", old: 3, new: 4 }] }],
+    [],
+    [{ id: 3, hooks: [] }],
+  ])
+    expect(parse(updaters)?.updaters).toEqual(updaters)
+  expect(
+    parse([
+      { id: 3, x: 1, hooks: [{ name: "State #1", old: 3, new: 4, y: 2 }] },
+    ])?.updaters,
+  ).toEqual([{ id: 3, hooks: [{ name: "State #1", old: 3, new: 4 }] }])
+  const hook = { name: "State #1", old: 3, new: 4 }
+  for (const bad of [
+    [{ id: 0, hooks: [] }],
+    [{ id: 3, hooks: [{ ...hook, name: "s".repeat(257) }] }],
+    Array(1001).fill({ id: 3, hooks: [] }),
+    [{ id: 3, hooks: Array(1001).fill(hook) }],
+    [{ id: 3 }],
+    { id: 3, hooks: [] },
+    [{ id: 3, hooks: [{ ...hook, old: Symbol() }] }],
+  ])
+    expect(parse(bad)).toBeUndefined()
+})
