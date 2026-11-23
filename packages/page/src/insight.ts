@@ -35,7 +35,11 @@ export type RenderRecord = {
   contexts?: ContextChange[]
   // Effects this render ran, by hook list index (re-renders only).
   effects?: EffectRun[]
+  // A mount in place of a deleted fiber of the same type, in the same commit.
+  remount?: Remount
 }
+
+export type Remount = { cause: "key"; from: string | null; to: string | null }
 
 // `changed`: the deps that differ from the last render's.
 export type EffectRun = {
@@ -221,6 +225,20 @@ function diffEffects(prev: Fiber, next: Fiber): EffectRun[] {
   return runs
 }
 
+type Placed = Fiber & { index: number; deletions: Fiber[] | null }
+
+// The fiber this commit deleted from the place a new one mounted in: React
+// lists a parent's deleted children in its `deletions` until it's reused.
+function remountOf(fiber: Fiber): Remount | undefined {
+  const parent = fiber.return as Placed | null
+  if (!parent) return
+  const old = parent.deletions?.find(
+    (deleted) => (deleted as Placed).index === (fiber as Placed).index,
+  )
+  if (old && old.elementType === fiber.elementType)
+    return { cause: "key", from: old.key, to: fiber.key }
+}
+
 export function createRecorder() {
   let seq = 1
   const commits: Commit[] = []
@@ -231,7 +249,10 @@ export function createRecorder() {
     updated: boolean,
   ): RenderRecord => {
     const prev = fiber.alternate
-    if (!prev) return { seq: at, kinds: ["mount"] }
+    if (!prev) {
+      const remount = remountOf(fiber)
+      return { seq: at, kinds: ["mount"], ...(remount && { remount }) }
+    }
     const record: RenderRecord = { seq: at, kinds: [] }
     const note = <F extends "props" | "state" | "hooks" | "contexts">(
       kind: RenderKind,

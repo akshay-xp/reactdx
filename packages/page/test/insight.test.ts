@@ -355,3 +355,24 @@ test("layout and insertion effects are listed like effects", async () => {
     { index: 2, changed: [{ dep: 0, old: 1, new: 2 }] },
   ])
 })
+
+let setKey: (k: string) => void = () => {}
+function Item() {
+  return null
+}
+function KeyParent() {
+  const [k, set] = React.useState("a")
+  setKey = set
+  return h(Item, { key: k })
+}
+
+test("a key change remounts the keyed child", async () => {
+  const { record, kinds, recorder, id } = await mount(h(KeyParent))
+  await record(() => setKey("b"))
+  expect(kinds("Item")).toEqual(["mount"])
+  expect(recorder.latest(id("Item"))?.remount).toEqual({
+    cause: "key",
+    from: "a",
+    to: "b",
+  })
+})
