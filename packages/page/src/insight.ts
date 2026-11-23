@@ -12,7 +12,14 @@ export type RenderKind =
   | "parent"
   | "force"
 
-export type RenderRecord = { seq: number; kinds: RenderKind[] }
+// A key whose value changed, with both values (references, not copies).
+export type Change = { key: string; old: unknown; new: unknown }
+
+export type RenderRecord = {
+  seq: number
+  kinds: RenderKind[]
+  props?: Change[]
+}
 
 type Commit = {
   seq: number
@@ -28,12 +35,33 @@ const PERFORMED_WORK = 1
 
 type Flagged = Fiber & { flags: number }
 
+// The keys whose values differ (Object.is), over both objects' keys.
+function diffKeys(prev: unknown, next: unknown): Change[] {
+  const a = (prev ?? {}) as Record<string, unknown>
+  const b = (next ?? {}) as Record<string, unknown>
+  const changes: Change[] = []
+  for (const key of new Set([...Object.keys(a), ...Object.keys(b)]))
+    if (!Object.is(a[key], b[key]))
+      changes.push({ key, old: a[key], new: b[key] })
+  return changes
+}
+
 export function createRecorder() {
   let seq = 1
   const commits: Commit[] = []
 
-  const reasons = (fiber: Fiber): RenderKind[] =>
-    fiber.alternate ? ["parent"] : ["mount"]
+  const reasons = (at: number, fiber: Fiber): RenderRecord => {
+    const prev = fiber.alternate
+    if (!prev) return { seq: at, kinds: ["mount"] }
+    const record: RenderRecord = { seq: at, kinds: [] }
+    const props = diffKeys(prev.memoizedProps, fiber.memoizedProps)
+    if (props.length) {
+      record.kinds.push("props")
+      record.props = props
+    }
+    if (!record.kinds.length) record.kinds.push("parent")
+    return record
+  }
 
   return {
     // `walk` visits the commit's fibers (the tree's commit walk).
@@ -49,7 +77,7 @@ export function createRecorder() {
           COMPONENTS.has(fiber.tag) &&
           (fiber as Flagged).flags & PERFORMED_WORK
         )
-          records.set(id, { seq: at, kinds: reasons(fiber) })
+          records.set(id, reasons(at, fiber))
       })
       commits.push({ seq: at, time: performance.now(), rootId, records })
     },

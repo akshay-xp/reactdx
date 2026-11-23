@@ -110,3 +110,30 @@ test("a commit records mounts and renders caused by the parent", async () => {
   expect(recorder.latest(id("div"))).toBeUndefined()
   expect(recorder.latest(id("Late"))?.seq).toBe(1)
 })
+
+let setProps: (n: number) => void = () => {}
+function Shown(_: { count: number; extra?: string }) {
+  return null
+}
+function Passing() {
+  const [n, set] = React.useState(1)
+  setProps = set
+  return h(
+    React.Fragment,
+    null,
+    h(Shown, n === 1 ? { count: n, extra: "x" } : { count: n }),
+    h(Child),
+  )
+}
+
+test("changed props are recorded with old and new values", async () => {
+  const { record, kinds, recorder, id } = await mount(h(Passing))
+  await record(() => setProps(2))
+  expect(kinds("Shown")).toEqual(["props"])
+  expect(recorder.latest(id("Shown"))?.props).toEqual([
+    { key: "count", old: 1, new: 2 },
+    { key: "extra", old: "x", new: undefined },
+  ])
+  // A new props object holding the same values: nothing of its own changed.
+  expect(kinds("Child")).toEqual(["parent"])
+})
