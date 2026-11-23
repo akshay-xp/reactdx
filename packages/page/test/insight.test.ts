@@ -137,3 +137,35 @@ test("changed props are recorded with old and new values", async () => {
   // A new props object holding the same values: nothing of its own changed.
   expect(kinds("Child")).toEqual(["parent"])
 })
+
+let setStateful: (n: number) => void = () => {}
+let refOf: { current: number } = { current: 0 }
+function Stateful() {
+  const ref = React.useRef(0)
+  refOf = ref
+  const [n, set] = React.useState(0)
+  setStateful = set
+  React.useMemo(() => n * 2, [n])
+  return null
+}
+let renderAll: () => void = () => {}
+function StatefulParent() {
+  const [, set] = React.useState(0)
+  renderAll = () => set((n) => n + 1)
+  return h(Stateful)
+}
+
+test("changed state hooks are recorded by hook list index", async () => {
+  const { record, kinds, recorder, id } = await mount(h(StatefulParent))
+  await record(() => setStateful(1))
+  expect(kinds("Stateful")).toEqual(["state"])
+  expect(recorder.latest(id("Stateful"))?.hooks).toEqual([
+    { index: 1, old: 0, new: 1 },
+  ])
+  // A ref has no update queue: changing it isn't a state change.
+  await record(() => {
+    refOf.current = 5
+    renderAll()
+  })
+  expect(kinds("Stateful")).toEqual(["parent"])
+})

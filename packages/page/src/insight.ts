@@ -19,7 +19,11 @@ export type RenderRecord = {
   seq: number
   kinds: RenderKind[]
   props?: Change[]
+  // State hooks by hook list index (docs/page.md, Hooks).
+  hooks?: HookChange[]
 }
+
+export type HookChange = { index: number; old: unknown; new: unknown }
 
 type Commit = {
   seq: number
@@ -46,6 +50,24 @@ function diffKeys(prev: unknown, next: unknown): Change[] {
   return changes
 }
 
+type HookState = {
+  memoizedState: unknown
+  queue: unknown
+  next: HookState | null
+}
+
+// Hooks with an update queue (state, reducer, transition, external store...)
+// whose value changed, walking both renders' hook lists side by side.
+function diffHooks(prev: unknown, next: unknown): HookChange[] {
+  const changes: HookChange[] = []
+  let a = prev as HookState | null
+  let b = next as HookState | null
+  for (let index = 0; a && b; index++, a = a.next, b = b.next)
+    if (b.queue && !Object.is(a.memoizedState, b.memoizedState))
+      changes.push({ index, old: a.memoizedState, new: b.memoizedState })
+  return changes
+}
+
 export function createRecorder() {
   let seq = 1
   const commits: Commit[] = []
@@ -58,6 +80,13 @@ export function createRecorder() {
     if (props.length) {
       record.kinds.push("props")
       record.props = props
+    }
+    if (fiber.tag !== 1) {
+      const hooks = diffHooks(prev.memoizedState, fiber.memoizedState)
+      if (hooks.length) {
+        record.kinds.push("state")
+        record.hooks = hooks
+      }
     }
     if (!record.kinds.length) record.kinds.push("parent")
     return record
