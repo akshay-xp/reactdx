@@ -53,6 +53,17 @@ export function hookAt(hooks: RawHook[] = [], indexes: number[]) {
   return hook
 }
 
+// The hook whose first hook list entry is `index`, through custom hooks.
+export function hookByIndex(
+  hooks: RawHook[] = [],
+  index: number,
+): RawHook | undefined {
+  for (const hook of hooks) {
+    const found = hook.index === index ? hook : hookByIndex(hook.hooks, index)
+    if (found) return found
+  }
+}
+
 type Call = {
   name: string
   value?: unknown

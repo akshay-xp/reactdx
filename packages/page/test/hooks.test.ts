@@ -12,6 +12,7 @@ import { installHook } from "../src/hook.ts"
 import {
   type DispatcherRef,
   type HooksFiber,
+  hookByIndex,
   inspectHooks,
 } from "../src/hooks.ts"
 import { lineOf } from "./marker.ts"
@@ -519,3 +520,14 @@ test.skipIf(!react19)(
     ])
   },
 )
+
+test("hookByIndex finds the hook for a hook list index", async () => {
+  await mount(h(Indexed))
+  const { hooks } = rawHooksOf("Indexed")
+  expect(hookByIndex(hooks, 5)?.name).toBe("Reducer")
+  // Inside useCounted.
+  expect(hookByIndex(hooks, 6)).toBe(hooks[5]?.hooks?.[0])
+  // The transition's second entry starts no hook.
+  expect(hookByIndex(hooks, 4)).toBeUndefined()
+  expect(hookByIndex(hooks, 99)).toBeUndefined()
+})
