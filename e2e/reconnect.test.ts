@@ -8,6 +8,7 @@ import {
   type PanelText,
   panelFor,
   parseCopies,
+  selectListed,
   total,
   until,
 } from "./panel-text.ts"
@@ -71,6 +72,72 @@ test("the panel reconnects after the background stops", { skip }, async () => {
       (await toolbar(name, browser, page)).title,
       "ReactDX: React 18.3.1",
     )
+  } finally {
+    await browser.close()
+  }
+})
+
+type Unwatched = Window & { unwatched?: boolean }
+
+test("a stopped background keeps the recorded commits; closing the panel clears them", {
+  skip,
+}, async () => {
+  const { browser, page, panel } = await panelFor(name, URL_18, "after")
+  const click = () =>
+    page.$eval("[data-testid=counter]", (el) => (el as HTMLElement).click())
+  const shows = async (read: () => Promise<string>, part: string) => {
+    const text = await until(read, (t) => t.includes(part))
+    assert.ok(text.includes(part), text)
+  }
+  // The rows' seqs ("#12"): their times move on.
+  const seqs = async (check: (seqs: string[]) => boolean) => {
+    const deadline = Date.now() + 5000
+    const read = async () =>
+      (await panel.commits()).map((row) => row.split(" ")[0] ?? "")
+    let list = await read()
+    while (!check(list) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      list = await read()
+    }
+    assert.ok(check(list), JSON.stringify(list))
+    return list
+  }
+  try {
+    await expectLive(page, panel)
+    await selectListed(panel, "Counter")
+    await click()
+    await click()
+    await shows(panel.inspector, "3 renders recorded")
+    await panel.tab("Commits")
+    const before = await seqs((list) => list.length >= 2)
+    await panel.key("Commits", "Home")
+    await shows(panel, "Triggered by")
+
+    await stopBackground(name, browser)
+    // A commit after the reconnect joins the same list, none lost.
+    await click()
+    await seqs(
+      (list) =>
+        list.length === before.length + 1 &&
+        JSON.stringify(list.slice(1)) === JSON.stringify(before),
+    )
+    const picked = await until(panel, (t) => t.includes("Triggered by"))
+    assert.ok(!picked.includes("Pick a commit"), picked)
+    await panel.tab("Components")
+    await shows(panel.inspector, "4 renders recorded")
+
+    // Closing DevTools stops the agent (dropping what it recorded) at once,
+    // well inside the relay's 10 s grace for a stopped background.
+    await page.evaluate(() =>
+      addEventListener("message", ({ data }) => {
+        if (data?.source === "reactdx-relay" && data.type === "unwatch")
+          (window as Unwatched).unwatched = true
+      }),
+    )
+    await panel.close()
+    await page.waitForFunction(() => (window as Unwatched).unwatched, {
+      timeout: 3000,
+    })
   } finally {
     await browser.close()
   }
