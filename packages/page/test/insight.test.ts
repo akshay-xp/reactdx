@@ -337,3 +337,21 @@ test("an effect with no deps array runs on every render, with nothing changed", 
   expect(effects).toContainEqual({ index: 4 })
   expect(effects?.find((run) => run.index === 4)).not.toHaveProperty("changed")
 })
+
+let setLayout: (a: number) => void = () => {}
+function LayoutEffects() {
+  const [a, set] = React.useState(1)
+  setLayout = set
+  React.useLayoutEffect(noop, [a])
+  React.useInsertionEffect(noop, [a])
+  return null
+}
+
+test("layout and insertion effects are listed like effects", async () => {
+  const { record, recorder, id } = await mount(h(LayoutEffects))
+  await record(() => setLayout(2))
+  expect(recorder.latest(id("LayoutEffects"))?.effects).toEqual([
+    { index: 1, changed: [{ dep: 0, old: 1, new: 2 }] },
+    { index: 2, changed: [{ dep: 0, old: 1, new: 2 }] },
+  ])
+})
