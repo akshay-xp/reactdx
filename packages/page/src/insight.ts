@@ -53,6 +53,16 @@ export type ContextChange = { read: number; old: unknown; new: unknown }
 
 export type HookChange = { index: number; old: unknown; new: unknown }
 
+// A commit as the timeline lists it: `renders` counts the components that
+// rendered, `updaters` their ids that scheduled it.
+export type CommitSummary = {
+  seq: number
+  time: number
+  rootId: number
+  updaters: number[]
+  renders: number
+}
+
 // A component whose update scheduled a commit, with the state it changed.
 export type Updater = { id: number; hooks: HookChange[] }
 
@@ -272,6 +282,7 @@ function remountOf(fiber: Fiber, ids: Map<Fiber, number>): Remount | undefined {
 export function createRecorder() {
   let seq = 1
   const commits: Commit[] = []
+  const commitAt = (seq: number) => commits.find((commit) => commit.seq === seq)
 
   const reasons = (
     at: number,
@@ -351,11 +362,26 @@ export function createRecorder() {
       commits.length = 0
     },
     updatersOf(seq: number): Updater[] {
-      const found = commits.find((commit) => commit.seq === seq)
+      const found = commitAt(seq)
       return (found?.updaters ?? []).map((id) => ({
         id,
         hooks: found?.records.get(id)?.hooks ?? [],
       }))
+    },
+    summaries(after: number): CommitSummary[] {
+      return commits
+        .filter((commit) => commit.seq > after)
+        .map(({ seq, time, rootId, updaters, records }) => ({
+          seq,
+          time,
+          rootId,
+          updaters,
+          renders: records.size,
+        }))
+    },
+    rendered(seq: number) {
+      const found = commitAt(seq)
+      return found && [...found.records.keys()]
     },
     // The seqs of an id's records still in the buffer, oldest first.
     history(id: number) {
@@ -364,7 +390,7 @@ export function createRecorder() {
       )
     },
     record(id: number, seq: number) {
-      return commits.find((commit) => commit.seq === seq)?.records.get(id)
+      return commitAt(seq)?.records.get(id)
     },
     latest(id: number) {
       for (let i = commits.length - 1; i >= 0; i--) {

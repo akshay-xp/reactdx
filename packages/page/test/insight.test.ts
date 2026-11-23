@@ -497,3 +497,19 @@ test("history and records drop with the commits that fall out", async () => {
   expect(recorder.record(late, 1)).toBeUndefined()
   expect(recorder.history(id("Child"))).toHaveLength(100)
 })
+
+test("commits are summarized, with the ids each rendered", async () => {
+  const { record, recorder, id } = await mount(h(Counting))
+  await record(() => setCounting(4))
+  const summary = recorder.summaries(0).at(-1)
+  expect(summary).toMatchObject({
+    rootId: 1,
+    updaters: [id("Counting")],
+    renders: 1,
+  })
+  expect(typeof summary?.time).toBe("number")
+  const seq = summary?.seq ?? 0
+  expect(recorder.summaries(seq)).toEqual([])
+  expect(recorder.rendered(seq)).toEqual([id("Counting")])
+  expect(recorder.rendered(9999)).toBeUndefined()
+})
