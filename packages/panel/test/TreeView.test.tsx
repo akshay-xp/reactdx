@@ -185,3 +185,22 @@ test("a tree renders the rows in its pane's view: 400 px is 20 rows plus oversca
       Object.defineProperty(HTMLElement.prototype, "clientHeight", clientHeight)
   }
 })
+
+test("rows a picked commit rendered are marked", async () => {
+  const { createSignal } = await import("solid-js")
+  const tree = store([add(1, 0, "App"), add(2, 1, "A"), add(3, 1, "B", 1)])
+  const [marks, setMarks] = createSignal(new Set([3]))
+  const { container } = render(() => (
+    <TreeView tree={tree} rootId={1} marks={marks} />
+  ))
+  const marked = () =>
+    [...container.querySelectorAll("[data-rendered]")].map((row) => [
+      row.getAttribute("data-id"),
+      row.getAttribute("aria-description"),
+    ])
+  expect(marked()).toEqual([["3", "Rendered in this commit"]])
+  setMarks(new Set([2]))
+  expect(marked()).toEqual([["2", "Rendered in this commit"]])
+  setMarks(new Set<number>())
+  expect(marked()).toEqual([])
+})
