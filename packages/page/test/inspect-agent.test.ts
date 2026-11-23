@@ -535,3 +535,20 @@ test("renders before watch, or before an unwatch, aren't kept", async () => {
   inspect(reasoned)
   expect(replies().at(-1)?.data?.render).toBeUndefined()
 })
+
+// A class keeps its state object and props through a forced render, so only
+// the newer record says to send again.
+test("a forced render re-sends the inspection with its reason", async () => {
+  const id = idOf("Clock")
+  inspect(id)
+  await React.act(() => clock.setState({ ticks: 30 }))
+  await flushed()
+  const before = replies().at(-1)?.data?.render
+  await React.act(async () =>
+    send({ source: "reactdx-relay", type: "rerender", id }),
+  )
+  await flushed()
+  const after = replies().at(-1)?.data?.render
+  expect(after?.kinds).toEqual(["force"])
+  expect(after?.seq).toBeGreaterThan(before?.seq ?? 0)
+})
