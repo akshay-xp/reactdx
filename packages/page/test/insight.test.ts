@@ -92,9 +92,10 @@ function Child() {
 const Still = React.memo(function Still() {
   return h("div")
 })
-function Late() {
+// Memo: once mounted, it renders again only if its props change (never).
+const Late = React.memo(function Late() {
   return null
-}
+})
 function Parent() {
   const [n, set] = React.useState(0)
   setParent = set
@@ -228,4 +229,18 @@ test("a render by its own update with nothing changed is forced", async () => {
   ][0]
   await record(() => renderer?.scheduleUpdate(fiber))
   expect(kinds("Child")).toEqual(["force"])
+})
+
+test("records are kept for the last 100 commits, and clear drops them", async () => {
+  const { record, recorder, id } = await mount(h(Parent))
+  await record(() => setParent(1))
+  const late = id("Late")
+  // Odd counts keep Late mounted without rendering it again.
+  for (let i = 1; i < 100; i++) await record(() => setParent(1 + 2 * i))
+  expect(recorder.latest(late)?.seq).toBe(1)
+  await record(() => setParent(201))
+  expect(recorder.latest(late)).toBeUndefined()
+  expect(recorder.latest(id("Child"))).toBeDefined()
+  recorder.clear()
+  expect(recorder.latest(id("Child"))).toBeUndefined()
 })

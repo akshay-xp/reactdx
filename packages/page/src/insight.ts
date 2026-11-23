@@ -39,6 +39,9 @@ type Commit = {
   records: Map<number, RenderRecord>
 }
 
+// Commits kept: an older one is dropped with the values it holds.
+const MAX_COMMITS = 100
+
 // Function, class, forwardRef and memo components: the fibers that render.
 const COMPONENTS = new Set([0, 1, 11, 14, 15])
 // React's PerformedWork flag: the fiber rendered in this commit.
@@ -170,6 +173,10 @@ export function createRecorder() {
           records.set(id, reasons(at, fiber, updated))
       })
       commits.push({ seq: at, time: performance.now(), rootId, records })
+      if (commits.length > MAX_COMMITS) commits.shift()
+    },
+    clear() {
+      commits.length = 0
     },
     latest(id: number) {
       for (let i = commits.length - 1; i >= 0; i--) {
