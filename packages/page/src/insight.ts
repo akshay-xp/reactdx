@@ -353,7 +353,7 @@ export function createRecorder() {
       })
       commits.push({
         seq: at,
-        time: performance.now(),
+        time: Date.now(),
         rootId,
         records,
         updaters: updaterIds,
@@ -383,7 +383,10 @@ export function createRecorder() {
     },
     rendered(seq: number) {
       const found = commitAt(seq)
-      return found && [...found.records.keys()]
+      return (
+        found &&
+        [...found.records].map(([id, record]) => ({ id, kinds: record.kinds }))
+      )
     },
     // The seqs of an id's records still in the buffer, oldest first.
     history(id: number) {

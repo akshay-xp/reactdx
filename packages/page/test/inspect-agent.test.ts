@@ -657,6 +657,14 @@ test("an inspection names what triggered its render, hooks labeled as in Hooks",
   expect(replies().at(-1)?.data?.render?.updaters).toEqual(expected)
   inspect(triggering)
   expect(replies().at(-1)?.data?.render?.updaters).toEqual(expected)
+  // The commit's reply labels them the same, whatever is selected.
+  const seq = replies().at(-1)?.data?.render?.seq ?? 0
+  inspect(null)
+  posted.length = 0
+  send({ source: "reactdx-relay", type: "commit", seq })
+  const [reply] = posted as CommittedMessage[]
+  expect(reply?.updaters).toEqual(expected)
+  expect(reply?.renders).toContainEqual({ id: triggering, kinds: ["state"] })
 })
 
 test("an inspection lists the node's recorded renders, oldest first", async () => {
@@ -743,22 +751,29 @@ function Many() {
   return Array.from({ length: 2001 }, (_, i) => h(Cell, { key: i, n }))
 }
 
-test("commit sends a commit's rendered ids in batches of 2,000", async () => {
+test("commit sends a commit's renders in batches of 2,000, triggers first", async () => {
   const { createRoot } = await import("react-dom/client")
   const other = createRoot(document.createElement("div"))
   await React.act(() => other.render(h(Many)))
   try {
     await React.act(() => setMany(1))
     await flushed()
-    const seq = commitLists().flat().at(-1)?.seq ?? 0
+    const last = commitLists().flat().at(-1)
+    const seq = last?.seq ?? 0
     posted.length = 0
     send({ source: "reactdx-relay", type: "commit", seq })
     const replies = posted.filter(
       (m): m is CommittedMessage =>
         (m as { type?: string }).type === "committed",
     )
-    expect(replies.map((m) => m.ids?.length)).toEqual([2000, 2])
-    expect(new Set(replies.flatMap((m) => m.ids ?? [])).size).toBe(2002)
+    expect(replies.map((m) => m.renders?.length)).toEqual([2000, 2])
+    expect(
+      new Set(replies.flatMap((m) => m.renders ?? []).map((r) => r.id)).size,
+    ).toBe(2002)
+    // Many's own update: it triggered, and only the first batch says so.
+    expect(replies[0]?.updaters?.map((u) => u.id)).toEqual(last?.updaters)
+    expect(last?.updaters).toHaveLength(1)
+    expect(replies[1]).not.toHaveProperty("updaters")
     posted.length = 0
     send({ source: "reactdx-relay", type: "commit", seq: 9999 })
     expect(posted).toEqual([committed(9999, null)])

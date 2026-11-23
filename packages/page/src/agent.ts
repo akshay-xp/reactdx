@@ -27,6 +27,7 @@ import {
   type TreeBatchMessage,
   type TreeOp,
   treeBatch,
+  type Updater,
   type Value,
   type ValueStoredMessage,
   type ValueTarget,
@@ -379,23 +380,40 @@ export function startAgent(
       reason.contexts = record.contexts
         .slice(0, MAX_CHANGES)
         .map((change) => ({ context: change.read, ...both(change) }))
-    reason.updaters = []
-    for (const updater of recorder
-      .updatersOf(record.seq)
-      .slice(0, MAX_CHANGES)) {
+    reason.updaters = triggers(record.seq, serialize, id, hooks)
+    return reason
+  }
+  // The components whose updates scheduled commit `seq`, with the state each
+  // changed, labelled as their Hooks sections are. `own`: the selected node's
+  // hooks, already read.
+  const triggers = (
+    seq: number,
+    serialize: (value: unknown) => unknown,
+    selectedId?: number,
+    own: RawHook[] = [],
+  ): Updater[] => {
+    const list: Updater[] = []
+    for (const updater of recorder.updatersOf(seq).slice(0, MAX_CHANGES)) {
       const fiber = tree.fiber(updater.id)
       if (!fiber) continue
       // Another component's hooks are read only if it changed some.
-      const own =
-        updater.id === id || !updater.hooks.length ? hooks : hooksOf(fiber)
+      const hooks =
+        updater.id === selectedId || !updater.hooks.length
+          ? own
+          : hooksOf(fiber)
       const changes = []
       for (const change of updater.hooks.slice(0, MAX_CHANGES)) {
-        const name = hookLabel(own, change.index)
-        if (name) changes.push({ name, ...both(change) })
+        const name = hookLabel(hooks, change.index)
+        if (name)
+          changes.push({
+            name,
+            old: serialize(change.old) as Value,
+            new: serialize(change.new) as Value,
+          })
       }
-      reason.updaters.push({ id: updater.id, hooks: changes })
+      list.push({ id: updater.id, hooks: changes })
     }
-    return reason
+    return list
   }
   const hooksOf = (fiber: Fiber) => {
     const ref = rendererOf(fiber)?.currentDispatcherRef
@@ -510,12 +528,20 @@ export function startAgent(
       if (command?.type === "inspect") inspect(command.id)
       if (command?.type === "commit") {
         const { seq } = command
-        const ids = recorder.rendered(seq)
-        if (!ids) post(committed(seq, null))
+        const renders = recorder.rendered(seq)
+        if (!renders) post(committed(seq, null))
         // At least one batch: a commit that rendered nothing says so.
         else
-          for (let at = 0; at === 0 || at < ids.length; at += MAX_OPS)
-            post(committed(seq, ids.slice(at, at + MAX_OPS)))
+          for (let at = 0; at === 0 || at < renders.length; at += MAX_OPS)
+            post(
+              committed(
+                seq,
+                renders.slice(at, at + MAX_OPS),
+                at === 0
+                  ? triggers(seq, createInspector().serialize)
+                  : undefined,
+              ),
+            )
       }
       if (command?.type === "reason" && command.id === selected?.id) {
         const { id, seq } = command
