@@ -156,6 +156,7 @@ browser.devtools.network.onNavigated.addListener(() => {
   setRenderers([])
   setStale(false)
   tree.clear()
+  timeline.clear()
   subscribe(port)
 })
 

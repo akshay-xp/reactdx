@@ -28,6 +28,9 @@ export function createTimelineStore(
   const [picked, setPicked] = createSignal<number>()
   const [detail, setDetail] = createSignal<CommitDetail | null>()
   const [filtered, setFiltered] = createSignal(false)
+  // A re-watch: the page sends its buffer again, which may no longer hold the
+  // picked commit.
+  let resyncing = false
 
   const shown = (history: number[]) => {
     const list = filtered()
@@ -58,6 +61,10 @@ export function createTimelineStore(
     live,
     receiveCommits(list: CommitSummary[]) {
       setCommits([...commits(), ...list].slice(-MAX_COMMITS))
+      const at = picked()
+      if (resyncing && at !== undefined && !list.some((c) => c.seq === at))
+        live()
+      resyncing = false
     },
     receiveCommitted(message: CommittedMessage) {
       if (message.seq !== picked()) return
@@ -89,8 +96,14 @@ export function createTimelineStore(
       }
       return true
     },
-    // A new watch: the page sends its buffer again.
+    // A new watch of the same document (a reconnect): the page sends its
+    // buffer again; the pick stays if it's still there.
     reset() {
+      setCommits([])
+      resyncing = true
+    },
+    // A new document: nothing carries over.
+    clear() {
       setCommits([])
       live()
     },
