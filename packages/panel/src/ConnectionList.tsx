@@ -18,6 +18,10 @@ import { TreeView } from "./TreeView"
 import type { TimelineStore } from "./timeline"
 import type { TreeStore } from "./tree"
 
+// The tabs, by index.
+const COMPONENTS = 0
+const COMMITS = 1
+
 const build = (bundleType: number) =>
   bundleType === 1 ? "development" : "production"
 
@@ -36,6 +40,7 @@ export function ConnectionList(props: {
   onReload?: () => void
 }) {
   const development = () => props.renderers.some((r) => r.bundleType === 1)
+  const [tab, setTab] = createSignal(COMPONENTS)
   // Commit times are shown against this, a second at a time.
   const [now, setNow] = createSignal(Date.now())
   const clock = setInterval(() => setNow(Date.now()), 1000)
@@ -91,6 +96,15 @@ export function ConnectionList(props: {
           inspector={props.inspector}
           sources={props.sources}
           settings={props.settings}
+          onRenders={() => {
+            props.timeline?.setFiltered(true)
+            setTab(COMMITS)
+          }}
+          onCommit={(seq) => {
+            props.timeline?.pick(seq)
+            setTab(COMMITS)
+          }}
+          onLatest={() => props.timeline?.live()}
         />
       </aside>
     </div>
@@ -125,6 +139,8 @@ export function ConnectionList(props: {
         <Show when={props.timeline} fallback={split()}>
           {(timeline) => (
             <Tabs
+              selected={tab()}
+              onSelect={setTab}
               tabs={[
                 { name: "Components", content: split() },
                 {
@@ -135,7 +151,10 @@ export function ConnectionList(props: {
                       tree={props.tree}
                       inspector={props.inspector}
                       now={now}
-                      onReveal={(id) => props.tree.reveal(id)}
+                      onReveal={(id) => {
+                        setTab(COMPONENTS)
+                        props.tree.reveal(id)
+                      }}
                     />
                   ),
                 },
@@ -150,8 +169,13 @@ export function ConnectionList(props: {
 
 // Tabs inside the panel, each content kept mounted (hidden when another is
 // selected) so it keeps its scroll and state. Left/Right move between tabs.
-function Tabs(props: { tabs: { name: string; content: JSX.Element }[] }) {
-  const [selected, setSelected] = createSignal(0)
+function Tabs(props: {
+  tabs: { name: string; content: JSX.Element }[]
+  selected: number
+  onSelect: (index: number) => void
+}) {
+  const selected = () => props.selected
+  const setSelected = (index: number) => props.onSelect(index)
   const id = (i: number) => `tab-${props.tabs[i]?.name.toLowerCase()}`
   const tabs: HTMLButtonElement[] = []
   return (

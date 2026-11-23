@@ -1,5 +1,10 @@
-import { type RendererView, treeBatch } from "@reactdx/messages"
-import { fireEvent, render, screen } from "@solidjs/testing-library"
+import {
+  committed,
+  inspected,
+  type RendererView,
+  treeBatch,
+} from "@reactdx/messages"
+import { fireEvent, render, screen, within } from "@solidjs/testing-library"
 import { expect, test } from "vitest"
 import { ConnectionList } from "../src/ConnectionList"
 import { createInspectorStore } from "../src/inspection"
@@ -281,4 +286,78 @@ test("Components and Commits are tabs; the hidden one keeps its state", () => {
   fireEvent.keyDown(commits, { key: "ArrowLeft" })
   expect(components.getAttribute("aria-selected")).toBe("true")
   expect(document.activeElement).toBe(components)
+})
+
+test("links move between a commit and its components", () => {
+  const tree = createTreeStore()
+  const add = (id: number, name: string) => ({
+    op: "add" as const,
+    id,
+    parentId: id === 1 ? 0 : 1,
+    rootId: 1,
+    kind: "function" as const,
+    name,
+    key: null,
+    index: 0,
+  })
+  tree.apply(treeBatch(1, [{ op: "reset" }, add(1, "App"), add(2, "Counter")]))
+  const inspector = inspection()
+  const timeline = createTimelineStore(() => {}, inspector)
+  render(() => (
+    <ConnectionList
+      tree={tree}
+      inspector={inspector}
+      timeline={timeline}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "19.3.1", 1, [{ id: 1, commits: 2 }])]}
+    />
+  ))
+  const tab = (name: string) => screen.getByRole("tab", { name })
+  const selectedTab = () =>
+    screen
+      .getAllByRole("tab")
+      .find((t) => t.getAttribute("aria-selected") === "true")?.textContent
+  timeline.receiveCommits([
+    { seq: 4, time: 0, rootId: 1, updaters: [2, 1], renders: 2 },
+    { seq: 7, time: 0, rootId: 1, updaters: [2], renders: 1 },
+  ])
+  tree.select(2)
+  inspector.inspect(2)
+  inspector.receive(
+    inspected(2, {
+      props: { type: "object", className: "Object", id: 1, size: 0, props: {} },
+      render: {
+        seq: 4,
+        kinds: ["state"],
+        updaters: [
+          { id: 2, hooks: [] },
+          { id: 1, hooks: [] },
+        ],
+      },
+      history: [4],
+    }),
+  )
+
+  fireEvent.click(screen.getByRole("button", { name: "+1 more" }))
+  expect(selectedTab()).toBe("Commits")
+  expect(timeline.picked()).toBe(4)
+
+  fireEvent.click(tab("Components"))
+  fireEvent.click(screen.getByRole("button", { name: "1 render recorded" }))
+  expect(selectedTab()).toBe("Commits")
+  expect(screen.getByRole("button", { name: "Only Counter" }).ariaPressed).toBe(
+    "true",
+  )
+
+  timeline.receiveCommitted(committed(4, [{ id: 2, kinds: ["state"] }], []))
+  tree.select(1)
+  const detail = screen.getByTestId("commit-detail")
+  fireEvent.click(within(detail).getByRole("button", { name: "Counter" }))
+  expect(selectedTab()).toBe("Components")
+  expect(tree.selected()).toBe(2)
+
+  fireEvent.click(screen.getByRole("button", { name: "Show latest" }))
+  expect(timeline.picked()).toBeUndefined()
+  expect(inspector.pinned()).toBeUndefined()
 })
