@@ -1740,3 +1740,45 @@ test("a change holding an object opens to Before and After", () => {
     'After: {name: "Grace"}',
   ])
 })
+
+test("a prop change that's only a new reference has a badge saying so", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      render: {
+        seq: 2,
+        kinds: ["props"],
+        props: [
+          {
+            key: "style",
+            old: object({ color: "red" }),
+            new: object({ color: "red" }, { id: 2 }),
+            reference: "same-value",
+          },
+          {
+            key: "onPick",
+            old: { type: "function", name: "" },
+            new: { type: "function", name: "" },
+            reference: "new-function",
+          },
+          { key: "count", old: 1, new: 2 },
+        ],
+      },
+    }),
+  )
+  expect(changes(container)).toEqual([
+    'style: {color: "red"} → {color: "red"} same value, new reference',
+    "onPick: ƒ () → ƒ () new function",
+    "count: 1 → 2",
+  ])
+  expect(
+    [
+      ...container.querySelectorAll("[data-testid=change] [data-testid=badge]"),
+    ].map((badge) => badge.getAttribute("title")),
+  ).toEqual([
+    "A new object equal to the old one: memo sees a change",
+    "A function made in the parent's render: memo sees a change",
+  ])
+})

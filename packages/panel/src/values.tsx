@@ -650,20 +650,7 @@ export function ValueRow(props: {
               {previewText(value())}
             </span>
           </Show>
-          <Show when={props.badge}>
-            {(badge) => (
-              <>
-                {" "}
-                <span
-                  data-testid="badge"
-                  class="text-muted"
-                  title={badge().title}
-                >
-                  {badge().text}
-                </span>
-              </>
-            )}
-          </Show>
+          <Badge badge={props.badge} />
         </span>
         <Show when={editing()}>
           <ValueInput
@@ -703,6 +690,8 @@ export function ChangeRow(props: {
   new: Value
   path: RowPath
   depth: number
+  // A muted word after the values, its title saying why.
+  badge?: { text: string; title: string }
   onMenu: OnMenu
 }) {
   const openable = (value: Value) =>
@@ -740,6 +729,7 @@ export function ChangeRow(props: {
           <span class={tone(props.old)}>{previewText(props.old)}</span>
           <span class="text-muted">{" → "}</span>
           <span class={tone(props.new)}>{previewText(props.new)}</span>
+          <Badge badge={props.badge} />
         </span>
       </div>
       <Show when={open()}>
@@ -761,5 +751,21 @@ export function ChangeRow(props: {
         />
       </Show>
     </>
+  )
+}
+
+// A muted word after a row's value, its title saying why; nothing without one.
+function Badge(props: { badge?: { text: string; title: string } }) {
+  return (
+    <Show when={props.badge}>
+      {(badge) => (
+        <>
+          {" "}
+          <span data-testid="badge" class="text-muted" title={badge().title}>
+            {badge().text}
+          </span>
+        </>
+      )}
+    </Show>
   )
 }

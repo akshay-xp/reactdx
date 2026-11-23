@@ -2,6 +2,7 @@ import type {
   CallSite,
   Container,
   HookValue,
+  KeyChange,
   RenderKind,
   RenderReason,
   Value,
@@ -97,6 +98,18 @@ const KIND_TEXT: Record<RenderKind, string> = {
   force: "Forced",
 }
 const WHY = "Why did this render"
+// A prop change that's only a new reference (M6 #62), which still re-renders a
+// memo child.
+const REFERENCE_BADGE = {
+  "same-value": {
+    text: "same value, new reference",
+    title: "A new object equal to the old one: memo sees a change",
+  },
+  "new-function": {
+    text: "new function",
+    title: "A function made in the parent's render: memo sees a change",
+  },
+} as const
 
 // The selected node's values (docs/panel.md, Inspector). Page data is text only.
 export function Inspector(props: {
@@ -610,11 +623,22 @@ function Reasons(props: {
     return name
   }
   type Section = "props" | "state" | "hooks" | "contexts"
+  type KeyChangeLike = {
+    old: Value
+    new: Value
+    reference?: KeyChange["reference"]
+  }
   const change = (
     section: Section,
     name: string,
-    { old, new: next }: { old: Value; new: Value },
-  ) => ({ name, old, new: next, root: { render: section } })
+    { old, new: next, reference }: KeyChangeLike,
+  ) => ({
+    name,
+    old,
+    new: next,
+    root: { render: section },
+    badge: reference && REFERENCE_BADGE[reference],
+  })
   const changesOf = (render: RenderReason, kind: RenderKind) => {
     if (kind === "props")
       return (render.props ?? []).map((c) => change("props", c.key, c))
@@ -667,6 +691,7 @@ function Reasons(props: {
                     old={change.old}
                     new={change.new}
                     path={{ root: change.root, keys: [change.name] }}
+                    badge={change.badge}
                     depth={1}
                     onMenu={props.onMenu}
                   />
