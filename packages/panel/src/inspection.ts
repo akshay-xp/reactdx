@@ -82,6 +82,8 @@ export function createInspectorStore(
     render: RenderReason | null
   }>()
   const history = () => data()?.history ?? []
+  // The commit picked in the timeline (none: Live), followed by every node.
+  const [pinned, setPinned] = createSignal<number>()
   // The page global the last Store as global variable went to, while shown.
   const [stored, setStored] = createSignal<string>()
 
@@ -102,6 +104,21 @@ export function createInspectorStore(
     send({ ...command, id: at, root: path.root as EditRoot, path: path.keys })
   }
 
+  const step = (seq: number) => {
+    const at = id()
+    if (at === undefined) return
+    if (seq === history().at(-1)) return setStepped(undefined)
+    setStepped(seq)
+    setLoaded(undefined)
+    send({ type: "reason", id: at, seq })
+  }
+  // Shows the pinned commit's render if the node has one; unpinned, the newest.
+  const follow = () => {
+    const at = pinned()
+    if (at === undefined) setStepped(undefined)
+    else if (history().includes(at) && stepped() !== at) step(at)
+  }
+
   return {
     id,
     data: () => data() ?? undefined,
@@ -120,7 +137,9 @@ export function createInspectorStore(
     // A re-send can change any object: drop what was loaded and load it again.
     receive(message: InspectedMessage) {
       if (message.id !== id()) return
+      const first = data() === undefined
       setData(message.data)
+      if (first) follow()
       setExpansions(new Map())
       for (const ref of open().values()) if (ref !== undefined) expand(ref)
     },
@@ -134,13 +153,15 @@ export function createInspectorStore(
       const reply = loaded()
       return reply?.seq === at ? reply.render : undefined
     },
-    step(seq: number) {
-      const at = id()
-      if (at === undefined) return
-      if (seq === history().at(-1)) return setStepped(undefined)
-      setStepped(seq)
-      setLoaded(undefined)
-      send({ type: "reason", id: at, seq })
+    step,
+    // The node didn't render in the pinned commit.
+    absent: () => {
+      const at = pinned()
+      return at !== undefined && !!data() && !history().includes(at)
+    },
+    pin(seq: number | undefined) {
+      setPinned(seq)
+      follow()
     },
     receiveReasoned(message: ReasonedMessage) {
       if (message.id === id() && message.seq === stepped())

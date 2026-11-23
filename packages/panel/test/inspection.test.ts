@@ -246,3 +246,38 @@ test("stepping through history loads older renders; the newest follows re-sends"
   expect(store.shown()).toBeUndefined()
   expect(store.render()).toBeUndefined()
 })
+
+test("a pinned commit steps the inspector to it, or says it's absent", () => {
+  const { sent, store } = setup()
+  store.inspect(3)
+  const at = (seq: number) => ({ seq, kinds: ["state" as const] })
+  store.receive(
+    inspected(3, { props: object({}), render: at(9), history: [2, 5, 9] }),
+  )
+  store.pin(5)
+  expect(sent.at(-1)).toEqual({ type: "reason", id: 3, seq: 5 })
+  expect(store.shown()).toBe(5)
+  expect(store.absent()).toBe(false)
+  const count = sent.length
+  store.pin(9)
+  expect(sent).toHaveLength(count)
+  expect(store.render()).toEqual(at(9))
+  store.pin(4)
+  expect(store.absent()).toBe(true)
+  // Another node, pinned to 5: applied when its inspection arrives.
+  store.pin(5)
+  store.inspect(4)
+  store.receive(
+    inspected(4, { props: object({}), render: at(5), history: [5] }),
+  )
+  expect(store.absent()).toBe(false)
+  expect(store.shown()).toBe(5)
+  store.inspect(6)
+  store.receive(
+    inspected(6, { props: object({}), render: at(1), history: [1] }),
+  )
+  expect(store.absent()).toBe(true)
+  store.pin(undefined)
+  expect(store.absent()).toBe(false)
+  expect(store.render()).toEqual(at(1))
+})
