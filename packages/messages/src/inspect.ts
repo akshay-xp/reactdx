@@ -106,7 +106,33 @@ export type InspectedData = {
   owners?: Owner[]
   source?: SourceRef
   boundaries?: Boundaries
+  render?: RenderReason
 }
+
+// Why the node last rendered, while the panel watched (M6; docs/messages.md,
+// Render reasons): the changes with both values, hooks by call indexes (as in
+// `hooks`) and contexts by read order (as in `contexts`).
+export const RENDER_KINDS = [
+  "mount",
+  "props",
+  "state",
+  "context",
+  "parent",
+  "force",
+] as const
+export type RenderKind = (typeof RENDER_KINDS)[number]
+export type KeyChange = { key: string; old: Value; new: Value }
+export type HookChange = { hook: number[]; old: Value; new: Value }
+export type ContextChange = { context: number; old: Value; new: Value }
+export type RenderReason = {
+  seq: number
+  kinds: RenderKind[]
+  props?: KeyChange[]
+  state?: KeyChange[]
+  hooks?: HookChange[]
+  contexts?: ContextChange[]
+}
+export const MAX_CHANGES = 1000
 
 // The nearest Suspense boundary (`fallback`) and error boundary at or above the
 // node, by tree id, and whether the panel forced each (M5 #56).
@@ -169,13 +195,7 @@ export function parseValueTarget(data: unknown): ValueTarget | undefined {
     if (isCount(key) || isText(key)) return { objectId, key }
     return
   }
-  if (
-    Array.isArray(hook) &&
-    hook.length > 0 &&
-    hook.length <= MAX_HOOK_NESTING &&
-    hook.every(isCount)
-  )
-    return { hook: [...hook] }
+  if (isHookPath(hook)) return { hook: [...hook] }
   if (isCount(context)) return { context }
 }
 
@@ -300,6 +320,12 @@ export function parseValueText(data: unknown): ValueTextMessage | undefined {
 const isCount = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) >= 0
 const isId = (value: unknown): value is number => isCount(value) && value >= 1
+// A hook's call indexes, from the top through custom hooks.
+const isHookPath = (value: unknown): value is number[] =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.length <= MAX_HOOK_NESTING &&
+  value.every(isCount)
 const isText = (value: unknown, max = MAX_VALUE_STRING): value is string =>
   typeof value === "string" && value.length <= max
 const isName = (value: unknown): value is string => isText(value, MAX_NAME)
@@ -511,6 +537,7 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     owners,
     source,
     boundaries,
+    render,
   } = message.data as Record<string, unknown>
   const budget = { left: MAX_VALUES }
   const parsed: InspectedData = { props: null }
@@ -559,7 +586,74 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     if (!found) return
     parsed.boundaries = found
   }
+  if (render !== undefined) {
+    const reason = parseRender(render, budget)
+    if (!reason) return
+    parsed.render = reason
+  }
   return inspected(message.id, parsed)
+}
+
+function parseRender(
+  data: unknown,
+  budget: { left: number },
+): RenderReason | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { seq, kinds, props, state, hooks, contexts } = data as Record<
+    string,
+    unknown
+  >
+  if (!isId(seq) || !Array.isArray(kinds) || kinds.length === 0) return
+  if (
+    new Set(kinds).size !== kinds.length ||
+    !kinds.every((kind) => RENDER_KINDS.includes(kind))
+  )
+    return
+  const reason: RenderReason = { seq, kinds: [...kinds] }
+  // The old and new values of one change, or undefined if either is invalid.
+  const sides = (item: Record<string, unknown>) => {
+    const old = parseValue(item.old, 0, budget)
+    const next = parseValue(item.new, 0, budget)
+    return old === undefined || next === undefined
+      ? undefined
+      : { old, new: next }
+  }
+  const keyed = (list: unknown) =>
+    parseList(list, MAX_CHANGES, (item) => {
+      const both = sides(item)
+      return both && isName(item.key) ? { key: item.key, ...both } : undefined
+    })
+  if (props !== undefined) {
+    const list = keyed(props)
+    if (!list) return
+    reason.props = list
+  }
+  if (state !== undefined) {
+    const list = keyed(state)
+    if (!list) return
+    reason.state = list
+  }
+  if (hooks !== undefined) {
+    const list = parseList(hooks, MAX_CHANGES, (item) => {
+      const both = sides(item)
+      return both && isHookPath(item.hook)
+        ? { hook: [...item.hook], ...both }
+        : undefined
+    })
+    if (!list) return
+    reason.hooks = list
+  }
+  if (contexts !== undefined) {
+    const list = parseList(contexts, MAX_CHANGES, (item) => {
+      const both = sides(item)
+      return both && isCount(item.context)
+        ? { context: item.context, ...both }
+        : undefined
+    })
+    if (!list) return
+    reason.contexts = list
+  }
+  return reason
 }
 
 function parseBoundaries(data: unknown): Boundaries | undefined {

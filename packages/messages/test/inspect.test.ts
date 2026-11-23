@@ -362,3 +362,55 @@ test("inspected boundaries: the nearest of each kind, by id, and whether forced"
       parseInspected(inspected(3, { props: 1, boundaries: bad } as never)),
     ).toBeUndefined()
 })
+
+test("an inspection carries its node's latest render reasons", () => {
+  const render = {
+    seq: 4,
+    kinds: ["props", "state", "context"],
+    props: [{ key: "count", old: 1, new: 2 }],
+    state: [{ key: "ticks", old: 0, new: object({ a: 1 }) }],
+    hooks: [{ hook: [1, 0], old: 0, new: 1 }],
+    contexts: [{ context: 0, old: "dark", new: "light" }],
+  }
+  const parse = (value: unknown) =>
+    parseInspected(inspected(3, { props: 1, render: value } as never))?.data
+  expect(parse(render)).toEqual({ props: 1, render })
+  expect(parse({ seq: 1, kinds: ["mount"], extra: 1 })).toEqual({
+    props: 1,
+    render: { seq: 1, kinds: ["mount"] },
+  })
+  expect(
+    parse({
+      seq: 1,
+      kinds: ["props"],
+      props: [{ key: "a", old: 1, new: 2, extra: 3 }],
+    }),
+  ).toEqual({
+    props: 1,
+    render: { seq: 1, kinds: ["props"], props: [{ key: "a", old: 1, new: 2 }] },
+  })
+  const change = { key: "a", old: 1, new: 2 }
+  for (const bad of [
+    { seq: 1, kinds: ["hacked"] },
+    { seq: 1, kinds: [] },
+    { seq: 1, kinds: ["mount", "mount"] },
+    { seq: 0, kinds: ["mount"] },
+    { seq: 1, kinds: ["props"], props: Array(1001).fill(change) },
+    { seq: 1, kinds: ["props"], props: [{ ...change, key: "k".repeat(257) }] },
+    {
+      seq: 1,
+      kinds: ["props"],
+      props: [{ key: "a", old: { type: "x" }, new: 1 }],
+    },
+    { seq: 1, kinds: ["state"], hooks: [{ hook: [-1], old: 0, new: 1 }] },
+    {
+      seq: 1,
+      kinds: ["context"],
+      contexts: [{ context: 1.5, old: 0, new: 1 }],
+    },
+    "mount",
+  ])
+    expect(
+      parseInspected(inspected(3, { props: 1, render: bad } as never)),
+    ).toBeUndefined()
+})
