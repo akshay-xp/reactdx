@@ -1782,3 +1782,35 @@ test("a prop change that's only a new reference has a badge saying so", () => {
     "A function made in the parent's render: memo sees a change",
   ])
 })
+
+test("the effects a render ran list under Effects ran, with their changed deps", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      hooks: [
+        { name: "State", value: 1 },
+        { name: "State", value: 2 },
+        { name: "Effect" },
+        { name: "Effect" },
+        { name: "Effect" },
+      ],
+      render: {
+        seq: 2,
+        kinds: ["state"],
+        effects: [
+          { hook: [2], changed: [{ dep: 1, old: 1, new: 2 }] },
+          { hook: [4] },
+        ],
+      },
+    }),
+  )
+  expect(reasons(container).at(-1)).toBe("Effects ran")
+  expect(
+    [...container.querySelectorAll("[data-testid=effect]")].map(
+      (row) => row.textContent,
+    ),
+  ).toEqual(["Effect #3: deps [1] changed", "Effect #5: no deps"])
+  expect(changes(container)).toContain("[1]: 1 → 2")
+})

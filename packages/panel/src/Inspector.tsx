@@ -669,38 +669,88 @@ function Reasons(props: {
       }
     >
       {(render) => (
-        <For each={render().kinds}>
-          {(kind) => (
-            <>
-              <div
-                role="treeitem"
-                aria-level={2}
-                tabIndex={-1}
-                data-testid="reason"
-                data-path={`reason:${kind}`}
-                class={ROW}
-                style={{ "padding-left": "24px" }}
-              >
-                {KIND_TEXT[kind]}
-              </div>
-              <For each={changesOf(render(), kind)}>
-                {(change) => (
-                  <ChangeRow
-                    inspector={props.inspector}
-                    name={change.name}
-                    old={change.old}
-                    new={change.new}
-                    path={{ root: change.root, keys: [change.name] }}
-                    badge={change.badge}
-                    depth={1}
-                    onMenu={props.onMenu}
-                  />
-                )}
-              </For>
-            </>
-          )}
-        </For>
+        <>
+          <For each={render().kinds}>
+            {(kind) => (
+              <>
+                <ReasonRow name={kind} text={KIND_TEXT[kind]} />
+                <For each={changesOf(render(), kind)}>
+                  {(change) => (
+                    <ChangeRow
+                      inspector={props.inspector}
+                      name={change.name}
+                      old={change.old}
+                      new={change.new}
+                      path={{ root: change.root, keys: [change.name] }}
+                      badge={change.badge}
+                      depth={1}
+                      onMenu={props.onMenu}
+                    />
+                  )}
+                </For>
+              </>
+            )}
+          </For>
+          <Show when={render().effects?.length}>
+            <ReasonRow name="effects" text="Effects ran" />
+            <For each={render().effects}>
+              {(run) => {
+                const name = hookName(run.hook)
+                return (
+                  <>
+                    <div
+                      role="treeitem"
+                      aria-level={3}
+                      tabIndex={-1}
+                      data-testid="effect"
+                      data-path={`effect:${run.hook.join()}`}
+                      class={ROW}
+                      style={{ "padding-left": "36px" }}
+                    >
+                      {run.changed
+                        ? `${name}: deps [${run.changed.map((c) => c.dep).join(", ")}] changed`
+                        : `${name}: no deps`}
+                    </div>
+                    <For each={run.changed}>
+                      {(change) => (
+                        <ChangeRow
+                          inspector={props.inspector}
+                          name={`[${change.dep}]`}
+                          old={change.old}
+                          new={change.new}
+                          path={{
+                            root: { render: "effects" },
+                            keys: [name, change.dep],
+                          }}
+                          depth={2}
+                          onMenu={props.onMenu}
+                        />
+                      )}
+                    </For>
+                  </>
+                )
+              }}
+            </For>
+          </Show>
+        </>
       )}
     </Show>
+  )
+}
+
+// A reason's own row (a kind, or Effects ran), above its changes.
+function ReasonRow(props: { name: string; text: string }) {
+  return (
+    <div
+      role="treeitem"
+      aria-level={2}
+      tabIndex={-1}
+      data-testid="reason"
+      data-path={`reason:${props.name}`}
+      class={ROW}
+      style={{ "padding-left": "24px" }}
+    >
+      {props.text}
+    </div>
   )
 }

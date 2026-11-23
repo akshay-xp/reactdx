@@ -6,7 +6,7 @@ import type { EditRoot, ValueKey } from "@reactdx/messages"
 // Plus a render reason's changes (M6), which are never edited.
 export type PathRoot =
   | EditRoot
-  | { render: "props" | "state" | "hooks" | "contexts" }
+  | { render: "props" | "state" | "hooks" | "contexts" | "effects" }
 export type RowPath = { root: PathRoot; keys: ValueKey[] }
 
 // Equal for the same path only: keys may hold dots, and "0" isn't 0.
