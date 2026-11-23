@@ -1,6 +1,5 @@
 import type { RendererView } from "@reactdx/messages"
-import { For, Match, Show, Switch } from "solid-js"
-import { CommitStrip } from "./CommitStrip"
+import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { Empty, EmptyAction } from "./Empty"
 import { Inspector, type Settings } from "./Inspector"
 import type { InspectorStore } from "./inspection"
@@ -20,7 +19,7 @@ export function ConnectionList(props: {
   renderers: RendererView[]
   tree: TreeStore
   inspector: InspectorStore
-  // Recent commits (M6 #67): the strip above the trees and their row marks.
+  // Recent commits: with them, Components and Commits are tabs.
   timeline?: TimelineStore
   sources: Sources
   settings: Settings
@@ -28,6 +27,61 @@ export function ConnectionList(props: {
   onReload?: () => void
 }) {
   const development = () => props.renderers.some((r) => r.bundleType === 1)
+  // Side by side; stacked when the panel is narrower than sm (640 px).
+  const split = () => (
+    <div data-testid="split" class="flex min-h-0 flex-1 flex-col sm:flex-row">
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <Toolbar tree={props.tree} />
+        {/* The one scroller for every copy's trees, both ways; each TreeView
+            renders the rows in this pane's view. The content is as wide as
+            its widest row, so rows and the selection span it. */}
+        <div data-testid="trees" class="min-h-0 flex-1 overflow-auto">
+          <ul class="w-max min-w-full">
+            <For each={props.renderers}>
+              {(renderer) => (
+                <li data-testid="renderer" class="border-border border-b p-2">
+                  <h2>
+                    <span class="font-mono">React {renderer.version}</span>{" "}
+                    <span class="text-muted">{build(renderer.bundleType)}</span>{" "}
+                    <span class="font-mono text-muted">
+                      {renderer.rendererPackageName}
+                    </span>
+                  </h2>
+                  <ul class="pl-4">
+                    <For each={renderer.roots}>
+                      {(root) => (
+                        <li data-testid="root" data-commits={root.commits}>
+                          <span>Root {root.id}</span>
+                          <span class="pl-2 text-muted">
+                            {root.commits} commits
+                          </span>
+                          <Show when={renderer.bundleType === 1}>
+                            <TreeView tree={props.tree} rootId={root.id} />
+                          </Show>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </div>
+      <aside
+        data-testid="inspector"
+        aria-label="Inspector"
+        class="flex min-h-0 min-w-0 flex-1 flex-col border-border border-t sm:border-t-0 sm:border-l"
+      >
+        <Inspector
+          tree={props.tree}
+          inspector={props.inspector}
+          sources={props.sources}
+          settings={props.settings}
+        />
+      </aside>
+    </div>
+  )
   return (
     <Switch>
       <Match when={props.renderers.length === 0 && props.stale}>
@@ -55,77 +109,73 @@ export function ConnectionList(props: {
         </p>
       </Match>
       <Match when={development()}>
-        {/* Side by side; stacked when the panel is narrower than sm (640 px). */}
-        <div
-          data-testid="split"
-          class="flex min-h-0 flex-1 flex-col sm:flex-row"
-        >
-          <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-            <Toolbar tree={props.tree} />
-            <Show when={props.timeline}>
-              {(timeline) => (
-                <CommitStrip timeline={timeline()} tree={props.tree} />
-              )}
-            </Show>
-            {/* The one scroller for every copy's trees, both ways; each TreeView
-                renders the rows in this pane's view. The content is as wide as
-                its widest row, so rows and the selection span it. */}
-            <div data-testid="trees" class="min-h-0 flex-1 overflow-auto">
-              <ul class="w-max min-w-full">
-                <For each={props.renderers}>
-                  {(renderer) => (
-                    <li
-                      data-testid="renderer"
-                      class="border-border border-b p-2"
-                    >
-                      <h2>
-                        <span class="font-mono">React {renderer.version}</span>{" "}
-                        <span class="text-muted">
-                          {build(renderer.bundleType)}
-                        </span>{" "}
-                        <span class="font-mono text-muted">
-                          {renderer.rendererPackageName}
-                        </span>
-                      </h2>
-                      <ul class="pl-4">
-                        <For each={renderer.roots}>
-                          {(root) => (
-                            <li data-testid="root" data-commits={root.commits}>
-                              <span>Root {root.id}</span>
-                              <span class="pl-2 text-muted">
-                                {root.commits} commits
-                              </span>
-                              <Show when={renderer.bundleType === 1}>
-                                <TreeView
-                                  tree={props.tree}
-                                  rootId={root.id}
-                                  marks={props.timeline?.marks}
-                                />
-                              </Show>
-                            </li>
-                          )}
-                        </For>
-                      </ul>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </div>
-          </div>
-          <aside
-            data-testid="inspector"
-            aria-label="Inspector"
-            class="flex min-h-0 min-w-0 flex-1 flex-col border-border border-t sm:border-t-0 sm:border-l"
-          >
-            <Inspector
-              tree={props.tree}
-              inspector={props.inspector}
-              sources={props.sources}
-              settings={props.settings}
-            />
-          </aside>
-        </div>
+        <Show when={props.timeline} fallback={split()}>
+          <Tabs
+            tabs={[
+              { name: "Components", content: split() },
+              { name: "Commits", content: <div data-testid="commits" /> },
+            ]}
+          />
+        </Show>
       </Match>
     </Switch>
+  )
+}
+
+// Tabs inside the panel, each content kept mounted (hidden when another is
+// selected) so it keeps its scroll and state. Left/Right move between tabs.
+function Tabs(props: { tabs: { name: string; content: JSX.Element }[] }) {
+  const [selected, setSelected] = createSignal(0)
+  const id = (i: number) => `tab-${props.tabs[i]?.name.toLowerCase()}`
+  const tabs: HTMLButtonElement[] = []
+  return (
+    <>
+      <div
+        role="tablist"
+        aria-label="Views"
+        class="flex shrink-0 border-border border-b px-1"
+      >
+        <For each={props.tabs}>
+          {(tab, i) => (
+            <button
+              ref={(el) => {
+                tabs[i()] = el
+              }}
+              type="button"
+              role="tab"
+              id={`${id(i())}-tab`}
+              aria-controls={id(i())}
+              aria-selected={selected() === i()}
+              tabIndex={selected() === i() ? 0 : -1}
+              class="-mb-px border-transparent border-b-2 px-2 py-1 text-muted hover:text-fg aria-selected:border-accent aria-selected:text-fg"
+              onClick={() => setSelected(i())}
+              onKeyDown={(event) => {
+                const by = { ArrowLeft: -1, ArrowRight: 1 }[event.key]
+                if (by === undefined) return
+                event.preventDefault()
+                const to = (i() + by + props.tabs.length) % props.tabs.length
+                setSelected(to)
+                tabs[to]?.focus()
+              }}
+            >
+              {tab.name}
+            </button>
+          )}
+        </For>
+      </div>
+      <For each={props.tabs}>
+        {(tab, i) => (
+          <div
+            role="tabpanel"
+            id={id(i())}
+            aria-labelledby={`${id(i())}-tab`}
+            hidden={selected() !== i()}
+            class="flex min-h-0 flex-1 flex-col"
+          >
+            {tab.content}
+          </div>
+        )}
+      </For>
+    </>
   )
 }

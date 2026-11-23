@@ -1,9 +1,10 @@
 import { type RendererView, treeBatch } from "@reactdx/messages"
-import { fireEvent, render } from "@solidjs/testing-library"
+import { fireEvent, render, screen } from "@solidjs/testing-library"
 import { expect, test } from "vitest"
 import { ConnectionList } from "../src/ConnectionList"
 import { createInspectorStore } from "../src/inspection"
 import type { Sources } from "../src/source"
+import { createTimelineStore } from "../src/timeline"
 import { createTreeStore } from "../src/tree"
 
 const inspection = () =>
@@ -230,4 +231,54 @@ test("the inspector sits beside the trees, below them when narrow", () => {
   expect(
     view([copy(1, "19.3.1", 0)]).querySelector("[data-testid=inspector]"),
   ).toBeNull()
+})
+
+test("Components and Commits are tabs; the hidden one keeps its state", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      {
+        op: "add",
+        id: 1,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "App",
+        key: null,
+        index: 0,
+      },
+    ]),
+  )
+  tree.select(1)
+  const inspector = inspection()
+  render(() => (
+    <ConnectionList
+      tree={tree}
+      inspector={inspector}
+      timeline={createTimelineStore(() => {}, inspector)}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "19.3.1", 1, [{ id: 1, commits: 1 }])]}
+    />
+  ))
+  const components = screen.getByRole("tab", { name: "Components" })
+  const commits = screen.getByRole("tab", { name: "Commits" })
+  const panel = (tab: HTMLElement) =>
+    document.getElementById(tab.getAttribute("aria-controls") ?? "")
+  expect(components.getAttribute("aria-selected")).toBe("true")
+  expect(panel(components)?.hidden).toBe(false)
+  expect(panel(commits)?.hidden).toBe(true)
+  expect(panel(components)?.querySelector("[data-testid=tree]")).not.toBeNull()
+  expect(
+    panel(components)?.querySelector("[data-testid=inspector]"),
+  ).not.toBeNull()
+  fireEvent.click(commits)
+  expect(commits.getAttribute("aria-selected")).toBe("true")
+  expect(panel(commits)?.hidden).toBe(false)
+  expect(panel(components)?.hidden).toBe(true)
+  expect(tree.selected()).toBe(1)
+  fireEvent.keyDown(commits, { key: "ArrowLeft" })
+  expect(components.getAttribute("aria-selected")).toBe("true")
+  expect(document.activeElement).toBe(components)
 })

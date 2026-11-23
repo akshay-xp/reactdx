@@ -25,12 +25,7 @@ export const TRIANGLE = {
 // One root's tree. Only the rows in the pane's view (plus overscan) are in the
 // DOM. The tree doesn't scroll: the pane around it does ([data-testid=trees]; the
 // page's own scroller outside one).
-export function TreeView(props: {
-  tree: TreeStore
-  rootId: number
-  // Ids the commit picked on the timeline rendered.
-  marks?: () => Set<number>
-}) {
+export function TreeView(props: { tree: TreeStore; rootId: number }) {
   let box!: HTMLDivElement
   let pane: Element | undefined
   const rows = createMemo(() => props.tree.rows(props.rootId))
@@ -60,7 +55,6 @@ export function TreeView(props: {
     })
   })
   const selected = (id: number) => props.tree.selected() === id
-  const rendered = (id: number) => props.marks?.().has(id) ?? false
   // Dark muted on selected is 2.9:1 (docs/panel.md, Themes).
   const muted = (id: number) => (selected(id) ? "text-fg" : "text-muted")
   // One listener for every row: a toggle click on an expandable row toggles it,
@@ -154,17 +148,8 @@ export function TreeView(props: {
                 aria-selected={selected(row.id)}
                 aria-expanded={row.expandable ? row.expanded : undefined}
                 class="flex items-center gap-1 whitespace-nowrap font-mono"
-                classList={{
-                  "bg-selected": selected(row.id),
-                  "shadow-[inset_2px_0_0_var(--color-accent)]": rendered(
-                    row.id,
-                  ),
-                }}
+                classList={{ "bg-selected": selected(row.id) }}
                 data-id={row.id}
-                data-rendered={rendered(row.id) || undefined}
-                aria-description={
-                  rendered(row.id) ? "Rendered in this commit" : undefined
-                }
                 data-match={row.match || undefined}
                 style={{
                   height: `${ROW_HEIGHT}px`,

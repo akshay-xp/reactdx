@@ -39,7 +39,9 @@ test("picking a commit asks for it, pins the inspector and keeps its detail", ()
   expect(pins).toEqual([5])
   expect(timeline.detail()).toBeUndefined()
   const updaters = [{ id: 1, hooks: [] }]
-  timeline.receiveCommitted(committed(5, [{ id: 1, kinds: ["state"] }], updaters))
+  timeline.receiveCommitted(
+    committed(5, [{ id: 1, kinds: ["state"] }], updaters),
+  )
   timeline.receiveCommitted(committed(5, [{ id: 2, kinds: ["parent"] }]))
   timeline.receiveCommitted(committed(4, [{ id: 9, kinds: ["mount"] }], []))
   expect(timeline.detail()).toEqual({
