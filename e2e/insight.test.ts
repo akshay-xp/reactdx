@@ -44,6 +44,16 @@ for (const { fixture, port } of fixtures)
       )
       await page.click("[data-testid=bump]")
       await shows("Props changed", "count: 1 → 2")
+      // A memo child given an inline object and callback: new references.
+      await selectListed(panel, "Styled", (t) =>
+        t.includes("data: {count: 1} → {count: 2}"),
+      )
+      await shows(
+        'style: {color: "red"} → {color: "red"} same value, new reference',
+        "new function",
+      )
+      const styled = await panel.inspector()
+      assert.ok(!/\{count: 2\} (same value|new function)/.test(styled), styled)
       await page.click("[data-testid=add]")
       await selectListed(panel, "Late", (t) => t.includes("Mounted"))
       await selectListed(panel, "Plain", (t) => t.includes("Parent rendered"))

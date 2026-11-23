@@ -85,6 +85,7 @@ for (const [script, port, version] of [
           expected,
         )
       await shows("[data-testid=shown]", "Count 1")
+      await shows("[data-testid=styled]", "Styled 1")
       await page.click("[data-testid=bump]")
       await shows("[data-testid=shown]", "Count 2")
       await shows("[data-testid=stateful]", "State 0")

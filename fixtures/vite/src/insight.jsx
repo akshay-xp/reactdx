@@ -1,16 +1,24 @@
-import { createContext, useContext, useState } from "react"
+import { createContext, memo, useContext, useState } from "react"
 import { createRoot } from "react-dom/client"
 
 // One component per render reason (e2e/insight.test.ts): Late mounts on "add",
 // Shown's prop changes on "bump", Stateful's own state on "state", Reader's
 // context on "theme", and Plain (no props, not memo) renders only because its
-// parent did.
+// parent did. Styled is memo but gets an inline object and callback, which are
+// new references on every render.
 const Theme = createContext("light")
 Theme.displayName = "Theme"
 
 function Shown({ count }) {
   return <p data-testid="shown">Count {count}</p>
 }
+const Styled = memo(function Styled({ style, data }) {
+  return (
+    <p data-testid="styled" style={style}>
+      Styled {data.count}
+    </p>
+  )
+})
 function Late() {
   return <p data-testid="late">Late</p>
 }
@@ -44,6 +52,7 @@ function Insight() {
     <div data-testid="insight">
       <Theme.Provider value={theme}>
         <Shown count={count} />
+        <Styled style={{ color: "red" }} onPick={() => {}} data={{ count }} />
         <Plain />
         <Stateful />
         <Reader />
