@@ -1,5 +1,7 @@
 import {
   type CommitsMessage,
+  type CommittedMessage,
+  committed,
   type ExpandedMessage,
   type InspectedMessage,
   type ReasonedMessage,
@@ -727,4 +729,40 @@ test("the flush posts the commits recorded since the last, once each", async () 
       .flat()
       .map((commit) => commit.seq),
   ).toEqual(expect.arrayContaining(seqs.slice(-2)))
+})
+
+function Cell() {
+  return null
+}
+let setMany = (_: number) => {}
+function Many() {
+  const [n, set] = React.useState(0)
+  React.useEffect(() => {
+    setMany = set
+  })
+  return Array.from({ length: 2001 }, (_, i) => h(Cell, { key: i, n }))
+}
+
+test("commit sends a commit's rendered ids in batches of 2,000", async () => {
+  const { createRoot } = await import("react-dom/client")
+  const other = createRoot(document.createElement("div"))
+  await React.act(() => other.render(h(Many)))
+  try {
+    await React.act(() => setMany(1))
+    await flushed()
+    const seq = commitLists().flat().at(-1)?.seq ?? 0
+    posted.length = 0
+    send({ source: "reactdx-relay", type: "commit", seq })
+    const replies = posted.filter(
+      (m): m is CommittedMessage =>
+        (m as { type?: string }).type === "committed",
+    )
+    expect(replies.map((m) => m.ids?.length)).toEqual([2000, 2])
+    expect(new Set(replies.flatMap((m) => m.ids ?? [])).size).toBe(2002)
+    posted.length = 0
+    send({ source: "reactdx-relay", type: "commit", seq: 9999 })
+    expect(posted).toEqual([committed(9999, null)])
+  } finally {
+    await React.act(() => other.unmount())
+  }
 })

@@ -1,6 +1,8 @@
 import {
   type CommitsMessage,
+  type CommittedMessage,
   commitsMessage,
+  committed,
   type ExpandedMessage,
   expanded,
   type HookValue,
@@ -84,6 +86,7 @@ export function startAgent(
       | InspectedMessage
       | ExpandedMessage
       | CommitsMessage
+      | CommittedMessage
       | ReasonedMessage
       | ValueTextMessage
       | ValueStoredMessage,
@@ -500,10 +503,20 @@ export function startAgent(
     else if (
       data.type === "inspect" ||
       data.type === "expand" ||
-      data.type === "reason"
+      data.type === "reason" ||
+      data.type === "commit"
     ) {
       const command = parseTreeCommand(data)
       if (command?.type === "inspect") inspect(command.id)
+      if (command?.type === "commit") {
+        const { seq } = command
+        const ids = recorder.rendered(seq)
+        if (!ids) post(committed(seq, null))
+        // At least one batch: a commit that rendered nothing says so.
+        else
+          for (let at = 0; at === 0 || at < ids.length; at += MAX_OPS)
+            post(committed(seq, ids.slice(at, at + MAX_OPS)))
+      }
       if (command?.type === "reason" && command.id === selected?.id) {
         const { id, seq } = command
         const record = recorder.record(id, seq)
