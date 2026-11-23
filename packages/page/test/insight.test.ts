@@ -252,7 +252,13 @@ const Styled = React.memo(function Styled(_: Record<string, unknown>) {
 function StyleParent() {
   const [n, set] = React.useState(1)
   setStyle = set
-  return h(Styled, { style: { color: "red" }, list: [1, [2]], data: { n } })
+  return h(Styled, {
+    style: { color: "red" },
+    list: [1, [2]],
+    data: { n },
+    onPick: () => {},
+    handler: n === 1 ? () => {} : 1,
+  })
 }
 const changeOf = (
   recorder: ReturnType<typeof createRecorder>,
@@ -269,6 +275,20 @@ test("a prop that's a new object or array equal to the old is a new reference", 
   )
   expect(changeOf(recorder, id("Styled"), "list")?.reference).toBe("same-value")
   expect(changeOf(recorder, id("Styled"), "data")).not.toHaveProperty(
+    "reference",
+  )
+})
+
+test("a prop that's a different function is a new function", async () => {
+  const { record, recorder, id } = await mount(h(StyleParent))
+  await record(() => setStyle(2))
+  expect(changeOf(recorder, id("Styled"), "onPick")?.reference).toBe(
+    "new-function",
+  )
+  expect(changeOf(recorder, id("Styled"), "style")?.reference).toBe(
+    "same-value",
+  )
+  expect(changeOf(recorder, id("Styled"), "handler")).not.toHaveProperty(
     "reference",
   )
 })

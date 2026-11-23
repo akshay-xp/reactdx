@@ -14,12 +14,13 @@ export type RenderKind =
   | "force"
 
 // A key whose value changed, with both values (references, not copies).
-// `reference`: a prop that's only a new reference (an equal object or array).
+// `reference`: a prop that's only a new reference: an equal object or array,
+// or a different function (functions can't be compared).
 export type Change = {
   key: string
   old: unknown
   new: unknown
-  reference?: "same-value"
+  reference?: "same-value" | "new-function"
 }
 
 export type RenderRecord = {
@@ -115,6 +116,13 @@ function sameValue(a: unknown, b: unknown, budget = { left: 1000 }): boolean {
   })
 }
 
+// Two different values that are only a new reference, if they are.
+function referenceOf(old: unknown, next: unknown) {
+  if (typeof old === "function" && typeof next === "function")
+    return { reference: "new-function" as const }
+  if (sameValue(old, next)) return { reference: "same-value" as const }
+}
+
 // The keys whose values differ (Object.is), over both objects' keys; with
 // `mark`, a new reference to an equal value says so.
 function diffKeys(prev: unknown, next: unknown, mark = false): Change[] {
@@ -127,8 +135,7 @@ function diffKeys(prev: unknown, next: unknown, mark = false): Change[] {
         key,
         old: a[key],
         new: b[key],
-        ...(mark &&
-          sameValue(a[key], b[key]) && { reference: "same-value" as const }),
+        ...(mark && referenceOf(a[key], b[key])),
       })
   return changes
 }
