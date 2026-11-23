@@ -202,6 +202,22 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
         { name: "DROPPED", site: { url: "http://h/a.js", line: 0, column: 1 } },
       ],
     },
+    {
+      props: object({}),
+      render: {
+        seq: 1,
+        kinds: ["props", "DROPPED"],
+        props: [{ key: "DROPPED", old: 1, new: 2 }],
+      },
+    },
+    {
+      props: object({}),
+      render: {
+        seq: 1,
+        kinds: ["props"],
+        props: Array(1001).fill({ key: "DROPPED", old: 1, new: 2 }),
+      },
+    },
   ])
     inspected(data)
   post({
