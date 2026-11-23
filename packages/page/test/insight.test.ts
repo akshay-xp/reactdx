@@ -190,3 +190,26 @@ test("a class component's changed state keys are recorded", async () => {
     { key: "ticks", old: 0, new: 1 },
   ])
 })
+
+const Theme = React.createContext("light")
+Theme.displayName = "Theme"
+let setTheme: (theme: string) => void = () => {}
+function Reader() {
+  React.useContext(Theme)
+  return null
+}
+const Memoed = React.memo(Reader)
+function Themed() {
+  const [theme, set] = React.useState("dark")
+  setTheme = set
+  return h(Theme.Provider, { value: theme }, h(Memoed))
+}
+
+test("changed contexts are recorded by read order", async () => {
+  const { record, kinds, recorder, id } = await mount(h(Themed))
+  await record(() => setTheme("light"))
+  expect(kinds("Reader")).toEqual(["context"])
+  expect(recorder.latest(id("Reader"))?.contexts).toEqual([
+    { read: 0, old: "dark", new: "light" },
+  ])
+})

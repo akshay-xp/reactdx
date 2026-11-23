@@ -41,6 +41,7 @@ import {
   inspectHooks,
   type RawHook,
 } from "./hooks.ts"
+import { contextsOf } from "./insight.ts"
 import { copyText, createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
 import { sourceOf } from "./source.ts"
@@ -48,36 +49,6 @@ import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
 const THROTTLE_MS = 100
-
-type ContextRead = {
-  context: { displayName?: unknown }
-  memoizedValue: unknown
-  next: ContextRead | null
-}
-
-// The contexts a fiber read in its last render, once each, in first-read order:
-// useContext, use(), a class's contextType and consumers all land in this list.
-function contextsOf(fiber: Fiber) {
-  const reads = new Map<unknown, unknown>()
-  const dependencies = (
-    fiber as unknown as {
-      dependencies: { firstContext: ContextRead | null } | null
-    }
-  ).dependencies
-  for (let at = dependencies?.firstContext ?? null; at; at = at.next)
-    if (!reads.has(at.context)) reads.set(at.context, at.memoizedValue)
-  return [...reads].map(([context, value]) => {
-    const name = (context as { displayName?: unknown }).displayName
-    return {
-      name:
-        typeof name === "string" && name
-          ? name.slice(0, MAX_TREE_STRING)
-          : "Context",
-      value,
-      context,
-    }
-  })
-}
 
 // The nearest provider of `context` above the fiber (ContextProvider, tag 10):
 // React 19's provider is the context itself, React 18's its Provider object.

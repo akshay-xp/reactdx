@@ -2,6 +2,7 @@
 // (docs/page.md, Render insight). Values stay as references: nothing is
 // serialized until the panel shows a record.
 
+import { MAX_TREE_STRING } from "@reactdx/messages"
 import type { Fiber } from "./tree.ts"
 
 export type RenderKind =
@@ -23,7 +24,11 @@ export type RenderRecord = {
   state?: Change[]
   // State hooks by hook list index (docs/page.md, Hooks).
   hooks?: HookChange[]
+  // Contexts by read order (the Context section's).
+  contexts?: ContextChange[]
 }
+
+export type ContextChange = { read: number; old: unknown; new: unknown }
 
 export type HookChange = { index: number; old: unknown; new: unknown }
 
@@ -40,6 +45,36 @@ const COMPONENTS = new Set([0, 1, 11, 14, 15])
 const PERFORMED_WORK = 1
 
 type Flagged = Fiber & { flags: number }
+
+type ContextRead = {
+  context: { displayName?: unknown }
+  memoizedValue: unknown
+  next: ContextRead | null
+}
+
+// The contexts a fiber read in its last render, once each, in first-read order:
+// useContext, use(), a class's contextType and consumers all land in this list.
+export function contextsOf(fiber: Fiber) {
+  const reads = new Map<unknown, unknown>()
+  const dependencies = (
+    fiber as unknown as {
+      dependencies: { firstContext: ContextRead | null } | null
+    }
+  ).dependencies
+  for (let at = dependencies?.firstContext ?? null; at; at = at.next)
+    if (!reads.has(at.context)) reads.set(at.context, at.memoizedValue)
+  return [...reads].map(([context, value]) => {
+    const name = (context as { displayName?: unknown }).displayName
+    return {
+      name:
+        typeof name === "string" && name
+          ? name.slice(0, MAX_TREE_STRING)
+          : "Context",
+      value,
+      context,
+    }
+  })
+}
 
 // The keys whose values differ (Object.is), over both objects' keys.
 function diffKeys(prev: unknown, next: unknown): Change[] {
@@ -70,6 +105,19 @@ function diffHooks(prev: unknown, next: unknown): HookChange[] {
   return changes
 }
 
+// Contexts read in both renders whose value changed, by this render's read order.
+function diffContexts(prev: Fiber, next: Fiber): ContextChange[] {
+  const before = new Map(
+    contextsOf(prev).map(({ context, value }) => [context, value]),
+  )
+  const changes: ContextChange[] = []
+  contextsOf(next).forEach(({ context, value }, read) => {
+    if (before.has(context) && !Object.is(before.get(context), value))
+      changes.push({ read, old: before.get(context), new: value })
+  })
+  return changes
+}
+
 export function createRecorder() {
   let seq = 1
   const commits: Commit[] = []
@@ -78,24 +126,21 @@ export function createRecorder() {
     const prev = fiber.alternate
     if (!prev) return { seq: at, kinds: ["mount"] }
     const record: RenderRecord = { seq: at, kinds: [] }
-    const props = diffKeys(prev.memoizedProps, fiber.memoizedProps)
-    if (props.length) {
-      record.kinds.push("props")
-      record.props = props
+    const note = <F extends "props" | "state" | "hooks" | "contexts">(
+      kind: RenderKind,
+      field: F,
+      changes: NonNullable<RenderRecord[F]>,
+    ) => {
+      if (!changes.length) return
+      if (!record.kinds.includes(kind)) record.kinds.push(kind)
+      record[field] = changes
     }
-    if (fiber.tag === 1) {
-      const state = diffKeys(prev.memoizedState, fiber.memoizedState)
-      if (state.length) {
-        record.kinds.push("state")
-        record.state = state
-      }
-    } else {
-      const hooks = diffHooks(prev.memoizedState, fiber.memoizedState)
-      if (hooks.length) {
-        record.kinds.push("state")
-        record.hooks = hooks
-      }
-    }
+    note("props", "props", diffKeys(prev.memoizedProps, fiber.memoizedProps))
+    if (fiber.tag === 1)
+      note("state", "state", diffKeys(prev.memoizedState, fiber.memoizedState))
+    else
+      note("state", "hooks", diffHooks(prev.memoizedState, fiber.memoizedState))
+    note("context", "contexts", diffContexts(prev, fiber))
     if (!record.kinds.length) record.kinds.push("parent")
     return record
   }
