@@ -136,6 +136,12 @@ export type KeyChange = {
 }
 export type HookChange = { hook: number[]; old: Value; new: Value }
 export type ContextChange = { context: number; old: Value; new: Value }
+// An effect the render ran (M6 #63): `changed` the deps that differ, absent
+// for an effect with no deps array.
+export type EffectRun = {
+  hook: number[]
+  changed?: { dep: number; old: Value; new: Value }[]
+}
 export type RenderReason = {
   seq: number
   kinds: RenderKind[]
@@ -143,6 +149,7 @@ export type RenderReason = {
   state?: KeyChange[]
   hooks?: HookChange[]
   contexts?: ContextChange[]
+  effects?: EffectRun[]
 }
 export const MAX_CHANGES = 1000
 
@@ -611,7 +618,7 @@ function parseRender(
   budget: { left: number },
 ): RenderReason | undefined {
   if (typeof data !== "object" || data === null) return
-  const { seq, kinds, props, state, hooks, contexts } = data as Record<
+  const { seq, kinds, props, state, hooks, contexts, effects } = data as Record<
     string,
     unknown
   >
@@ -667,6 +674,20 @@ function parseRender(
     })
     if (!list) return
     reason.contexts = list
+  }
+  if (effects !== undefined) {
+    const list = parseList(effects, MAX_CHANGES, (item) => {
+      if (!isHookPath(item.hook)) return
+      const run: EffectRun = { hook: [...item.hook] }
+      if (item.changed === undefined) return run
+      const changed = parseList(item.changed, MAX_CHANGES, (dep) => {
+        const both = sides(dep)
+        return both && isCount(dep.dep) ? { dep: dep.dep, ...both } : undefined
+      })
+      return changed && { ...run, changed }
+    })
+    if (!list) return
+    reason.effects = list
   }
   return reason
 }

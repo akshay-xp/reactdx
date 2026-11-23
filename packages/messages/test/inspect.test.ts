@@ -434,3 +434,30 @@ test("a prop change can say it's only a new reference; nothing else passes there
   expect(parse("x")).toBeUndefined()
   expect(parse(1)).toBeUndefined()
 })
+
+test("a render's effects: by call indexes, with their changed deps", () => {
+  const parse = (effects: unknown) =>
+    parseInspected(
+      inspected(3, {
+        props: 1,
+        render: { seq: 1, kinds: ["parent"], effects },
+      } as never),
+    )?.data?.render
+  const effects = [
+    { hook: [2], changed: [{ dep: 1, old: 1, new: 2 }] },
+    { hook: [4] },
+  ]
+  expect(parse(effects)?.effects).toEqual(effects)
+  expect(
+    parse([
+      { hook: [2], extra: 1, changed: [{ dep: 0, old: 1, new: 2, x: 1 }] },
+    ])?.effects,
+  ).toEqual([{ hook: [2], changed: [{ dep: 0, old: 1, new: 2 }] }])
+  for (const bad of [
+    [{ hook: [] }],
+    [{ hook: [2], changed: [{ dep: -1, old: 1, new: 2 }] }],
+    [{ hook: [2], changed: "x" }],
+    Array(1001).fill({ hook: [2] }),
+  ])
+    expect(parse(bad)).toBeUndefined()
+})
