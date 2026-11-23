@@ -315,3 +315,11 @@ test("reason asks for one recorded render of a node", () => {
   expect(parseTreeCommand({ type: "reason", id: 3, seq: 0 })).toBeUndefined()
   expect(parseTreeCommand({ type: "reason", seq: 2 })).toBeUndefined()
 })
+
+test("commit asks for the ids a commit rendered", () => {
+  expect(parseTreeCommand({ type: "commit", seq: 4, x: 1 })).toEqual({
+    type: "commit",
+    seq: 4,
+  })
+  expect(parseTreeCommand({ type: "commit", seq: 0 })).toBeUndefined()
+})

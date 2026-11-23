@@ -301,6 +301,31 @@ export type ReasonMessage = {
   seq: number
 }
 
+// Panel to background: the ids the commit `seq` rendered (M6 #67).
+export type CommitMessage = { type: "commit"; tabId: number; seq: number }
+
+// Agent to panel: one batch of the ids a commit rendered, at most MAX_OPS;
+// null once the commit left the page's buffer.
+export type CommittedMessage = {
+  source: "reactdx"
+  type: "committed"
+  seq: number
+  ids: number[] | null
+}
+export const committed = (
+  seq: number,
+  ids: number[] | null,
+): CommittedMessage => ({ source: "reactdx", type: "committed", seq, ids })
+
+export function parseCommitted(data: unknown): CommittedMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, seq, ids } = data as Record<string, unknown>
+  if (source !== "reactdx" || type !== "committed" || !isId(seq)) return
+  if (ids === null) return committed(seq, null)
+  if (Array.isArray(ids) && ids.length <= MAX_OPS && ids.every(isId))
+    return committed(seq, [...ids])
+}
+
 // Panel to background: render the inspected node again, nothing changed.
 export type RerenderMessage = { type: "rerender"; tabId: number; id: number }
 
@@ -350,6 +375,7 @@ export type TreeCommand =
   | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
   | { type: "rerender"; id: number }
   | { type: "reason"; id: number; seq: number }
+  | { type: "commit"; seq: number }
   | { type: "force"; id: number; kind: "fallback" | "error"; on: boolean }
   | {
       type: "rename-path"
@@ -388,6 +414,7 @@ export function parseTreeCommand(data: unknown): TreeCommand | undefined {
   if (type === "inspect" && (id === null || isId(id))) return { type, id }
   if (type === "rerender" && isId(id)) return { type, id }
   if (type === "reason" && isId(id) && isId(seq)) return { type, id, seq }
+  if (type === "commit" && isId(seq)) return { type, seq }
   if (
     type === "force" &&
     isId(id) &&

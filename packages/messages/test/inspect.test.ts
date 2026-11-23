@@ -1,9 +1,11 @@
 import { expect, test } from "vitest"
 import {
   commitsMessage,
+  committed,
   expanded,
   inspected,
   parseCommits,
+  parseCommitted,
   parseExpanded,
   parseInspected,
   parseReasoned,
@@ -577,4 +579,17 @@ test("commit summaries are at most 100 increasing commits, each bounded", () => 
     [{ ...summary, renders: 1.5 }],
   ])
     expect(parseCommits(commitsMessage(bad as never))).toBeUndefined()
+})
+
+test("committed carries at most 2,000 rendered ids, or null once released", () => {
+  expect(parseCommitted(committed(4, [1, 2]))).toEqual(committed(4, [1, 2]))
+  expect(parseCommitted(committed(4, null))).toEqual(committed(4, null))
+  const message = committed(4, [1]) as Record<string, unknown>
+  for (const bad of [
+    { ...message, ids: Array(2001).fill(1) },
+    { ...message, ids: [0] },
+    { ...message, seq: "4" },
+    { ...message, ids: undefined },
+  ])
+    expect(parseCommitted(bad)).toBeUndefined()
 })
