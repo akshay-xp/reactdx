@@ -40,6 +40,7 @@ import {
   type DispatcherRef,
   type HooksFiber,
   hookAt,
+  hookLabel,
   hookPath,
   inspectHooks,
   type RawHook,
@@ -302,12 +303,13 @@ export function startAgent(
       if (read.error !== undefined) data.hooksError = read.error
     }
     if (latest)
-      data.render = reasonOf(latest, read ? read.hooks : [], serialize)
+      data.render = reasonOf(id, latest, read ? read.hooks : [], serialize)
     return data
   }
   // A render record as sent: values serialized with the inspection's, keys and
   // lists within the validator's bounds, hooks by call indexes.
   const reasonOf = (
+    id: number,
     record: RenderRecord,
     hooks: RawHook[],
     serialize: (value: unknown) => unknown,
@@ -362,7 +364,29 @@ export function startAgent(
       reason.contexts = record.contexts
         .slice(0, MAX_CHANGES)
         .map((change) => ({ context: change.read, ...both(change) }))
+    reason.updaters = []
+    for (const updater of recorder
+      .updatersOf(record.seq)
+      .slice(0, MAX_CHANGES)) {
+      const fiber = tree.fiber(updater.id)
+      if (!fiber) continue
+      // Another component's hooks are read only if it changed some.
+      const own =
+        updater.id === id || !updater.hooks.length ? hooks : hooksOf(fiber)
+      const changes = []
+      for (const change of updater.hooks.slice(0, MAX_CHANGES)) {
+        const name = hookLabel(own, change.index)
+        if (name) changes.push({ name, ...both(change) })
+      }
+      reason.updaters.push({ id: updater.id, hooks: changes })
+    }
     return reason
+  }
+  const hooksOf = (fiber: Fiber) => {
+    const ref = rendererOf(fiber)?.currentDispatcherRef
+    return (
+      (ref && inspectHooks(fiber as unknown as HooksFiber, ref)?.hooks) || []
+    )
   }
   const inspect = (id: number | null) => {
     selected?.values.release()

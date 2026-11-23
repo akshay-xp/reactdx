@@ -78,6 +78,23 @@ function Rekeying() {
   })
   return h(Rekeyed, { key: k })
 }
+function Triggered() {
+  return h("abbr")
+}
+let setTriggering = (_: number) => {}
+function useCount() {
+  const [n, set] = React.useState(1)
+  React.useEffect(() => {
+    setTriggering = set
+  })
+  return n
+}
+// Hooks rows: State #1, Count #2 (the group), State #3, Effect #4.
+function Triggering() {
+  React.useState("x")
+  const n = useCount()
+  return h("q", null, n, h(Triggered))
+}
 function Deep(_: { data: unknown }) {
   return null
 }
@@ -137,6 +154,7 @@ beforeAll(async () => {
       h(Styling, { key: "styling" }),
       h(Effecting, { key: "effecting" }),
       h(Rekeying, { key: "rekeying" }),
+      h(Triggering, { key: "triggering" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
       h(Refs, { key: "r" }),
       h(Counted, { key: "k", label: "x" }),
@@ -622,4 +640,17 @@ test("an inspection says when its node remounted and why", async () => {
     from: "a",
     to: "b",
   })
+})
+
+test("an inspection names what triggered its render, hooks labeled as in Hooks", async () => {
+  const triggering = idOf("Triggering")
+  inspect(idOf("Triggered"))
+  await React.act(() => setTriggering(2))
+  await flushed()
+  const expected = [
+    { id: triggering, hooks: [{ name: "State #3", old: 1, new: 2 }] },
+  ]
+  expect(replies().at(-1)?.data?.render?.updaters).toEqual(expected)
+  inspect(triggering)
+  expect(replies().at(-1)?.data?.render?.updaters).toEqual(expected)
 })
