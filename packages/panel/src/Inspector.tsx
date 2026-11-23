@@ -6,6 +6,7 @@ import type {
   Remount,
   RenderKind,
   RenderReason,
+  Updater,
   Value,
 } from "@reactdx/messages"
 import {
@@ -42,7 +43,7 @@ import {
 import { BADGES } from "./TreeView"
 import type { TreeStore } from "./tree"
 import { isPlain } from "./typed"
-import { byName, isContainer } from "./value"
+import { byName, isContainer, previewText } from "./value"
 import {
   ChangeRow,
   Children,
@@ -744,6 +745,11 @@ function Reasons(props: {
               }}
             </For>
           </Show>
+          <Show when={render().updaters}>
+            {(updaters) => (
+              <Triggered updaters={updaters()} tree={props.tree} />
+            )}
+          </Show>
         </>
       )}
     </Show>
@@ -771,20 +777,7 @@ function Remounted(props: { remount: Remount; tree: TreeStore }) {
       <Match when={ancestor()}>
         {(id) => (
           <>
-            Remounted: ancestor{" "}
-            <button
-              type="button"
-              data-testid="owner"
-              class="text-accent hover:underline"
-              onPointerEnter={() => props.tree.hover(id())}
-              onPointerLeave={() => props.tree.hover(undefined)}
-              onClick={() => {
-                props.tree.hover(undefined)
-                props.tree.reveal(id())
-              }}
-            >
-              {name()}
-            </button>{" "}
+            Remounted: ancestor <NodeLink id={id()} tree={props.tree} />{" "}
             remounted
           </>
         )}
@@ -793,14 +786,67 @@ function Remounted(props: { remount: Remount; tree: TreeStore }) {
   )
 }
 
-// A reason's own row (a kind, or Effects ran), above its changes.
-function ReasonRow(props: { name: string; children: JSX.Element }) {
+// A node's name that highlights it on hover and selects it on click.
+function NodeLink(props: { id: number; tree: TreeStore }) {
+  return (
+    <button
+      type="button"
+      data-testid="owner"
+      class="text-accent hover:underline"
+      onPointerEnter={() => props.tree.hover(props.id)}
+      onPointerLeave={() => props.tree.hover(undefined)}
+      onClick={() => {
+        props.tree.hover(undefined)
+        props.tree.reveal(props.id)
+      }}
+    >
+      {props.tree.info(props.id)?.name}
+    </button>
+  )
+}
+
+// The components whose update scheduled the render's commit, with the state
+// each changed; none (a root render) is unknown.
+function Triggered(props: { updaters: Updater[]; tree: TreeStore }) {
+  const known = () =>
+    props.updaters.filter((updater) => props.tree.info(updater.id))
+  return (
+    <ReasonRow name="trigger" testid="trigger">
+      <Show when={known().length} fallback="Triggered by: unknown">
+        Triggered by{" "}
+        <For each={known()}>
+          {(updater, i) => (
+            <>
+              {i() > 0 && ", "}
+              <NodeLink id={updater.id} tree={props.tree} />
+              <Show when={updater.hooks.length}>
+                {` (${updater.hooks
+                  .map(
+                    (hook) =>
+                      `${hook.name}: ${previewText(hook.old)} → ${previewText(hook.new)}`,
+                  )
+                  .join(", ")})`}
+              </Show>
+            </>
+          )}
+        </For>
+      </Show>
+    </ReasonRow>
+  )
+}
+
+// A reason's own row (a kind, Effects ran, or Triggered by), above its changes.
+function ReasonRow(props: {
+  name: string
+  testid?: string
+  children: JSX.Element
+}) {
   return (
     <div
       role="treeitem"
       aria-level={2}
       tabIndex={-1}
-      data-testid="reason"
+      data-testid={props.testid ?? "reason"}
       data-path={`reason:${props.name}`}
       class={ROW}
       style={{ "padding-left": "24px" }}

@@ -1850,3 +1850,46 @@ test("a remount says what caused it; an ancestor's name selects it", () => {
   fireEvent.click(getByRole("button", { name: "Layout" }))
   expect(tree.selected()).toBe(4)
 })
+
+test("what triggered a render: each updater with its changed hooks", () => {
+  const { container, inspector, select, tree, getByRole } = setup()
+  select()
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 4,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "Other",
+        key: null,
+        index: 1,
+      },
+    ]),
+  )
+  const show = (updaters: unknown) =>
+    inspector.receive(
+      inspected(3, {
+        props: object({}),
+        render: { seq: 2, kinds: ["state"], updaters } as never,
+      }),
+    )
+  const trigger = () =>
+    container.querySelector("[data-testid=trigger]")?.textContent ?? null
+  const counter = { id: 3, hooks: [{ name: "State #1", old: 3, new: 4 }] }
+  show([counter])
+  expect(trigger()).toBe("Triggered by Counter (State #1: 3 → 4)")
+  show([counter, { id: 4, hooks: [] }])
+  expect(trigger()).toBe("Triggered by Counter (State #1: 3 → 4), Other")
+  fireEvent.click(getByRole("button", { name: "Other" }))
+  expect(tree.selected()).toBe(4)
+  select()
+  // Gone from the tree: left out.
+  show([{ id: 9, hooks: [] }])
+  expect(trigger()).toBe("Triggered by: unknown")
+  show([])
+  expect(trigger()).toBe("Triggered by: unknown")
+  show(undefined)
+  expect(trigger()).toBeNull()
+})
