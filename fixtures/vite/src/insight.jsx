@@ -6,7 +6,8 @@ import { createRoot } from "react-dom/client"
 // context on "theme", and Plain (no props, not memo) renders only because its
 // parent did. Styled is memo but gets an inline object and callback, which are
 // new references on every render. Effects' "b" runs its [a, b] effect (b
-// changed) and its no-deps one, not its [a] one.
+// changed) and its no-deps one, not its [a] one. "rekey" remounts Item by
+// its key; "wrap" swaps Inner's div for a section, remounting Inner.
 const Theme = createContext("light")
 Theme.displayName = "Theme"
 
@@ -34,6 +35,42 @@ function Effects() {
       </p>
       <button type="button" data-testid="b" onClick={() => setB(b + 1)}>
         Set b
+      </button>
+    </>
+  )
+}
+function Item() {
+  return <p data-testid="item">Item</p>
+}
+function Inner() {
+  return <p data-testid="inner">Inner</p>
+}
+function Keyed() {
+  const [itemKey, setItemKey] = useState("a")
+  return (
+    <>
+      <Item key={itemKey} />
+      <button type="button" data-testid="rekey" onClick={() => setItemKey("b")}>
+        Rekey
+      </button>
+    </>
+  )
+}
+function Wrapped() {
+  const [wrapped, setWrapped] = useState(false)
+  return (
+    <>
+      {wrapped ? (
+        <section>
+          <Inner />
+        </section>
+      ) : (
+        <div>
+          <Inner />
+        </div>
+      )}
+      <button type="button" data-testid="wrap" onClick={() => setWrapped(true)}>
+        Wrap
       </button>
     </>
   )
@@ -76,6 +113,8 @@ function Insight() {
         <Stateful />
         <Reader />
         <Effects />
+        <Keyed />
+        <Wrapped />
         {late && <Late />}
       </Theme.Provider>
       <button type="button" data-testid="add" onClick={() => setLate(true)}>

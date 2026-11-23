@@ -74,6 +74,18 @@ for (const { fixture, port } of fixtures)
       await shows("Effect #5: no deps")
       const effects = await panel.inspector()
       assert.ok(!effects.includes("Effect #4"), effects)
+
+      await page.click("[data-testid=rekey]")
+      await selectListed(panel, "Item", (t) =>
+        t.includes("Remounted: key changed (a → b)"),
+      )
+      await page.click("[data-testid=wrap]")
+      await selectListed(panel, "Inner", (t) =>
+        t.includes("Remounted: ancestor section remounted"),
+      )
+      await panel.press("section")
+      await until(panel.inspector, (t) => t.startsWith("section "))
+      assert.ok((await panel.inspector()).startsWith("section "))
     } finally {
       await browser.close()
     }
