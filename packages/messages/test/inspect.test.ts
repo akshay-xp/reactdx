@@ -1,7 +1,9 @@
 import { expect, test } from "vitest"
 import {
+  commitsMessage,
   expanded,
   inspected,
+  parseCommits,
   parseExpanded,
   parseInspected,
   parseReasoned,
@@ -548,4 +550,31 @@ test("a reasoned reply carries one render, or null once it's released", () => {
     { ...message, id: 0 },
   ])
     expect(parseReasoned(bad)).toBeUndefined()
+})
+
+test("commit summaries are at most 100 increasing commits, each bounded", () => {
+  const summary = { seq: 3, time: 12.5, rootId: 1, updaters: [4], renders: 2 }
+  expect(parseCommits(commitsMessage([summary]))).toEqual(
+    commitsMessage([summary]),
+  )
+  expect(
+    parseCommits(commitsMessage([{ ...summary, extra: 1 } as never])),
+  ).toEqual(commitsMessage([summary]))
+  const many = Array.from({ length: 101 }, (_, i) => ({
+    ...summary,
+    seq: i + 1,
+  }))
+  expect(parseCommits(commitsMessage(many.slice(0, 100)))).toBeDefined()
+  for (const bad of [
+    many,
+    [summary, { ...summary, seq: 3 }],
+    [{ ...summary, seq: 0 }],
+    [{ ...summary, time: -1 }],
+    [{ ...summary, time: Number.NaN }],
+    [{ ...summary, rootId: "1" }],
+    [{ ...summary, updaters: Array(1001).fill(4) }],
+    [{ ...summary, updaters: [0] }],
+    [{ ...summary, renders: 1.5 }],
+  ])
+    expect(parseCommits(commitsMessage(bad as never))).toBeUndefined()
 })

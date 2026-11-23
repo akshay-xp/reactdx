@@ -191,6 +191,50 @@ export const inspected = (
   data: InspectedData | null,
 ): InspectedMessage => ({ source: "reactdx", type: "inspected", id, data })
 
+// Agent to panel, on the flush (M6 #67): the commits recorded since the last,
+// for the timeline. `renders` counts the components that rendered.
+export type CommitSummary = {
+  seq: number
+  time: number
+  rootId: number
+  updaters: number[]
+  renders: number
+}
+export type CommitsMessage = {
+  source: "reactdx"
+  type: "commits"
+  commits: CommitSummary[]
+}
+export const commitsMessage = (commits: CommitSummary[]): CommitsMessage => ({
+  source: "reactdx",
+  type: "commits",
+  commits,
+})
+
+export function parseCommits(data: unknown): CommitsMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, commits } = data as Record<string, unknown>
+  if (source !== "reactdx" || type !== "commits") return
+  const list = parseList(commits, MAX_HISTORY, (item) => {
+    const { seq, time, rootId, updaters, renders } = item
+    if (!isId(seq) || !isId(rootId) || !isCount(renders)) return
+    if (typeof time !== "number" || !(time >= 0)) return
+    if (
+      !Array.isArray(updaters) ||
+      updaters.length > MAX_CHANGES ||
+      !updaters.every(isId)
+    )
+      return
+    return { seq, time, rootId, updaters: [...updaters], renders }
+  })
+  if (list && increasing(list.map((commit) => commit.seq)))
+    return commitsMessage(list)
+}
+
+// Each after the one before: commit seqs as the page assigns them.
+const increasing = (seqs: number[]) =>
+  seqs.every((seq, i) => i === 0 || seq > (seqs[i - 1] as number))
+
 // Agent to panel: one recorded render the panel asked for (`reason`); null
 // once its commit left the page's buffer.
 export type ReasonedMessage = {
@@ -655,7 +699,8 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     if (
       !Array.isArray(history) ||
       history.length > MAX_HISTORY ||
-      !history.every((seq, i) => isId(seq) && (i === 0 || seq > history[i - 1]))
+      !history.every(isId) ||
+      !increasing(history)
     )
       return
     parsed.history = [...history]
