@@ -3,6 +3,7 @@ import type {
   Container,
   HookValue,
   RenderKind,
+  RenderReason,
   Value,
 } from "@reactdx/messages"
 import {
@@ -41,6 +42,7 @@ import type { TreeStore } from "./tree"
 import { isPlain } from "./typed"
 import { byName, isContainer } from "./value"
 import {
+  ChangeRow,
   Children,
   type Entry,
   entriesOf,
@@ -85,7 +87,7 @@ export type Settings = {
 
 const STORED_MS = 4000
 
-// What each reason kind reads as when it has no change rows of its own.
+// What each reason kind reads as, above its changes if it has any.
 const KIND_TEXT: Record<RenderKind, string> = {
   mount: "Mounted",
   props: "Props changed",
@@ -410,32 +412,11 @@ export function Inspector(props: {
                   forced={false}
                   onToggle={() => toggle(WHY)}
                 >
-                  <Show
-                    when={props.inspector.data()?.render}
-                    fallback={
-                      <p class="pl-6 text-muted">
-                        No renders recorded since DevTools opened.
-                      </p>
-                    }
-                  >
-                    {(render) => (
-                      <For each={render().kinds}>
-                        {(kind) => (
-                          <div
-                            role="treeitem"
-                            aria-level={2}
-                            tabIndex={-1}
-                            data-testid="reason"
-                            data-path={`reason:${kind}`}
-                            class={ROW}
-                            style={{ "padding-left": "24px" }}
-                          >
-                            {KIND_TEXT[kind]}
-                          </div>
-                        )}
-                      </For>
-                    )}
-                  </Show>
+                  <Reasons
+                    inspector={props.inspector}
+                    labelOf={labelOf}
+                    onMenu={onMenu}
+                  />
                 </Section>
               </Show>
               {section("Props", "props", props.inspector.data()?.props)}
@@ -604,5 +585,97 @@ function Section(props: {
         <div class="pb-1 font-mono">{props.children}</div>
       </Show>
     </section>
+  )
+}
+
+// Why the node last rendered: a row per reason, its changes under it.
+function Reasons(props: {
+  inspector: InspectorStore
+  labelOf: (hook: HookValue) => string
+  onMenu: OnMenu
+}) {
+  // A changed hook as the Hooks section shows it, numbered by its row there
+  // (depth-first, groups included): two State hooks read apart.
+  const hookName = (path: number[]) => {
+    let n = 0
+    let name = "Hook"
+    const walk = (hooks: HookValue[], at: number[]) =>
+      hooks.forEach((hook, i) => {
+        n++
+        const here = [...at, i]
+        if (here.join() === path.join()) name = `${props.labelOf(hook)} #${n}`
+        walk(hook.hooks ?? [], here)
+      })
+    walk(props.inspector.data()?.hooks ?? [], [])
+    return name
+  }
+  type Section = "props" | "state" | "hooks" | "contexts"
+  const change = (
+    section: Section,
+    name: string,
+    { old, new: next }: { old: Value; new: Value },
+  ) => ({ name, old, new: next, root: { render: section } })
+  const changesOf = (render: RenderReason, kind: RenderKind) => {
+    if (kind === "props")
+      return (render.props ?? []).map((c) => change("props", c.key, c))
+    if (kind === "state")
+      return [
+        ...(render.state ?? []).map((c) => change("state", c.key, c)),
+        ...(render.hooks ?? []).map((c) =>
+          change("hooks", hookName(c.hook), c),
+        ),
+      ]
+    if (kind === "context")
+      return (render.contexts ?? []).map((c) =>
+        change(
+          "contexts",
+          props.inspector.data()?.contexts?.[c.context]?.name ?? "Context",
+          c,
+        ),
+      )
+    return []
+  }
+  return (
+    <Show
+      when={props.inspector.data()?.render}
+      fallback={
+        <p class="pl-6 text-muted">
+          No renders recorded since DevTools opened.
+        </p>
+      }
+    >
+      {(render) => (
+        <For each={render().kinds}>
+          {(kind) => (
+            <>
+              <div
+                role="treeitem"
+                aria-level={2}
+                tabIndex={-1}
+                data-testid="reason"
+                data-path={`reason:${kind}`}
+                class={ROW}
+                style={{ "padding-left": "24px" }}
+              >
+                {KIND_TEXT[kind]}
+              </div>
+              <For each={changesOf(render(), kind)}>
+                {(change) => (
+                  <ChangeRow
+                    inspector={props.inspector}
+                    name={change.name}
+                    old={change.old}
+                    new={change.new}
+                    path={{ root: change.root, keys: [change.name] }}
+                    depth={1}
+                    onMenu={props.onMenu}
+                  />
+                )}
+              </For>
+            </>
+          )}
+        </For>
+      )}
+    </Show>
   )
 }

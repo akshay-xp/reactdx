@@ -693,3 +693,73 @@ export function ValueRow(props: {
     </>
   )
 }
+
+// A render reason's change (M6): `name: old → new`. Either side holding an
+// object opens to Before and After, value rows of their own.
+export function ChangeRow(props: {
+  inspector: InspectorStore
+  name: string
+  old: Value
+  new: Value
+  path: RowPath
+  depth: number
+  onMenu: OnMenu
+}) {
+  const openable = (value: Value) =>
+    isContainer(value) ||
+    (value !== null &&
+      typeof value === "object" &&
+      value.type === "ref" &&
+      "preview" in value)
+  const canOpen = () => openable(props.old) || openable(props.new)
+  const open = () => props.inspector.isOpen(props.path)
+  const toggle = () =>
+    open()
+      ? props.inspector.close(props.path)
+      : props.inspector.open(props.path)
+  return (
+    <>
+      <div
+        data-testid="change"
+        role="treeitem"
+        tabIndex={-1}
+        aria-level={props.depth + 2}
+        aria-expanded={canOpen() ? open() : undefined}
+        data-path={pathKey(props.path)}
+        class={ROW}
+        style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
+      >
+        <Show when={canOpen()} fallback={<span class="w-3 shrink-0" />}>
+          <Toggle open={open()} onClick={toggle} />
+        </Show>
+        <span class="min-w-0 truncate">
+          <span
+            data-search-text
+            class="text-syntax-key"
+          >{`${props.name}:`}</span>{" "}
+          <span class={tone(props.old)}>{previewText(props.old)}</span>
+          <span class="text-muted">{" → "}</span>
+          <span class={tone(props.new)}>{previewText(props.new)}</span>
+        </span>
+      </div>
+      <Show when={open()}>
+        <ValueRow
+          inspector={props.inspector}
+          entry={{ name: "Before", value: props.old }}
+          path={childPath(props.path, "old")}
+          depth={props.depth + 1}
+          query=""
+          onMenu={props.onMenu}
+        />
+        <ValueRow
+          inspector={props.inspector}
+          entry={{ name: "After", value: props.new }}
+          path={childPath(props.path, "new")}
+          depth={props.depth + 1}
+          query=""
+          onMenu={props.onMenu}
+        />
+      </Show>
+    </>
+  )
+}

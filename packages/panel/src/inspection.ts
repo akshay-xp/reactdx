@@ -87,7 +87,8 @@ export function createInspectorStore(
   ) => {
     const at = id()
     if (at === undefined) return
-    send({ ...command, id: at, root: path.root, path: path.keys })
+    // Only editable rows write, and a render reason's never are.
+    send({ ...command, id: at, root: path.root as EditRoot, path: path.keys })
   }
 
   return {

@@ -1664,3 +1664,79 @@ test("Why did this render comes first, with the latest render's reasons", () => 
   fireEvent.click(getByRole("treeitem", { name: /Why did this render/ }))
   expect(reasons(container)).toEqual([])
 })
+
+const changes = (container: Element) =>
+  [...container.querySelectorAll("[data-testid=change]")].map(
+    (row) => row.textContent,
+  )
+
+test("a render's changes read old → new, under their reason", () => {
+  const { container, inspector, select } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ count: 2 }),
+      hooks: [
+        { name: "Ref", value: 1 },
+        { name: "State", value: 1 },
+      ],
+      contexts: [{ name: "Theme", value: "light" }],
+      render: {
+        seq: 2,
+        kinds: ["props", "state", "context"],
+        props: [{ key: "count", old: 1, new: 2 }],
+        hooks: [{ hook: [1], old: 0, new: 1 }],
+        contexts: [{ context: 0, old: "dark", new: "light" }],
+      },
+    }),
+  )
+  expect(reasons(container)).toEqual([
+    "Props changed",
+    "State changed",
+    "Context changed",
+  ])
+  expect(changes(container)).toEqual([
+    "count: 1 → 2",
+    "State #2: 0 → 1",
+    'Theme: "dark" → "light"',
+  ])
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      state: object({ ticks: 1 }),
+      render: {
+        seq: 3,
+        kinds: ["state"],
+        state: [{ key: "ticks", old: 0, new: 1 }],
+      },
+    }),
+  )
+  expect(changes(container)).toEqual(["ticks: 0 → 1"])
+})
+
+test("a change holding an object opens to Before and After", () => {
+  const { container, inspector, select, getByTestId } = setup()
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      render: {
+        seq: 2,
+        kinds: ["props"],
+        props: [
+          {
+            key: "user",
+            old: object({ name: "Ada" }),
+            new: object({ name: "Grace" }, { id: 2 }),
+          },
+        ],
+      },
+    }),
+  )
+  expect(changes(container)).toEqual(['user: {name: "Ada"} → {name: "Grace"}'])
+  fireEvent.click(getByTestId("value-toggle"))
+  expect(rows(container)).toEqual([
+    'Before: {name: "Ada"}',
+    'After: {name: "Grace"}',
+  ])
+})
