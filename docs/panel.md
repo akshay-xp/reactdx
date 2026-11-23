@@ -51,7 +51,9 @@ The selected node's values as the agent last sent them (`docs/messages.md`, "Ins
 - Row menu actions: `copyKey(text)` copies at once (`copy`: `main.tsx`'s `editor.copy`, a selected textarea and `execCommand("copy")`). `copyValue(target)` and `storeValue(target)` send `copy-value` / `store-value` with a `ValueTarget` (`docs/messages.md`): the page has the whole value, the panel only a cut, paged copy. `receiveValueText(valueText)` copies the page's text only as the reply to a `copyValue` (once): the page can post one at any time, which would otherwise write the clipboard unasked. `receiveValueStored(valueStored)` likewise, only after a `storeValue`: `stored()` is the global's name until `clearStored()`.
 - `test/inspection.test.ts`.
 
-## Inspector (`Inspector`, `src/Inspector.tsx`, `src/value.ts`; M4 #33)
+## Inspector (`Inspector`, `src/Inspector.tsx`, `src/values.tsx`, `src/value.ts`; M4 #33)
+
+- Files: `Inspector.tsx` has the header, search, sections and menus; `values.tsx` (M6 #60) the rows they render (`ValueRow`, `HookRows`, `Children`, `ValueInput`, `Toggle`, `Triangle`) and their helpers (`entriesOf`, `tone`, `loadedOf`, the search filters `entryShows`/`hookShows`/`descendantShows`, `ROW`). Apart so the render-insight section and the commit timeline render values with the same rows.
 
 - Empty states (`Empty`, `src/Empty.tsx`): centered in the pane, the picker's crosshair (`PickGlyph`, shared with the toolbar, drawn by `Glyph`) in a `bg-surface` circle, a title and a muted hint. None selected: "Select a component to inspect it.", "Click it in the tree, or pick it on the page.", and a "Pick an element" `EmptyAction` (`aria-pressed`, toggles `tree.setPicking`; while picking it reads "Click an element on the page", in accent). `gone()`: "This component unmounted.", "Select another in the tree." The title comes first: `selectListed` (e2e) spots a lost selection by its "Select a component" start.
 - Header (`[data-testid=inspector-header]`, fixed above the sections): the name, the tree's badge for `memo`/`forwardRef`/`lazy`, and `key="…"`, from `tree.info(id)`.
