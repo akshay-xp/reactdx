@@ -47,6 +47,17 @@ function Reasoned() {
   })
   return h("b", null, value)
 }
+const StyledChild = React.memo(function StyledChild(_: { style: object }) {
+  return null
+})
+let setStyling = (_: number) => {}
+function Styling() {
+  const [n, set] = React.useState(0)
+  React.useEffect(() => {
+    setStyling = set
+  })
+  return h("p", null, n, h(StyledChild, { style: { color: "red" } }))
+}
 function Deep(_: { data: unknown }) {
   return null
 }
@@ -103,6 +114,7 @@ beforeAll(async () => {
       h(Clock, { key: "c" }),
       h(Other, { key: "o" }),
       h(Reasoned, { key: "why" }),
+      h(Styling, { key: "styling" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
       h(Refs, { key: "r" }),
       h(Counted, { key: "k", label: "x" }),
@@ -551,4 +563,14 @@ test("a forced render re-sends the inspection with its reason", async () => {
   const after = replies().at(-1)?.data?.render
   expect(after?.kinds).toEqual(["force"])
   expect(after?.seq).toBeGreaterThan(before?.seq ?? 0)
+})
+
+test("a prop change says when it's only a new reference", async () => {
+  inspect(idOf("StyledChild"))
+  await React.act(() => setStyling(1))
+  await flushed()
+  expect(replies().at(-1)?.data?.render?.props?.[0]).toMatchObject({
+    key: "style",
+    reference: "same-value",
+  })
 })

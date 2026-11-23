@@ -320,6 +320,7 @@ export function startAgent(
       changes.slice(0, MAX_CHANGES).map((change) => ({
         key: change.key.slice(0, MAX_TREE_STRING),
         ...both(change),
+        ...(change.reference && { reference: change.reference }),
       }))
     const reason: RenderReason = { seq: record.seq, kinds: record.kinds }
     if (record.props) reason.props = keyed(record.props)
