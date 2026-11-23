@@ -218,8 +218,29 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
         props: Array(1001).fill({ key: "DROPPED", old: 1, new: 2 }),
       },
     },
+    { props: object({ DROPPED: 1 }), history: [4, 1] },
+    {
+      props: object({ DROPPED: 1 }),
+      history: Array.from({ length: 101 }, (_, i) => i + 1),
+    },
   ])
     inspected(data)
+  const reasoned = (fields: Record<string, unknown>) =>
+    post({
+      source: "reactdx",
+      type: "reasoned",
+      id,
+      seq: 1,
+      render: {
+        seq: 1,
+        kinds: ["props"],
+        props: [{ key: "DROPPED", old: 1, new: 2 }],
+      },
+      ...fields,
+    })
+  reasoned({ render: { seq: 1, kinds: ["DROPPED"] } })
+  reasoned({ seq: "1" })
+  reasoned({ render: undefined })
   post({
     source: "reactdx",
     type: "expanded",
@@ -245,6 +266,8 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
   command({ type: "inspect", id: 1e9 })
   command({ type: "expand", objectId: -1, offset: 0 })
   command({ type: "expand", objectId: 1, offset: "a" })
+  command({ type: "reason", id: 1, seq: 0 })
+  command({ type: "reason", id: "x", seq: 1 })
 }
 
 type Inspecting = Window & { inspectedId?: number }
