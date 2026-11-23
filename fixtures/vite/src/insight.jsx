@@ -1,11 +1,12 @@
-import { createContext, memo, useContext, useState } from "react"
+import { createContext, memo, useContext, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 
 // One component per render reason (e2e/insight.test.ts): Late mounts on "add",
 // Shown's prop changes on "bump", Stateful's own state on "state", Reader's
 // context on "theme", and Plain (no props, not memo) renders only because its
 // parent did. Styled is memo but gets an inline object and callback, which are
-// new references on every render.
+// new references on every render. Effects' "b" runs its [a, b] effect (b
+// changed) and its no-deps one, not its [a] one.
 const Theme = createContext("light")
 Theme.displayName = "Theme"
 
@@ -19,6 +20,24 @@ const Styled = memo(function Styled({ style, data }) {
     </p>
   )
 })
+const noop = () => {}
+function Effects() {
+  const [a] = useState(1)
+  const [b, setB] = useState(1)
+  useEffect(noop, [a, b])
+  useEffect(noop, [a])
+  useEffect(noop)
+  return (
+    <>
+      <p data-testid="effects">
+        Effects a{a} b{b}
+      </p>
+      <button type="button" data-testid="b" onClick={() => setB(b + 1)}>
+        Set b
+      </button>
+    </>
+  )
+}
 function Late() {
   return <p data-testid="late">Late</p>
 }
@@ -56,6 +75,7 @@ function Insight() {
         <Plain />
         <Stateful />
         <Reader />
+        <Effects />
         {late && <Late />}
       </Theme.Provider>
       <button type="button" data-testid="add" onClick={() => setLate(true)}>

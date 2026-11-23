@@ -67,6 +67,13 @@ for (const { fixture, port } of fixtures)
       await selectListed(panel, "Reader")
       await page.click("[data-testid=theme]")
       await shows("Context changed", 'Theme: "dark" → "light"')
+
+      await selectListed(panel, "Effects")
+      await page.click("[data-testid=b]")
+      await shows("Effects ran", "Effect #3: deps [1] changed", "[1]: 1 → 2")
+      await shows("Effect #5: no deps")
+      const effects = await panel.inspector()
+      assert.ok(!effects.includes("Effect #4"), effects)
     } finally {
       await browser.close()
     }
