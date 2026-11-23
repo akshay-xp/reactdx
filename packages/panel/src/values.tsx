@@ -169,7 +169,7 @@ export function hookShows(
 }
 
 // A value, hook or context row: one of the keyboard rows (src/rows.ts).
-const ROW =
+export const ROW =
   "group flex min-h-5 items-center whitespace-nowrap pr-2 focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1"
 
 // The tree's toggle triangle.

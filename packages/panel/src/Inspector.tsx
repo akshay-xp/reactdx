@@ -1,4 +1,10 @@
-import type { CallSite, Container, HookValue, Value } from "@reactdx/messages"
+import type {
+  CallSite,
+  Container,
+  HookValue,
+  RenderKind,
+  Value,
+} from "@reactdx/messages"
 import {
   createEffect,
   createResource,
@@ -42,6 +48,7 @@ import {
   HookRows,
   hookShows,
   type OnMenu,
+  ROW,
   Triangle,
   ValueRow,
 } from "./values"
@@ -77,6 +84,17 @@ export type Settings = {
 }
 
 const STORED_MS = 4000
+
+// What each reason kind reads as when it has no change rows of its own.
+const KIND_TEXT: Record<RenderKind, string> = {
+  mount: "Mounted",
+  props: "Props changed",
+  state: "State changed",
+  context: "Context changed",
+  parent: "Parent rendered",
+  force: "Forced",
+}
+const WHY = "Why did this render"
 
 // The selected node's values (docs/panel.md, Inspector). Page data is text only.
 export function Inspector(props: {
@@ -383,6 +401,42 @@ export function Inspector(props: {
               </Show>
               <Show when={query() !== "" && !anyShown()}>
                 <p class="p-2 text-muted">No matches</p>
+              </Show>
+              {/* Reasons aren't keys or values: the search hides them. */}
+              <Show when={query() === ""}>
+                <Section
+                  name={WHY}
+                  open={!collapsed().has(WHY)}
+                  forced={false}
+                  onToggle={() => toggle(WHY)}
+                >
+                  <Show
+                    when={props.inspector.data()?.render}
+                    fallback={
+                      <p class="pl-6 text-muted">
+                        No renders recorded since DevTools opened.
+                      </p>
+                    }
+                  >
+                    {(render) => (
+                      <For each={render().kinds}>
+                        {(kind) => (
+                          <div
+                            role="treeitem"
+                            aria-level={2}
+                            tabIndex={-1}
+                            data-testid="reason"
+                            data-path={`reason:${kind}`}
+                            class={ROW}
+                            style={{ "padding-left": "24px" }}
+                          >
+                            {KIND_TEXT[kind]}
+                          </div>
+                        )}
+                      </For>
+                    )}
+                  </Show>
+                </Section>
               </Show>
               {section("Props", "props", props.inspector.data()?.props)}
               {section("State", "state", props.inspector.data()?.state)}

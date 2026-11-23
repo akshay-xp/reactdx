@@ -127,7 +127,7 @@ test("Props then State, one row per value", () => {
       state: object({ ticks: 2 }),
     }),
   )
-  expect(sections(container)).toEqual(["Props", "State"])
+  expect(sections(container)).toEqual(["Why did this render", "Props", "State"])
   expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
 })
 
@@ -218,7 +218,7 @@ test("search hides rows whose name and value don't match; clearing restores them
 
   fireEvent.keyDown(getByLabelText("Search keys and values"), { key: "Escape" })
   expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
-  expect(sections(container)).toEqual(["Props", "State"])
+  expect(sections(container)).toEqual(["Why did this render", "Props", "State"])
   search(container, "zzz")
   fireEvent.click(getByLabelText("Clear value search"))
   expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
@@ -231,16 +231,18 @@ test("empty sections aren't shown", () => {
   const { container, inspector, select } = setup("class")
   select()
   inspector.receive(inspected(3, { props: object({}) }))
-  expect(sections(container)).toEqual([])
+  expect(sections(container)).toEqual(["Why did this render"])
 })
 
 test("a section header collapses and expands it", () => {
   const { container, inspector, select } = setup()
   select()
   inspector.receive(inspected(3, { props: object({ a: 1 }) }))
-  const header = container.querySelector(
-    "[data-testid=section] button",
-  ) as HTMLButtonElement
+  const header = [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      "[data-testid=section] button",
+    ),
+  ].find((button) => button.textContent === "Props") as HTMLButtonElement
   expect(header.getAttribute("aria-expanded")).toBe("true")
   fireEvent.click(header)
   expect(header.getAttribute("aria-expanded")).toBe("false")
@@ -452,7 +454,7 @@ test("Hooks list each hook; custom hooks open to theirs", () => {
   const { container, inspector, select } = setup()
   select()
   inspector.receive(inspected(3, { props: object({}), hooks }))
-  expect(sections(container)).toEqual(["Hooks"])
+  expect(sections(container)).toEqual(["Why did this render", "Hooks"])
   expect(rows(container)).toEqual(["State: 0", 'useCart: "2 items"', "Effect"])
   fireEvent.click(toggle(container, "useCart") as Element)
   expect(rows(container)).toEqual([
@@ -522,7 +524,7 @@ test("hooks that couldn't be read say why", () => {
   inspector.receive(
     inspected(3, { props: object({}), hooks: [], hooksError: "boom" }),
   )
-  expect(sections(container)).toEqual(["Hooks"])
+  expect(sections(container)).toEqual(["Why did this render", "Hooks"])
   expect(container.textContent).toContain("Couldn't read hooks: boom")
 })
 
@@ -539,7 +541,11 @@ test("Context lists each context read, after Hooks", () => {
       ],
     }),
   )
-  expect(sections(container)).toEqual(["Hooks", "Context"])
+  expect(sections(container)).toEqual([
+    "Why did this render",
+    "Hooks",
+    "Context",
+  ])
   expect(rows(container)).toEqual([
     "State: 0",
     "Context: {a: 1}",
@@ -575,7 +581,11 @@ test("Rendered by lists owners; tree nodes are buttons that select", () => {
       ],
     }),
   )
-  expect(sections(container)).toEqual(["Props", "Rendered by"])
+  expect(sections(container)).toEqual([
+    "Why did this render",
+    "Props",
+    "Rendered by",
+  ])
   const owner = [...container.querySelectorAll("[data-testid=owner]")]
   expect(owner.map((el) => [el.tagName, el.textContent])).toEqual([
     ["BUTTON", "App"],
@@ -628,7 +638,7 @@ test("no owners, no Rendered by", () => {
   const { container, inspector, select } = setup()
   select()
   inspector.receive(inspected(3, { props: object({ a: 1 }), owners: [] }))
-  expect(sections(container)).toEqual(["Props"])
+  expect(sections(container)).toEqual(["Why did this render", "Props"])
 })
 
 const frame = { url: "http://h/src/Counter.jsx", line: 14, column: 47 }
@@ -1004,8 +1014,8 @@ test("rows are one tab stop; Up, Down, Home and End move focus", async () => {
   press("ArrowUp")
   expect(document.activeElement).toBe(rowOf(container, "a: 1"))
   press("Home")
-  press("ArrowUp")
-  expect(document.activeElement?.textContent).toBe("Props")
+  // The first row of the tree: the first section's header.
+  expect(document.activeElement?.textContent).toBe("Why did this render")
 })
 
 test("Right and Left open, close and move between levels", async () => {
@@ -1069,7 +1079,7 @@ test("section headers are rows: Tab reaches each section's rows by arrows, Left 
       (el) => el.closest("[role=tree]"),
     )
   // One stop for the whole tree: the first header until a row is focused.
-  expect(stops()).toEqual([header("Props")])
+  expect(stops()).toEqual([header("Why did this render")])
   rowOf(container, "a: 1").focus()
   press("ArrowDown")
   expect(document.activeElement).toBe(header("Hooks"))
@@ -1623,4 +1633,34 @@ test("a context hook's value opens its Context row's editor (Hooks shows it coll
   hook('Context(Theme): "dark"').focus()
   press("Enter")
   expect(editor(container)?.getAttribute("aria-label")).toBe("Edit Theme")
+})
+
+const reasons = (container: Element) =>
+  [...container.querySelectorAll("[data-testid=reason]")].map(
+    (row) => row.textContent,
+  )
+
+test("Why did this render comes first, with the latest render's reasons", () => {
+  const { container, inspector, select, getByRole } = setup()
+  select()
+  inspector.receive(inspected(3, { props: object({ step: 1 }) }))
+  expect(sections(container)).toEqual(["Why did this render", "Props"])
+  expect(container.textContent).toContain(
+    "No renders recorded since DevTools opened.",
+  )
+  for (const [kind, text] of [
+    ["mount", "Mounted"],
+    ["parent", "Parent rendered"],
+    ["force", "Forced"],
+  ] as const) {
+    inspector.receive(
+      inspected(3, {
+        props: object({ step: 1 }),
+        render: { seq: 1, kinds: [kind] },
+      }),
+    )
+    expect(reasons(container)).toEqual([text])
+  }
+  fireEvent.click(getByRole("treeitem", { name: /Why did this render/ }))
+  expect(reasons(container)).toEqual([])
 })
