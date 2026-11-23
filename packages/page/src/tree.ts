@@ -163,6 +163,9 @@ export function createTree() {
     fibers.delete(id)
   }
 
+  const noop = () => {}
+  let visit: (fiber: Fiber, id: number) => void = noop
+
   // Brings a known node's stored children in line with this commit.
   const update = (
     fiber: Fiber,
@@ -189,6 +192,7 @@ export function createTree() {
       const id = next[index] as number
       if (known.has(id)) {
         fibers.set(id, kid)
+        visit(kid, id)
         const name = label(kid)
         if (name !== names.get(id)) {
           names.set(id, name)
@@ -260,9 +264,16 @@ export function createTree() {
       collect(fiber)
       return { name: names.get(id) as string, elements }
     },
-    commit(root: FiberRoot, rootId: number, ops: TreeOp[]) {
+    commit(
+      root: FiberRoot,
+      rootId: number,
+      ops: TreeOp[],
+      onVisit: (fiber: Fiber, id: number) => void = noop,
+    ) {
       const host = root.current as unknown as Fiber
+      visit = onVisit
       update(host, idOf(host), 0, rootId, ops)
+      visit = noop
     },
   }
 }

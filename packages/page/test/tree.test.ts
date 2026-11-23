@@ -489,13 +489,7 @@ function Page() {
   return h(React.Fragment, null, h("p", null, "v"), h(Counter))
 }
 
-// Page rendered (Clicked mounted), walked by a fresh tree.
-async function mountPage() {
-  const container = document.createElement("div")
-  const root = createRoot(container)
-  roots.push(root)
-  await React.act(() => root.render(h(Page)))
-  await React.act(() => setCount(1))
+function fiberRootOf(container: Element) {
   const record = (globalThis as unknown as Record<symbol, HookRecord>)[
     Symbol.for("reactdx")
   ] as HookRecord
@@ -507,6 +501,17 @@ async function mountPage() {
         container,
     )
   if (!fiberRoot) throw new Error("no fiber root")
+  return fiberRoot
+}
+
+// Page rendered (Clicked mounted), walked by a fresh tree.
+async function mountPage() {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() => root.render(h(Page)))
+  await React.act(() => setCount(1))
+  const fiberRoot = fiberRootOf(container)
   const tree = createTree()
   const ops: TreeOp[] = []
   tree.full(fiberRoot, 1, ops)
@@ -547,4 +552,44 @@ test("owner gives the component that owns a DOM element", async () => {
   roots.splice(roots.indexOf(root), 1)
   tree.commit(fiberRoot, 1, [])
   expect(tree.owner(button)).toBeUndefined()
+})
+
+let setVisited: (n: number) => void = () => {}
+function VisitInner() {
+  return null
+}
+const VisitMemo = React.memo(function VisitMemo() {
+  return h(VisitInner)
+})
+function VisitPlain() {
+  return h("div")
+}
+function VisitParent() {
+  const [n, set] = React.useState(0)
+  setVisited = set
+  return h(React.Fragment, null, h(VisitMemo), h(VisitPlain, { n }))
+}
+
+test("commit visits the fibers it reconciles, not inside bailed-out subtrees", async () => {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() => root.render(h(VisitParent)))
+  const fiberRoot = fiberRootOf(container)
+  const tree = createTree()
+  const ops: TreeOp[] = []
+  tree.full(fiberRoot, 1, ops)
+  const id = (name: string) =>
+    adds(ops).find((op) => op.name === name)?.id as number
+
+  await React.act(() => setVisited(1))
+  const visited: number[] = []
+  tree.commit(fiberRoot, 1, [], (fiber, at) => {
+    expect(tree.known(fiber)?.id).toBe(at)
+    visited.push(at)
+  })
+  for (const name of ["VisitParent", "VisitMemo", "VisitPlain", "div"])
+    expect(visited).toContain(id(name))
+  expect(visited).not.toContain(id("VisitInner"))
+  expect(new Set(visited).size).toBe(visited.length)
 })
