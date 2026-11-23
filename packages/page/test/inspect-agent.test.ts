@@ -67,6 +67,17 @@ function Effecting() {
   React.useEffect(() => {}, [n])
   return h("dfn", null, n)
 }
+function Rekeyed() {
+  return h("kbd")
+}
+let setRekey = (_: string) => {}
+function Rekeying() {
+  const [k, set] = React.useState("a")
+  React.useEffect(() => {
+    setRekey = set
+  })
+  return h(Rekeyed, { key: k })
+}
 function Deep(_: { data: unknown }) {
   return null
 }
@@ -125,6 +136,7 @@ beforeAll(async () => {
       h(Reasoned, { key: "why" }),
       h(Styling, { key: "styling" }),
       h(Effecting, { key: "effecting" }),
+      h(Rekeying, { key: "rekeying" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
       h(Refs, { key: "r" }),
       h(Counted, { key: "k", label: "x" }),
@@ -592,5 +604,22 @@ test("an inspection carries the effects its render ran, by call indexes", async 
   expect(replies().at(-1)?.data?.render?.effects).toContainEqual({
     hook: [2],
     changed: [{ dep: 0, old: 0, new: 1 }],
+  })
+})
+
+test("an inspection says when its node remounted and why", async () => {
+  await React.act(() => setRekey("b"))
+  await flushed()
+  const adds = posted
+    .filter(
+      (m): m is TreeBatchMessage => (m as { type?: string }).type === "tree",
+    )
+    .flatMap((batch) => batch.ops)
+    .filter((op) => op.op === "add" && op.name === "Rekeyed")
+  inspect((adds.at(-1) as { id: number }).id)
+  expect(replies().at(-1)?.data?.render?.remount).toEqual({
+    cause: "key",
+    from: "a",
+    to: "b",
   })
 })

@@ -333,6 +333,15 @@ export function startAgent(
       }
       reason.hooks = list
     }
+    if (record.remount)
+      reason.remount =
+        record.remount.cause === "key"
+          ? {
+              cause: "key",
+              from: record.remount.from?.slice(0, MAX_TREE_STRING) ?? null,
+              to: record.remount.to?.slice(0, MAX_TREE_STRING) ?? null,
+            }
+          : record.remount
     if (record.effects) {
       const list = []
       for (const run of record.effects.slice(0, MAX_CHANGES)) {
