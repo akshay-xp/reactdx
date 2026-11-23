@@ -150,7 +150,13 @@ export type RenderReason = {
   hooks?: HookChange[]
   contexts?: ContextChange[]
   effects?: EffectRun[]
+  remount?: Remount
 }
+// A mount in place of a same-type fiber deleted in that commit (M6 #64): its
+// key changed, or an ancestor (a tree id) remounted or changed type.
+export type Remount =
+  | { cause: "key"; from: string | null; to: string | null }
+  | { cause: "ancestor"; ancestor: number }
 export const MAX_CHANGES = 1000
 
 // The nearest Suspense boundary (`fallback`) and error boundary at or above the
@@ -613,15 +619,21 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
   return inspected(message.id, parsed)
 }
 
+function parseRemount(data: unknown): Remount | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { cause, from, to, ancestor } = data as Record<string, unknown>
+  if (cause === "ancestor" && isId(ancestor)) return { cause, ancestor }
+  if (cause === "key" && isNameOrNull(from) && isNameOrNull(to))
+    return { cause, from, to }
+}
+
 function parseRender(
   data: unknown,
   budget: { left: number },
 ): RenderReason | undefined {
   if (typeof data !== "object" || data === null) return
-  const { seq, kinds, props, state, hooks, contexts, effects } = data as Record<
-    string,
-    unknown
-  >
+  const { seq, kinds, props, state, hooks, contexts, effects, remount } =
+    data as Record<string, unknown>
   if (!isId(seq) || !Array.isArray(kinds) || kinds.length === 0) return
   if (
     new Set(kinds).size !== kinds.length ||
@@ -688,6 +700,11 @@ function parseRender(
     })
     if (!list) return
     reason.effects = list
+  }
+  if (remount !== undefined) {
+    const parsed = parseRemount(remount)
+    if (!parsed) return
+    reason.remount = parsed
   }
   return reason
 }

@@ -461,3 +461,31 @@ test("a render's effects: by call indexes, with their changed deps", () => {
   ])
     expect(parse(bad)).toBeUndefined()
 })
+
+test("a render's remount is a key change or an ancestor, exactly", () => {
+  const parse = (remount: unknown) =>
+    parseInspected(
+      inspected(3, {
+        props: 1,
+        render: { seq: 1, kinds: ["mount"], remount },
+      } as never),
+    )?.data?.render
+  for (const remount of [
+    { cause: "key", from: "a", to: "b" },
+    { cause: "key", from: null, to: "b" },
+    { cause: "ancestor", ancestor: 4 },
+  ])
+    expect(parse(remount)?.remount).toEqual(remount)
+  expect(parse({ cause: "ancestor", ancestor: 4, from: "a" })?.remount).toEqual(
+    { cause: "ancestor", ancestor: 4 },
+  )
+  for (const bad of [
+    { cause: "x", from: "a", to: "b" },
+    { cause: "ancestor", ancestor: 0 },
+    { cause: "key", from: 1, to: "b" },
+    { cause: "key", from: "a", to: "k".repeat(257) },
+    { cause: "key", to: "b", ancestor: 4 },
+    "key",
+  ])
+    expect(parse(bad)).toBeUndefined()
+})
