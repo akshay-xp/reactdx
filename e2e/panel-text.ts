@@ -8,7 +8,7 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // hover(name) puts the pointer on
 // the tree row with that name; leave() moves it off the trees. close() closes DevTools.
 // press(name) clicks the button with that name (its text or aria-label), pressed(name)
-// reads its aria-pressed,
+// reads its aria-pressed, key(text, key) presses a key on an inspector row,
 // selected() is the selected row's name, select(name) clicks the row with that name.
 // The text leaves out the inspector pane; inspector() reads only that.
 // frame is the panel's document (Chrome only: Firefox's is out of Puppeteer's reach).
@@ -22,6 +22,8 @@ export type PanelText = (() => Promise<string>) & {
   close(): Promise<void>
   press(name: string): Promise<void>
   pressed(name: string): Promise<boolean>
+  // Focuses the inspector row whose text includes `text` and presses `key`.
+  key(text: string, key: "ArrowLeft" | "ArrowRight"): Promise<void>
   // Replaces the text of the input with that accessible name ("" empties it).
   type(label: string, text: string): Promise<void>
   // Edits the inspector value row reading `row`: opens its editor, enters `text`
@@ -120,6 +122,18 @@ export async function openPanelText(
       await frame.page().keyboard.type(text)
       await frame.page().keyboard.press("Enter")
     }
+    const key = async (text: string, key: "ArrowLeft" | "ArrowRight") => {
+      await frame.evaluate(
+        (text) =>
+          (
+            [...document.querySelectorAll("[role=treeitem]")].find((el) =>
+              el.textContent?.includes(text),
+            ) as HTMLElement | undefined
+          )?.focus(),
+        text,
+      )
+      await frame.page().keyboard.press(key)
+    }
     const selected = () =>
       frame.evaluate(
         () =>
@@ -137,6 +151,7 @@ export async function openPanelText(
       close,
       press,
       pressed,
+      key,
       type,
       edit,
       selected,
@@ -373,6 +388,21 @@ export async function openPanelText(
       if (!focused) await new Promise((resolve) => setTimeout(resolve, 200))
     }
   }
+  // The row's accessible takes focus, then a trusted key from the parent.
+  const key = async (text: string, key: "ArrowLeft" | "ArrowRight") => {
+    await onAccessible(
+      `node.role === ${role("OUTLINEITEM")} && node.name?.includes(${json(text)})`,
+      `node.takeFocus()
+      const tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor)
+      tip.beginInputTransactionForTests(window)
+      const event = new KeyboardEvent("", { key: ${json(key)}, code: ${json(key)}, keyCode: KeyboardEvent.DOM_VK_${key === "ArrowLeft" ? "LEFT" : "RIGHT"} })
+      return new Promise((r) => setTimeout(() => {
+        tip.keydown(event)
+        tip.keyup(event)
+        r("ok")
+      }, 50))`,
+    )
+  }
   const pressed = async (name: string) =>
     (await onAccessible(
       button(name),
@@ -408,6 +438,7 @@ export async function openPanelText(
     close,
     press,
     pressed,
+    key,
     type,
     edit,
     selected,

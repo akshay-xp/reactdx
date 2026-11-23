@@ -1,14 +1,15 @@
 import { createContext, memo, useContext, useEffect, useState } from "react"
 import { createRoot } from "react-dom/client"
 
-// One component per render reason (e2e/insight.test.ts): Late mounts on "add",
-// Shown's prop changes on "bump", Stateful's own state on "state" (Counter's
-// on "count", which triggers its commit), Reader's context on "theme", and
-// Plain (no props, not memo) renders only because its parent did. Styled is
-// memo but gets an inline object and callback, which are new references on
-// every render. Effects' "b" runs its [a, b] effect (b changed) and its
-// no-deps one, not its [a] one. "rekey" remounts Item by its key; "wrap" swaps
-// Inner's div for a section, remounting Inner.
+// One component per render reason (e2e/insight.test.ts): Late mounts on "add"
+// (with Stepped, whose "step" builds a history from its mount), Shown's prop
+// changes on "bump", Stateful's own state on "state" (Counter's on "count",
+// which triggers its commit), Reader's context on "theme", and Plain (no
+// props, not memo) renders only because its parent did. Styled is memo but
+// gets an inline object and callback, which are new references on every
+// render. Effects' "b" runs its [a, b] effect (b changed) and its no-deps one,
+// not its [a] one. "rekey" remounts Item by its key; "wrap" swaps Inner's div
+// for a section, remounting Inner.
 const Theme = createContext("light")
 Theme.displayName = "Theme"
 
@@ -79,6 +80,21 @@ function Wrapped() {
 function Late() {
   return <p data-testid="late">Late</p>
 }
+function Stepped() {
+  const [step, setStep] = useState(0)
+  return (
+    <>
+      <p data-testid="stepped">Stepped {step}</p>
+      <button
+        type="button"
+        data-testid="step"
+        onClick={() => setStep(step + 1)}
+      >
+        Step
+      </button>
+    </>
+  )
+}
 function Plain() {
   return <p>Plain</p>
 }
@@ -132,7 +148,12 @@ function Insight() {
         <Effects />
         <Keyed />
         <Wrapped />
-        {late && <Late />}
+        {late && (
+          <>
+            <Late />
+            <Stepped />
+          </>
+        )}
       </Theme.Provider>
       <button type="button" data-testid="add" onClick={() => setLate(true)}>
         Add

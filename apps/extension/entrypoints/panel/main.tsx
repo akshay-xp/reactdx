@@ -5,6 +5,7 @@ import type {
   InspectedMessage,
   PickedMessage,
   PickMessage,
+  ReasonedMessage,
   RendererView,
   ResyncMessage,
   SubscribeMessage,
@@ -102,6 +103,7 @@ function connect() {
         | PickedMessage
         | InspectedMessage
         | ExpandedMessage
+        | ReasonedMessage
         | ValueTextMessage
         | ValueStoredMessage,
     ) => {
@@ -111,6 +113,7 @@ function connect() {
       } else if (message.type === "picked") tree.picked(message.id)
       else if (message.type === "inspected") inspector.receive(message)
       else if (message.type === "expanded") inspector.receiveExpanded(message)
+      else if (message.type === "reasoned") inspector.receiveReasoned(message)
       else if (message.type === "value-text")
         inspector.receiveValueText(message)
       else if (message.type === "value-stored")

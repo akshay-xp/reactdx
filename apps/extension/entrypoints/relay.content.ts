@@ -6,6 +6,7 @@ import {
   parseInspected,
   parsePageMessage,
   parsePicked,
+  parseReasoned,
   parseTreeBatch,
   parseTreeCommand,
   parseValueStored,
@@ -83,6 +84,7 @@ export default defineContentScript({
         parsePicked(event.data) ??
         parseInspected(event.data) ??
         parseExpanded(event.data) ??
+        parseReasoned(event.data) ??
         parseValueText(event.data) ??
         parseValueStored(event.data)
       if (forward) {
