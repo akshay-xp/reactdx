@@ -71,6 +71,32 @@ for (const [script, port, version] of [
       await page.close()
     })
 
+    test("serves the insight page: a button per render reason", async () => {
+      const page = await browser.newPage()
+      const errors: string[] = []
+      page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
+      await page.goto(`http://localhost:${port}/insight.html`)
+      await page.waitForSelector("[data-testid=insight]")
+      const shows = async (selector: string, expected: string) =>
+        page.waitForFunction(
+          (s, e) => document.querySelector(s)?.textContent === e,
+          {},
+          selector,
+          expected,
+        )
+      await shows("[data-testid=shown]", "Count 1")
+      await page.click("[data-testid=bump]")
+      await shows("[data-testid=shown]", "Count 2")
+      await shows("[data-testid=stateful]", "State 0")
+      await page.click("[data-testid=state]")
+      await shows("[data-testid=stateful]", "State 1")
+      await shows("[data-testid=reader]", "Theme dark")
+      await page.click("[data-testid=theme]")
+      await shows("[data-testid=reader]", "Theme light")
+      assert.deepEqual(errors, [])
+      await page.close()
+    })
+
     test("serves the hook-cost bench page", async () => {
       const page = await browser.newPage()
       await openBench(page, port)
