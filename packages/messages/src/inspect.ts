@@ -121,7 +121,19 @@ export const RENDER_KINDS = [
   "force",
 ] as const
 export type RenderKind = (typeof RENDER_KINDS)[number]
-export type KeyChange = { key: string; old: Value; new: Value }
+// `reference` (props only, M6 #62): the new value is only a new reference, an
+// equal object or array, or a different function.
+export const REFERENCE_KINDS = ["same-value", "new-function"] as const
+const isReference = (
+  value: unknown,
+): value is (typeof REFERENCE_KINDS)[number] =>
+  REFERENCE_KINDS.includes(value as never)
+export type KeyChange = {
+  key: string
+  old: Value
+  new: Value
+  reference?: (typeof REFERENCE_KINDS)[number]
+}
 export type HookChange = { hook: number[]; old: Value; new: Value }
 export type ContextChange = { context: number; old: Value; new: Value }
 export type RenderReason = {
@@ -621,7 +633,10 @@ function parseRender(
   const keyed = (list: unknown) =>
     parseList(list, MAX_CHANGES, (item) => {
       const both = sides(item)
-      return both && isName(item.key) ? { key: item.key, ...both } : undefined
+      const { reference } = item
+      if (!both || !isName(item.key)) return
+      if (reference === undefined) return { key: item.key, ...both }
+      if (isReference(reference)) return { key: item.key, ...both, reference }
     })
   if (props !== undefined) {
     const list = keyed(props)

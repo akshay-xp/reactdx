@@ -414,3 +414,23 @@ test("an inspection carries its node's latest render reasons", () => {
       parseInspected(inspected(3, { props: 1, render: bad } as never)),
     ).toBeUndefined()
 })
+
+test("a prop change can say it's only a new reference; nothing else passes there", () => {
+  const parse = (reference: unknown) =>
+    parseInspected(
+      inspected(3, {
+        props: 1,
+        render: {
+          seq: 1,
+          kinds: ["props"],
+          props: [{ key: "style", old: 1, new: 2, reference }],
+        },
+      } as never),
+    )?.data?.render?.props
+  for (const reference of ["same-value", "new-function"])
+    expect(parse(reference)).toEqual([
+      { key: "style", old: 1, new: 2, reference },
+    ])
+  expect(parse("x")).toBeUndefined()
+  expect(parse(1)).toBeUndefined()
+})
