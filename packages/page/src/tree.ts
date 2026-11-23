@@ -116,6 +116,10 @@ export function createTree() {
     return out
   }
 
+  const noop = () => {}
+  // Set only while commit runs, so full() visits nothing.
+  let visit: (fiber: Fiber, id: number) => void = noop
+
   const addSubtree = (
     fiber: Fiber,
     parentId: number,
@@ -128,6 +132,7 @@ export function createTree() {
     const name = label(fiber)
     names.set(id, name)
     fibers.set(id, fiber)
+    visit(fiber, id)
     ops.push({
       op: "add",
       id,
@@ -162,9 +167,6 @@ export function createTree() {
     names.delete(id)
     fibers.delete(id)
   }
-
-  const noop = () => {}
-  let visit: (fiber: Fiber, id: number) => void = noop
 
   // Brings a known node's stored children in line with this commit.
   const update = (

@@ -567,7 +567,19 @@ function VisitPlain() {
 function VisitParent() {
   const [n, set] = React.useState(0)
   setVisited = set
-  return h(React.Fragment, null, h(VisitMemo), h(VisitPlain, { n }))
+  return h(
+    React.Fragment,
+    null,
+    h(VisitMemo),
+    h(VisitPlain, { n }),
+    n % 2 === 1 && h(VisitAdded),
+  )
+}
+function VisitAddedChild() {
+  return null
+}
+function VisitAdded() {
+  return h(VisitAddedChild)
 }
 
 test("commit visits the fibers it reconciles, not inside bailed-out subtrees", async () => {
@@ -591,5 +603,25 @@ test("commit visits the fibers it reconciles, not inside bailed-out subtrees", a
   for (const name of ["VisitParent", "VisitMemo", "VisitPlain", "div"])
     expect(visited).toContain(id(name))
   expect(visited).not.toContain(id("VisitInner"))
+  expect(new Set(visited).size).toBe(visited.length)
+})
+
+test("commit visits newly mounted subtrees", async () => {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() => root.render(h(VisitParent)))
+  const fiberRoot = fiberRootOf(container)
+  const tree = createTree()
+  tree.full(fiberRoot, 1, [])
+
+  await React.act(() => setVisited(1))
+  const ops: TreeOp[] = []
+  const visited: number[] = []
+  tree.commit(fiberRoot, 1, ops, (_, at) => visited.push(at))
+  const id = (name: string) =>
+    adds(ops).find((op) => op.name === name)?.id as number
+  expect(visited).toContain(id("VisitAdded"))
+  expect(visited).toContain(id("VisitAddedChild"))
   expect(new Set(visited).size).toBe(visited.length)
 })
