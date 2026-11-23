@@ -132,13 +132,16 @@ export function startAgent(
     watching = true
     buffer.length = 0
     seq = 1
-    // The panel's timeline starts over with the tree: send the buffer again.
-    sentCommit = 0
     const ops: TreeOp[] = [{ op: "reset" }]
     for (const [rendererId, set] of record.roots)
       if (inspectable(rendererId))
         for (const root of set) tree.full(root, info(root).id, ops)
     send(ops)
+    // The panel's commit list starts over with the tree: send the buffer
+    // again now (an idle page may not commit for a while), even if empty.
+    const commits = recorder.summaries(0)
+    post(commitsMessage(commits))
+    sentCommit = commits.at(-1)?.seq ?? 0
   }
 
   let overlay: ReturnType<typeof createOverlay> | undefined

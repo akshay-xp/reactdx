@@ -716,6 +716,8 @@ const commitLists = () =>
 
 test("the flush posts the commits recorded since the last, once each", async () => {
   const reasoned = idOf("Reasoned")
+  // Past the setup watch's own list.
+  posted.length = 0
   await React.act(() => setReasoned(41))
   await flushed()
   await React.act(() => setReasoned(42))
@@ -726,17 +728,23 @@ test("the flush posts the commits recorded since the last, once each", async () 
   expect([...seqs].sort((a, b) => a - b)).toEqual(seqs)
   expect(new Set(seqs).size).toBe(seqs.length)
   expect(lists[1]?.at(-1)).toMatchObject({ updaters: [reasoned], renders: 1 })
-  // A new watch starts the panel's list over: the buffer is sent again (this
-  // test's two commits at least; the oldest may have dropped since).
+  // A new watch starts the panel's list over: the buffer is sent again at once,
+  // after the tree (this test's two commits at least; the oldest may have
+  // dropped since).
   posted.length = 0
   send(WATCH)
-  await React.act(() => setReasoned(43))
-  await flushed()
+  const types = posted.map((m) => (m as { type?: string }).type)
+  expect(types.indexOf("commits")).toBeGreaterThan(types.indexOf("tree"))
   expect(
     commitLists()
       .flat()
       .map((commit) => commit.seq),
   ).toEqual(expect.arrayContaining(seqs.slice(-2)))
+  // Then only what's new.
+  posted.length = 0
+  await React.act(() => setReasoned(43))
+  await flushed()
+  expect(commitLists().flat()).toHaveLength(1)
 })
 
 function Cell() {
