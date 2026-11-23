@@ -732,12 +732,7 @@ function parseRender(
     remount,
     updaters,
   } = data as Record<string, unknown>
-  if (!isId(seq) || !Array.isArray(kinds) || kinds.length === 0) return
-  if (
-    new Set(kinds).size !== kinds.length ||
-    !kinds.every((kind) => RENDER_KINDS.includes(kind))
-  )
-    return
+  if (!isId(seq) || !isKinds(kinds)) return
   const reason: RenderReason = { seq, kinds: [...kinds] }
   // The old and new values of one change, or undefined if either is invalid.
   const sides = (item: Record<string, unknown>) => {
@@ -805,22 +800,37 @@ function parseRender(
     reason.remount = parsed
   }
   if (updaters !== undefined) {
-    const list = parseList(updaters, MAX_CHANGES, (item) => {
-      const changes = parseList(item.hooks, MAX_CHANGES, (hook) => {
-        const both = sides(hook)
-        return both && isName(hook.name)
-          ? { name: hook.name, ...both }
-          : undefined
-      })
-      return changes && isId(item.id)
-        ? { id: item.id, hooks: changes }
-        : undefined
-    })
+    const list = parseUpdaters(updaters, budget)
     if (!list) return
     reason.updaters = list
   }
   return reason
 }
+
+export function parseUpdaters(
+  data: unknown,
+  budget: { left: number } = { left: MAX_VALUES },
+): Updater[] | undefined {
+  return parseList(data, MAX_CHANGES, (item) => {
+    const changes = parseList(item.hooks, MAX_CHANGES, (hook) => {
+      const old = parseValue(hook.old, 0, budget)
+      const next = parseValue(hook.new, 0, budget)
+      return old !== undefined && next !== undefined && isName(hook.name)
+        ? { name: hook.name, old, new: next }
+        : undefined
+    })
+    return changes && isId(item.id)
+      ? { id: item.id, hooks: changes }
+      : undefined
+  })
+}
+
+// Each kind once, at least one.
+export const isKinds = (kinds: unknown): kinds is RenderKind[] =>
+  Array.isArray(kinds) &&
+  kinds.length > 0 &&
+  new Set(kinds).size === kinds.length &&
+  kinds.every((kind) => RENDER_KINDS.includes(kind))
 
 function parseBoundaries(data: unknown): Boundaries | undefined {
   if (typeof data !== "object" || data === null) return
@@ -851,7 +861,7 @@ function parseCallSite(data: unknown): CallSite | undefined {
 }
 
 // Undefined unless `data` is an array of at most `max` objects `each` accepts.
-function parseList<T>(
+export function parseList<T>(
   data: unknown,
   max: number,
   each: (item: Record<string, unknown>) => T | undefined,

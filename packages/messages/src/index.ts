@@ -1,11 +1,16 @@
 import {
   type EditRoot,
   type EditValue,
+  isKinds,
   MAX_VALUE_STRING,
   parseEditPath,
   parseEditRoot,
   parseEditValue,
+  parseList,
+  parseUpdaters,
   parseValueTarget,
+  type RenderKind,
+  type Updater,
   type ValueKey,
   type ValueTarget,
 } from "./inspect.ts"
@@ -304,26 +309,48 @@ export type ReasonMessage = {
 // Panel to background: the ids the commit `seq` rendered (M6 #67).
 export type CommitMessage = { type: "commit"; tabId: number; seq: number }
 
-// Agent to panel: one batch of the ids a commit rendered, at most MAX_OPS;
-// null once the commit left the page's buffer.
+// What one component rendered for in a commit.
+export type CommitRender = { id: number; kinds: RenderKind[] }
+
+// Agent to panel: one batch of a commit's renders, at most MAX_OPS, the first
+// with the components whose updates triggered it; null once the commit left
+// the page's buffer.
 export type CommittedMessage = {
   source: "reactdx"
   type: "committed"
   seq: number
-  ids: number[] | null
+  renders: CommitRender[] | null
+  updaters?: Updater[]
 }
 export const committed = (
   seq: number,
-  ids: number[] | null,
-): CommittedMessage => ({ source: "reactdx", type: "committed", seq, ids })
+  renders: CommitRender[] | null,
+  updaters?: Updater[],
+): CommittedMessage => ({
+  source: "reactdx",
+  type: "committed",
+  seq,
+  renders,
+  ...(updaters && { updaters }),
+})
 
 export function parseCommitted(data: unknown): CommittedMessage | undefined {
   if (typeof data !== "object" || data === null) return
-  const { source, type, seq, ids } = data as Record<string, unknown>
+  const { source, type, seq, renders, updaters } = data as Record<
+    string,
+    unknown
+  >
   if (source !== "reactdx" || type !== "committed" || !isId(seq)) return
-  if (ids === null) return committed(seq, null)
-  if (Array.isArray(ids) && ids.length <= MAX_OPS && ids.every(isId))
-    return committed(seq, [...ids])
+  if (renders === null) return committed(seq, null)
+  const list = parseList(renders, MAX_OPS, (item) =>
+    isId(item.id) && isKinds(item.kinds)
+      ? { id: item.id, kinds: [...item.kinds] }
+      : undefined,
+  )
+  if (!list) return
+  if (updaters === undefined) return committed(seq, list)
+  const triggers = parseUpdaters(updaters)
+  if (triggers) return committed(seq, list, triggers)
 }
 
 // Panel to background: render the inspected node again, nothing changed.

@@ -581,15 +581,24 @@ test("commit summaries are at most 100 increasing commits, each bounded", () => 
     expect(parseCommits(commitsMessage(bad as never))).toBeUndefined()
 })
 
-test("committed carries at most 2,000 rendered ids, or null once released", () => {
-  expect(parseCommitted(committed(4, [1, 2]))).toEqual(committed(4, [1, 2]))
-  expect(parseCommitted(committed(4, null))).toEqual(committed(4, null))
-  const message = committed(4, [1]) as Record<string, unknown>
+test("committed carries each render's kinds and the triggers, or null once released", () => {
+  const triggers = [{ id: 1, hooks: [{ name: "State #1", old: 1, new: 2 }] }]
+  const full = committed(5, [{ id: 1, kinds: ["state"] }], triggers)
+  expect(parseCommitted(full)).toEqual(full)
+  const batch = committed(5, [{ id: 2, kinds: ["parent"] }])
+  expect(parseCommitted(batch)).toEqual(batch)
+  expect(batch).not.toHaveProperty("updaters")
+  expect(parseCommitted(committed(5, null))).toEqual(committed(5, null))
+  const message = full as Record<string, unknown>
   for (const bad of [
-    { ...message, ids: Array(2001).fill(1) },
-    { ...message, ids: [0] },
-    { ...message, seq: "4" },
-    { ...message, ids: undefined },
+    { ...message, renders: [{ id: 1, kinds: ["nope"] }] },
+    { ...message, renders: [{ id: 1, kinds: [] }] },
+    { ...message, renders: Array(2001).fill({ id: 1, kinds: ["state"] }) },
+    { ...message, renders: [{ id: 0, kinds: ["state"] }] },
+    { ...message, renders: undefined },
+    { ...message, seq: "5" },
+    { ...message, updaters: Array(1001).fill({ id: 1, hooks: [] }) },
+    { ...message, updaters: [{ id: 1, hooks: [{ name: 1, old: 1, new: 2 }] }] },
   ])
     expect(parseCommitted(bad)).toBeUndefined()
 })
