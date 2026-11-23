@@ -74,15 +74,15 @@ export function createInspectorStore(
   const [expansions, setExpansions] = createSignal(new Map<number, Value>())
   let copyAsked = false
   let storeAsked = false
-  // The older render stepped to (none: the newest, following re-sends) and
-  // the page's reply for it.
+  // The older render shown, the pinned commit's (none: the newest, following
+  // re-sends), and the page's reply for it.
   const [stepped, setStepped] = createSignal<number>()
   const [loaded, setLoaded] = createSignal<{
     seq: number
     render: RenderReason | null
   }>()
   const history = () => data()?.history ?? []
-  // The commit picked in the timeline (none: Live), followed by every node.
+  // The commit picked in Commits (none: the latest), followed by every node.
   const [pinned, setPinned] = createSignal<number>()
   // The page global the last Store as global variable went to, while shown.
   const [stored, setStored] = createSignal<string>()
@@ -144,8 +144,6 @@ export function createInspectorStore(
       for (const ref of open().values()) if (ref !== undefined) expand(ref)
     },
     history,
-    // The commit of the render shown.
-    shown: () => stepped() ?? history().at(-1),
     // The render shown: undefined while an older one loads, null if released.
     render() {
       const at = stepped()
@@ -153,7 +151,8 @@ export function createInspectorStore(
       const reply = loaded()
       return reply?.seq === at ? reply.render : undefined
     },
-    step,
+    // The commit picked in Commits, which every node shows its render in.
+    pinned,
     // The node didn't render in the pinned commit.
     absent: () => {
       const at = pinned()

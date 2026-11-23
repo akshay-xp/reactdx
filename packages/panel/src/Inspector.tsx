@@ -117,6 +117,11 @@ const REFERENCE_BADGE = {
 export function Inspector(props: {
   tree: TreeStore
   inspector: InspectorStore
+  // Into the Commits tab: the node's renders, the latest render (unpinned),
+  // and a commit by seq.
+  onRenders?: () => void
+  onLatest?: () => void
+  onCommit?: (seq: number) => void
   sources: Sources
   settings: Settings
 }) {
@@ -432,6 +437,9 @@ export function Inspector(props: {
                     tree={props.tree}
                     labelOf={labelOf}
                     onMenu={onMenu}
+                    onRenders={props.onRenders}
+                    onLatest={props.onLatest}
+                    onCommit={props.onCommit}
                   />
                 </Section>
               </Show>
@@ -610,6 +618,9 @@ function Reasons(props: {
   tree: TreeStore
   labelOf: (hook: HookValue) => string
   onMenu: OnMenu
+  onRenders?: () => void
+  onLatest?: () => void
+  onCommit?: (seq: number) => void
 }) {
   // A changed hook as the Hooks section shows it, numbered by its row there
   // (depth-first, groups included): two State hooks read apart.
@@ -665,8 +676,34 @@ function Reasons(props: {
   }
   return (
     <>
+      <Show when={props.inspector.pinned()}>
+        {(seq) => (
+          <ReasonRow name="pinned" testid="pinned">
+            Commit #{seq()}
+            <button
+              type="button"
+              tabIndex={-1}
+              class="ml-2 text-accent hover:underline"
+              onClick={() => props.onLatest?.()}
+            >
+              Show latest
+            </button>
+          </ReasonRow>
+        )}
+      </Show>
       <Show when={props.inspector.history().length}>
-        <History inspector={props.inspector} />
+        {(count) => (
+          <ReasonRow name="history" testid="history">
+            <button
+              type="button"
+              tabIndex={-1}
+              class="text-accent hover:underline"
+              onClick={() => props.onRenders?.()}
+            >
+              {count()} {count() === 1 ? "render" : "renders"} recorded
+            </button>
+          </ReasonRow>
+        )}
       </Show>
       <Show
         when={!props.inspector.absent() && props.inspector.render()}
@@ -762,62 +799,17 @@ function Reasons(props: {
             </Show>
             <Show when={render().updaters}>
               {(updaters) => (
-                <Triggered updaters={updaters()} tree={props.tree} />
+                <Triggered
+                  updaters={updaters()}
+                  tree={props.tree}
+                  onMore={() => props.onCommit?.(render().seq)}
+                />
               )}
             </Show>
           </>
         )}
       </Show>
     </>
-  )
-}
-
-// "Render 3 of 12": steps through the node's recorded renders, by its buttons
-// or Left/Right on the row (handled before the values tree, where they'd
-// move between rows).
-function History(props: { inspector: InspectorStore }) {
-  const at = () =>
-    props.inspector.history().indexOf(props.inspector.shown() ?? 0)
-  const go = (by: number) => {
-    const seq = props.inspector.history()[at() + by]
-    if (seq !== undefined) props.inspector.step(seq)
-  }
-  const STEP =
-    "px-1 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
-  return (
-    <div
-      role="treeitem"
-      aria-level={2}
-      tabIndex={-1}
-      data-testid="history"
-      data-path="reason:history"
-      class={ROW}
-      style={{ "padding-left": "24px" }}
-      on:keydown={(event) => {
-        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
-        event.preventDefault()
-        event.stopPropagation()
-        go(event.key === "ArrowLeft" ? -1 : 1)
-      }}
-    >
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-label="Previous render"
-        disabled={at() <= 0}
-        class={`${STEP} before:content-['‹']`}
-        onClick={() => go(-1)}
-      />
-      Render {at() + 1} of {props.inspector.history().length}
-      <button
-        type="button"
-        tabIndex={-1}
-        aria-label="Next render"
-        disabled={at() >= props.inspector.history().length - 1}
-        class={`${STEP} before:content-['›']`}
-        onClick={() => go(1)}
-      />
-    </div>
   )
 }
 
@@ -876,31 +868,43 @@ export function NodeLink(props: {
   )
 }
 
-// The components whose update scheduled the render's commit, with the state
-// each changed; none (a root render) is unknown.
-function Triggered(props: { updaters: Updater[]; tree: TreeStore }) {
+// The first component whose update scheduled the render's commit, with the
+// state it changed; the rest are in the commit (`onMore`). None (a root
+// render) is unknown.
+function Triggered(props: {
+  updaters: Updater[]
+  tree: TreeStore
+  onMore: () => void
+}) {
   const known = () =>
     props.updaters.filter((updater) => props.tree.info(updater.id))
   return (
     <ReasonRow name="trigger" testid="trigger">
-      <Show when={known().length} fallback="Triggered by: unknown">
-        Triggered by{" "}
-        <For each={known()}>
-          {(updater, i) => (
-            <>
-              {i() > 0 && ", "}
-              <NodeLink id={updater.id} tree={props.tree} />
-              <Show when={updater.hooks.length}>
-                {` (${updater.hooks
-                  .map(
-                    (hook) =>
-                      `${hook.name}: ${previewText(hook.old)} → ${previewText(hook.new)}`,
-                  )
-                  .join(", ")})`}
-              </Show>
-            </>
-          )}
-        </For>
+      <Show when={known()[0]} fallback="Triggered by: unknown">
+        {(first) => (
+          <>
+            Triggered by <NodeLink id={first().id} tree={props.tree} />
+            <Show when={first().hooks.length}>
+              {` (${first()
+                .hooks.map(
+                  (hook) =>
+                    `${hook.name}: ${previewText(hook.old)} → ${previewText(hook.new)}`,
+                )
+                .join(", ")})`}
+            </Show>
+            <Show when={known().length > 1}>
+              {" "}
+              <button
+                type="button"
+                tabIndex={-1}
+                class="text-accent hover:underline"
+                onClick={() => props.onMore()}
+              >
+                +{known().length - 1} more
+              </button>
+            </Show>
+          </>
+        )}
       </Show>
     </ReasonRow>
   )
@@ -922,7 +926,8 @@ function ReasonRow(props: {
       class={ROW}
       style={{ "padding-left": "24px" }}
     >
-      {props.children}
+      {/* One inline run: a flex row drops the spaces between its items. */}
+      <span>{props.children}</span>
     </div>
   )
 }

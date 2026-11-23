@@ -1,7 +1,6 @@
 import {
   expanded,
   inspected,
-  reasoned,
   type TreeKind,
   treeBatch,
   type Value,
@@ -70,19 +69,24 @@ function setup(
     (command) => sent.push(command),
     (text) => copied.push(text),
   )
+  // The links into the Commits tab, as called.
+  const nav: unknown[][] = []
   const view = render(() => (
     <Inspector
       tree={tree}
       inspector={inspector}
       sources={sources}
       settings={settings}
+      onRenders={() => nav.push(["renders"])}
+      onLatest={() => nav.push(["latest"])}
+      onCommit={(seq) => nav.push(["commit", seq])}
     />
   ))
   const select = () => {
     tree.select(3)
     inspector.inspect(3)
   }
-  return { tree, inspector, sent, copied, select, ...view }
+  return { tree, inspector, sent, copied, select, nav, ...view }
 }
 
 const sections = (container: Element) =>
@@ -1852,8 +1856,8 @@ test("a remount says what caused it; an ancestor's name selects it", () => {
   expect(tree.selected()).toBe(4)
 })
 
-test("what triggered a render: each updater with its changed hooks", () => {
-  const { container, inspector, select, tree, getByRole } = setup()
+test("what triggered a render: the first updater, the rest in its commit", () => {
+  const { container, inspector, select, tree, getByRole, nav } = setup()
   select()
   tree.apply(
     treeBatch(2, [
@@ -1881,8 +1885,18 @@ test("what triggered a render: each updater with its changed hooks", () => {
   const counter = { id: 3, hooks: [{ name: "State #1", old: 3, new: 4 }] }
   show([counter])
   expect(trigger()).toBe("Triggered by Counter (State #1: 3 → 4)")
-  show([counter, { id: 4, hooks: [] }])
-  expect(trigger()).toBe("Triggered by Counter (State #1: 3 → 4), Other")
+  // One inline run: the row is a flex box, whose whitespace-only text between
+  // items wouldn't show.
+  const row = container.querySelector("[data-testid=trigger]")
+  expect(row?.children).toHaveLength(1)
+  expect(row?.firstElementChild?.tagName).toBe("SPAN")
+  show([{ id: 9, hooks: [] }, counter, { id: 4, hooks: [] }])
+  expect(trigger()).toBe("Triggered by Counter (State #1: 3 → 4) +1 more")
+  fireEvent.click(getByRole("button", { name: "+1 more" }))
+  expect(nav).toEqual([["commit", 2]])
+  fireEvent.click(getByRole("button", { name: "Counter" }))
+  expect(tree.selected()).toBe(3)
+  show([{ id: 4, hooks: [] }])
   fireEvent.click(getByRole("button", { name: "Other" }))
   expect(tree.selected()).toBe(4)
   select()
@@ -1895,52 +1909,25 @@ test("what triggered a render: each updater with its changed hooks", () => {
   expect(trigger()).toBeNull()
 })
 
-test("a history stepper steps through the node's recorded renders", () => {
-  const { container, inspector, select, sent, getByRole } = setup()
+test("the node's recorded renders link to Commits; no stepper", () => {
+  const { container, inspector, select, nav, getByRole } = setup()
   select()
-  const latest = {
-    seq: 9,
-    kinds: ["state" as const],
-    hooks: [{ hook: [0], old: 2, new: 3 }],
-  }
   const data = {
     props: object({}),
-    hooks: [{ name: "State", value: 3 }],
-    render: latest,
+    render: { seq: 9, kinds: ["parent" as const] },
   }
   inspector.receive(inspected(3, data))
-  const stepper = () => container.querySelector("[data-testid=history]")
-  expect(stepper()).toBeNull()
-  inspector.receive(inspected(3, { ...data, history: [2, 5, 7, 9] }))
-  expect(stepper()?.textContent).toBe("Render 4 of 4")
-  expect(
-    (getByRole("button", { name: "Next render" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true)
-  fireEvent.click(getByRole("button", { name: "Previous render" }))
-  expect(stepper()?.textContent).toBe("Render 3 of 4")
-  expect(sent.at(-1)).toEqual({ type: "reason", id: 3, seq: 7 })
-  inspector.receiveReasoned(
-    reasoned(3, 7, {
-      seq: 7,
-      kinds: ["state"],
-      hooks: [{ hook: [0], old: 1, new: 2 }],
-    }),
-  )
-  expect(changes(container)).toEqual(["State #1: 1 → 2"])
-  fireEvent.keyDown(stepper() as Element, { key: "ArrowLeft" })
-  expect(stepper()?.textContent).toBe("Render 2 of 4")
-  inspector.receiveReasoned(reasoned(3, 5, null))
-  expect(container.textContent).toContain("This render is no longer recorded.")
-  fireEvent.keyDown(stepper() as Element, { key: "ArrowRight" })
-  expect(stepper()?.textContent).toBe("Render 3 of 4")
-  fireEvent.keyDown(stepper() as Element, { key: "ArrowRight" })
-  expect(stepper()?.textContent).toBe("Render 4 of 4")
-  expect(changes(container)).toEqual(["State #1: 2 → 3"])
+  expect(container.textContent).not.toContain("renders recorded")
+  inspector.receive(inspected(3, { ...data, history: [2, 5, 9] }))
+  fireEvent.click(getByRole("button", { name: "3 renders recorded" }))
+  expect(nav).toEqual([["renders"]])
+  expect(container.querySelector("[aria-label='Previous render']")).toBeNull()
+  inspector.receive(inspected(3, { ...data, history: [9] }))
+  getByRole("button", { name: "1 render recorded" })
 })
 
-test("a picked commit the node didn't render in says so", () => {
-  const { container, inspector, select } = setup()
+test("a picked commit shows; one the node didn't render in says so", () => {
+  const { container, inspector, select, nav, getByRole } = setup()
   select()
   inspector.receive(
     inspected(3, {
@@ -1952,8 +1939,13 @@ test("a picked commit the node didn't render in says so", () => {
   inspector.pin(5)
   expect(container.textContent).toContain("Didn't render in this commit.")
   expect(reasons(container)).toEqual([])
-  expect(container.querySelector("[data-testid=history]")).not.toBeNull()
+  expect(container.querySelector("[data-testid=pinned]")?.textContent).toBe(
+    "Commit #5Show latest",
+  )
+  fireEvent.click(getByRole("button", { name: "Show latest" }))
+  expect(nav).toEqual([["latest"]])
   inspector.pin(undefined)
+  expect(container.querySelector("[data-testid=pinned]")).toBeNull()
   expect(container.textContent).not.toContain("Didn't render in this commit.")
   expect(reasons(container)).toEqual(["Parent rendered"])
 })

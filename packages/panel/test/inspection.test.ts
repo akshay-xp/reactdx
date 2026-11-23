@@ -208,7 +208,7 @@ test("force asks the page to show a fallback or an error UI, or the children aga
   ])
 })
 
-test("stepping through history loads older renders; the newest follows re-sends", () => {
+test("a pinned commit loads the node's older render; the newest follows re-sends", () => {
   const { sent, store } = setup()
   store.inspect(3)
   const latest = { seq: 9, kinds: ["state" as const] }
@@ -217,33 +217,29 @@ test("stepping through history loads older renders; the newest follows re-sends"
     inspected(3, { props: object({}), render: latest, history: [2, 5, 9] }),
   )
   expect(store.history()).toEqual([2, 5, 9])
-  expect(store.shown()).toBe(9)
   expect(store.render()).toEqual(latest)
-  store.step(5)
+  store.pin(5)
   expect(sent.at(-1)).toEqual({ type: "reason", id: 3, seq: 5 })
-  expect(store.shown()).toBe(5)
   expect(store.render()).toBeUndefined()
   store.receiveReasoned(reasoned(3, 2, { seq: 2, kinds: ["mount"] }))
   store.receiveReasoned(reasoned(4, 5, older))
   expect(store.render()).toBeUndefined()
   store.receiveReasoned(reasoned(3, 5, older))
   expect(store.render()).toEqual(older)
-  // A new render keeps the step.
+  // A new render keeps the pinned one.
   const newer = { seq: 11, kinds: ["state" as const] }
   store.receive(
     inspected(3, { props: object({}), render: newer, history: [2, 5, 9, 11] }),
   )
-  expect(store.shown()).toBe(5)
   expect(store.render()).toEqual(older)
-  store.step(2)
+  store.pin(2)
   store.receiveReasoned(reasoned(3, 2, null))
   expect(store.render()).toBeNull()
-  store.step(11)
+  store.pin(11)
   expect(sent.at(-1)).toEqual({ type: "reason", id: 3, seq: 2 })
   expect(store.render()).toEqual(newer)
-  store.step(5)
+  store.pin(5)
   store.inspect(4)
-  expect(store.shown()).toBeUndefined()
   expect(store.render()).toBeUndefined()
 })
 
@@ -256,7 +252,7 @@ test("a pinned commit steps the inspector to it, or says it's absent", () => {
   )
   store.pin(5)
   expect(sent.at(-1)).toEqual({ type: "reason", id: 3, seq: 5 })
-  expect(store.shown()).toBe(5)
+  expect(store.pinned()).toBe(5)
   expect(store.absent()).toBe(false)
   const count = sent.length
   store.pin(9)
@@ -271,7 +267,7 @@ test("a pinned commit steps the inspector to it, or says it's absent", () => {
     inspected(4, { props: object({}), render: at(5), history: [5] }),
   )
   expect(store.absent()).toBe(false)
-  expect(store.shown()).toBe(5)
+  expect(store.render()).toEqual(at(5))
   store.inspect(6)
   store.receive(
     inspected(6, { props: object({}), render: at(1), history: [1] }),
