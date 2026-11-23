@@ -86,6 +86,9 @@ export function contextsOf(fiber: Fiber) {
   })
 }
 
+// Values sameValue reads before it calls two different references changed.
+const MAX_COMPARED = 1000
+
 const isPlain = (value: unknown): value is object => {
   if (value === null || typeof value !== "object") return false
   if (Array.isArray(value)) return true
@@ -96,7 +99,11 @@ const isPlain = (value: unknown): value is object => {
 // Equal plain objects and arrays, key by key through descriptors (no getter
 // runs; an accessor counts as different), within `budget` values: past it,
 // not the same. Anything else is the same only if it's the same reference.
-function sameValue(a: unknown, b: unknown, budget = { left: 1000 }): boolean {
+function sameValue(
+  a: unknown,
+  b: unknown,
+  budget = { left: MAX_COMPARED },
+): boolean {
   if (--budget.left < 0) return false
   if (Object.is(a, b)) return true
   if (!isPlain(a) || !isPlain(b) || Array.isArray(a) !== Array.isArray(b))

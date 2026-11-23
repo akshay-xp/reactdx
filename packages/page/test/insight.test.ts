@@ -258,6 +258,8 @@ function StyleParent() {
     data: { n },
     onPick: () => {},
     handler: n === 1 ? () => {} : 1,
+    big: Array.from({ length: 1001 }, () => 0),
+    small: Array.from({ length: 999 }, () => 0),
   })
 }
 const changeOf = (
@@ -290,5 +292,16 @@ test("a prop that's a different function is a new function", async () => {
   )
   expect(changeOf(recorder, id("Styled"), "handler")).not.toHaveProperty(
     "reference",
+  )
+})
+
+test("a new reference past 1,000 values counts as changed", async () => {
+  const { record, recorder, id } = await mount(h(StyleParent))
+  await record(() => setStyle(2))
+  expect(changeOf(recorder, id("Styled"), "big")).not.toHaveProperty(
+    "reference",
+  )
+  expect(changeOf(recorder, id("Styled"), "small")?.reference).toBe(
+    "same-value",
   )
 })
