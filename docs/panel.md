@@ -83,6 +83,12 @@ The selected node's values as the agent last sent them (`docs/messages.md`, "Ins
 - `previewText(value)` (`src/value.ts`): DevTools-console-like one-liners: `"text"` (over 50 chars cut, with the full length), `ƒ name()`, `Symbol(x)`, `{a: 1, b: "x"}` and `[1, 2]` inline up to 5 entries (nested containers as `{...}`, `Array(n)`, `Map(n)`), `Array(n)` past 5 items, a class name before an instance's braces, `<Counter key="k" />`, `<button#id.class>`, `(getter)`, `empty`, `[circular]`, `(unreadable: message)`.
 - `test/Inspector.test.tsx`, `test/value.test.ts`.
 
+## Timeline (`createTimelineStore`, `src/timeline.ts`; M6 #67)
+
+- Store: the page's commit summaries (`commits`, `docs/messages.md`) appended, the last 100 kept; `picked()` the picked commit's seq, `undefined` for Live (following new commits, nothing marked); `marks()` the ids the picked commit rendered, unioned across its `committed` batches (a batch for another seq, or `null`, adds nothing). `pick(seq)` sends `{ type: "commit", seq }`, clears the marks and pins the inspector (`inspector.pin`); `live()` unpins. `key(key)`: ArrowLeft picks the commit before (from Live, the newest), ArrowRight the one after (past the newest: Live), End and Escape go Live; true if handled. `reset()` on a tree `reset` (a new watch: the page sends its buffer again).
+- Inspector store `pin(seq)`: every node follows the pinned commit, a node selected later too (applied on its first inspection): if its `history` holds the seq it steps there (`step`; the newest is just followed), else `absent()` is true. `pin(undefined)` returns to the newest render.
+- `test/timeline.test.ts`, `test/inspection.test.ts`.
+
 ## Tree view (`TreeView`, `src/TreeView.tsx`, `src/virtual.ts`; M3 #26)
 
 One per development root: `TreeView(props: { tree: TreeStore; rootId: number })`.
