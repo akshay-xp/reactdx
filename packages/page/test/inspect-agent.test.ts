@@ -1,6 +1,7 @@
 import {
   type ExpandedMessage,
   type InspectedMessage,
+  type ReasonedMessage,
   type TreeBatchMessage,
   UNWATCH,
   valueStored,
@@ -667,4 +668,30 @@ test("an inspection lists the node's recorded renders, oldest first", async () =
   expect(history.at(-1)).toBe(render?.seq)
   inspect(idOf("Greeting"))
   expect(replies().at(-1)?.data).not.toHaveProperty("history")
+})
+
+const reasonedReplies = () =>
+  posted.filter(
+    (m): m is ReasonedMessage => (m as { type?: string }).type === "reasoned",
+  )
+
+test("reason loads an older render; one out of the buffer loads as null", async () => {
+  const reasoned = idOf("Reasoned")
+  inspect(reasoned)
+  await React.act(() => setReasoned(0))
+  for (const n of [1, 2, 3]) await React.act(() => setReasoned(n))
+  await flushed()
+  const history = replies().at(-1)?.data?.history ?? []
+  const seq = history.at(-3) ?? 0
+  send({ source: "reactdx-relay", type: "reason", id: reasoned, seq })
+  expect(reasonedReplies().at(-1)).toMatchObject({
+    id: reasoned,
+    seq,
+    render: { seq, kinds: ["state"], hooks: [{ hook: [0], old: 0, new: 1 }] },
+  })
+  send({ source: "reactdx-relay", type: "reason", id: idOf("Other"), seq })
+  expect(reasonedReplies()).toHaveLength(1)
+  for (let n = 1; n <= 101; n++) await React.act(() => setEffecting(100 + n))
+  send({ source: "reactdx-relay", type: "reason", id: reasoned, seq })
+  expect(reasonedReplies().at(-1)).toMatchObject({ seq, render: null })
 })

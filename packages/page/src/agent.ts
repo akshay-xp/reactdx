@@ -15,8 +15,10 @@ import {
   type PickedMessage,
   parseTreeCommand,
   picked,
+  type ReasonedMessage,
   type RenderReason,
   type RootInfo,
+  reasoned,
   snapshotMessage,
   type TreeBatchMessage,
   type TreeOp,
@@ -79,6 +81,7 @@ export function startAgent(
       | PickedMessage
       | InspectedMessage
       | ExpandedMessage
+      | ReasonedMessage
       | ValueTextMessage
       | ValueStoredMessage,
   ) => void,
@@ -482,9 +485,31 @@ export function startAgent(
     else if (data.type === "clear-highlight") overlay?.hide()
     else if (data.type === "pick-start") startPicking()
     else if (data.type === "pick-stop") stopPicking()
-    else if (data.type === "inspect" || data.type === "expand") {
+    else if (
+      data.type === "inspect" ||
+      data.type === "expand" ||
+      data.type === "reason"
+    ) {
       const command = parseTreeCommand(data)
       if (command?.type === "inspect") inspect(command.id)
+      if (command?.type === "reason" && command.id === selected?.id) {
+        const { id, seq } = command
+        const record = recorder.record(id, seq)
+        post(
+          reasoned(
+            id,
+            seq,
+            record
+              ? reasonOf(
+                  id,
+                  record,
+                  selected.hooks ?? [],
+                  selected.values.serialize,
+                )
+              : null,
+          ),
+        )
+      }
       if (command?.type === "expand") {
         const { objectId, offset } = command
         const value = selected?.values.expand(objectId, offset)
