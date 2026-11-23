@@ -169,3 +169,24 @@ test("changed state hooks are recorded by hook list index", async () => {
   })
   expect(kinds("Stateful")).toEqual(["parent"])
 })
+
+let ticker: React.Component<object, { ticks: number; label: string }> | null =
+  null
+class Ticker extends React.Component<object, { ticks: number; label: string }> {
+  state = { ticks: 0, label: "t" }
+  componentDidMount() {
+    ticker = this
+  }
+  render() {
+    return null
+  }
+}
+
+test("a class component's changed state keys are recorded", async () => {
+  const { record, kinds, recorder, id } = await mount(h(Ticker))
+  await record(() => ticker?.setState({ ticks: 1 }))
+  expect(kinds("Ticker")).toEqual(["state"])
+  expect(recorder.latest(id("Ticker"))?.state).toEqual([
+    { key: "ticks", old: 0, new: 1 },
+  ])
+})

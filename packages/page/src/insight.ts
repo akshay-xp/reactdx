@@ -19,6 +19,8 @@ export type RenderRecord = {
   seq: number
   kinds: RenderKind[]
   props?: Change[]
+  // A class component's state keys.
+  state?: Change[]
   // State hooks by hook list index (docs/page.md, Hooks).
   hooks?: HookChange[]
 }
@@ -81,7 +83,13 @@ export function createRecorder() {
       record.kinds.push("props")
       record.props = props
     }
-    if (fiber.tag !== 1) {
+    if (fiber.tag === 1) {
+      const state = diffKeys(prev.memoizedState, fiber.memoizedState)
+      if (state.length) {
+        record.kinds.push("state")
+        record.state = state
+      }
+    } else {
       const hooks = diffHooks(prev.memoizedState, fiber.memoizedState)
       if (hooks.length) {
         record.kinds.push("state")
