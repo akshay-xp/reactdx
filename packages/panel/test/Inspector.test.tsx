@@ -1814,3 +1814,39 @@ test("the effects a render ran list under Effects ran, with their changed deps",
   ).toEqual(["Effect #3: deps [1] changed", "Effect #5: no deps"])
   expect(changes(container)).toContain("[1]: 1 → 2")
 })
+
+test("a remount says what caused it; an ancestor's name selects it", () => {
+  const { container, inspector, select, tree, getByRole } = setup()
+  select()
+  const show = (remount: unknown) =>
+    inspector.receive(
+      inspected(3, {
+        props: object({}),
+        render: { seq: 2, kinds: ["mount"], remount } as never,
+      }),
+    )
+  show({ cause: "key", from: "a", to: "b" })
+  expect(reasons(container)).toEqual(["Remounted: key changed (a → b)"])
+  show({ cause: "key", from: null, to: "b" })
+  expect(reasons(container)).toEqual(["Remounted: key changed (none → b)"])
+  show({ cause: "ancestor", ancestor: 9 })
+  expect(reasons(container)).toEqual(["Remounted: an ancestor remounted"])
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 4,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "Layout",
+        key: null,
+        index: 1,
+      },
+    ]),
+  )
+  show({ cause: "ancestor", ancestor: 4 })
+  expect(reasons(container)).toEqual(["Remounted: ancestor Layout remounted"])
+  fireEvent.click(getByRole("button", { name: "Layout" }))
+  expect(tree.selected()).toBe(4)
+})

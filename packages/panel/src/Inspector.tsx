@@ -3,6 +3,7 @@ import type {
   Container,
   HookValue,
   KeyChange,
+  Remount,
   RenderKind,
   RenderReason,
   Value,
@@ -427,6 +428,7 @@ export function Inspector(props: {
                 >
                   <Reasons
                     inspector={props.inspector}
+                    tree={props.tree}
                     labelOf={labelOf}
                     onMenu={onMenu}
                   />
@@ -604,6 +606,7 @@ function Section(props: {
 // Why the node last rendered: a row per reason, its changes under it.
 function Reasons(props: {
   inspector: InspectorStore
+  tree: TreeStore
   labelOf: (hook: HookValue) => string
   onMenu: OnMenu
 }) {
@@ -673,7 +676,16 @@ function Reasons(props: {
           <For each={render().kinds}>
             {(kind) => (
               <>
-                <ReasonRow name={kind} text={KIND_TEXT[kind]} />
+                <ReasonRow name={kind}>
+                  {kind === "mount" && render().remount ? (
+                    <Remounted
+                      remount={render().remount as Remount}
+                      tree={props.tree}
+                    />
+                  ) : (
+                    KIND_TEXT[kind]
+                  )}
+                </ReasonRow>
                 <For each={changesOf(render(), kind)}>
                   {(change) => (
                     <ChangeRow
@@ -692,7 +704,7 @@ function Reasons(props: {
             )}
           </For>
           <Show when={render().effects?.length}>
-            <ReasonRow name="effects" text="Effects ran" />
+            <ReasonRow name="effects">Effects ran</ReasonRow>
             <For each={render().effects}>
               {(run) => {
                 const name = hookName(run.hook)
@@ -738,8 +750,51 @@ function Reasons(props: {
   )
 }
 
+// What remounted a node: its key, or an ancestor (selected by its name).
+function Remounted(props: { remount: Remount; tree: TreeStore }) {
+  const ancestor = () =>
+    props.remount.cause === "ancestor" ? props.remount.ancestor : undefined
+  const name = () => {
+    const id = ancestor()
+    return id === undefined ? undefined : props.tree.info(id)?.name
+  }
+  const keyText = () => {
+    const { from, to } = props.remount as Extract<Remount, { cause: "key" }>
+    return `Remounted: key changed (${from ?? "none"} → ${to ?? "none"})`
+  }
+  return (
+    <Switch>
+      <Match when={props.remount.cause === "key"}>{keyText()}</Match>
+      <Match when={name() === undefined}>
+        Remounted: an ancestor remounted
+      </Match>
+      <Match when={ancestor()}>
+        {(id) => (
+          <>
+            Remounted: ancestor{" "}
+            <button
+              type="button"
+              data-testid="owner"
+              class="text-accent hover:underline"
+              onPointerEnter={() => props.tree.hover(id())}
+              onPointerLeave={() => props.tree.hover(undefined)}
+              onClick={() => {
+                props.tree.hover(undefined)
+                props.tree.reveal(id())
+              }}
+            >
+              {name()}
+            </button>{" "}
+            remounted
+          </>
+        )}
+      </Match>
+    </Switch>
+  )
+}
+
 // A reason's own row (a kind, or Effects ran), above its changes.
-function ReasonRow(props: { name: string; text: string }) {
+function ReasonRow(props: { name: string; children: JSX.Element }) {
   return (
     <div
       role="treeitem"
@@ -750,7 +805,7 @@ function ReasonRow(props: { name: string; text: string }) {
       class={ROW}
       style={{ "padding-left": "24px" }}
     >
-      {props.text}
+      {props.children}
     </div>
   )
 }
