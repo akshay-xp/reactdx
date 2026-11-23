@@ -333,6 +333,22 @@ export function startAgent(
       }
       reason.hooks = list
     }
+    if (record.effects) {
+      const list = []
+      for (const run of record.effects.slice(0, MAX_CHANGES)) {
+        const hook = hookPath(hooks, run.index)
+        if (!hook) continue
+        list.push({
+          hook,
+          ...(run.changed && {
+            changed: run.changed
+              .slice(0, MAX_CHANGES)
+              .map((change) => ({ dep: change.dep, ...both(change) })),
+          }),
+        })
+      }
+      reason.effects = list
+    }
     if (record.contexts)
       reason.contexts = record.contexts
         .slice(0, MAX_CHANGES)

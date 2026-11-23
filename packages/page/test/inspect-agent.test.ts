@@ -58,6 +58,15 @@ function Styling() {
   })
   return h("p", null, n, h(StyledChild, { style: { color: "red" } }))
 }
+let setEffecting = (_: number) => {}
+function Effecting() {
+  const [n, set] = React.useState(0)
+  React.useEffect(() => {
+    setEffecting = set
+  })
+  React.useEffect(() => {}, [n])
+  return h("dfn", null, n)
+}
 function Deep(_: { data: unknown }) {
   return null
 }
@@ -115,6 +124,7 @@ beforeAll(async () => {
       h(Other, { key: "o" }),
       h(Reasoned, { key: "why" }),
       h(Styling, { key: "styling" }),
+      h(Effecting, { key: "effecting" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
       h(Refs, { key: "r" }),
       h(Counted, { key: "k", label: "x" }),
@@ -572,5 +582,15 @@ test("a prop change says when it's only a new reference", async () => {
   expect(replies().at(-1)?.data?.render?.props?.[0]).toMatchObject({
     key: "style",
     reference: "same-value",
+  })
+})
+
+test("an inspection carries the effects its render ran, by call indexes", async () => {
+  inspect(idOf("Effecting"))
+  await React.act(() => setEffecting(1))
+  await flushed()
+  expect(replies().at(-1)?.data?.render?.effects).toContainEqual({
+    hook: [2],
+    changed: [{ dep: 0, old: 0, new: 1 }],
   })
 })
