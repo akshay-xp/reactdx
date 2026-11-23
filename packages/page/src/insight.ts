@@ -39,7 +39,9 @@ export type RenderRecord = {
   remount?: Remount
 }
 
-export type Remount = { cause: "key"; from: string | null; to: string | null }
+export type Remount =
+  | { cause: "key"; from: string | null; to: string | null }
+  | { cause: "ancestor"; ancestor: number }
 
 // `changed`: the deps that differ from the last render's.
 export type EffectRun = {
@@ -227,16 +229,38 @@ function diffEffects(prev: Fiber, next: Fiber): EffectRun[] {
 
 type Placed = Fiber & { index: number; deletions: Fiber[] | null }
 
-// The fiber this commit deleted from the place a new one mounted in: React
-// lists a parent's deleted children in its `deletions` until it's reused.
-function remountOf(fiber: Fiber): Remount | undefined {
-  const parent = fiber.return as Placed | null
-  if (!parent) return
-  const old = parent.deletions?.find(
-    (deleted) => (deleted as Placed).index === (fiber as Placed).index,
+// A mount in the place of a same-type fiber this commit deleted: React lists
+// a parent's deleted children in its `deletions` until it's reused, their
+// subtrees still linked. Below the highest new fiber, the old one is found by
+// the same child indexes; then the nearest emitted new ancestor (`ids`, this
+// commit's visits) is the cause.
+function remountOf(fiber: Fiber, ids: Map<Fiber, number>): Remount | undefined {
+  const chain = [fiber]
+  let top = fiber
+  while (top.return && top.return.alternate === null) {
+    top = top.return
+    chain.unshift(top)
+  }
+  const parent = top.return as Placed | null
+  const replaced = parent?.deletions?.find(
+    (deleted) => (deleted as Placed).index === (top as Placed).index,
   )
-  if (old && old.elementType === fiber.elementType)
-    return { cause: "key", from: old.key, to: fiber.key }
+  let old = replaced
+  for (const next of chain.slice(1)) {
+    let child = old?.child ?? null
+    while (child && (child as Placed).index !== (next as Placed).index)
+      child = child.sibling
+    old = child ?? undefined
+  }
+  if (!replaced || !old || old.elementType !== fiber.elementType) return
+  const ancestor = chain
+    .slice(0, -1)
+    .reverse()
+    .map((at) => ids.get(at))
+    .find((id) => id !== undefined)
+  return ancestor === undefined
+    ? { cause: "key", from: replaced.key, to: top.key }
+    : { cause: "ancestor", ancestor }
 }
 
 export function createRecorder() {
@@ -247,10 +271,11 @@ export function createRecorder() {
     at: number,
     fiber: Fiber,
     updated: boolean,
+    ids: Map<Fiber, number>,
   ): RenderRecord => {
     const prev = fiber.alternate
     if (!prev) {
-      const remount = remountOf(fiber)
+      const remount = remountOf(fiber, ids)
       return { seq: at, kinds: ["mount"], ...(remount && { remount }) }
     }
     const record: RenderRecord = { seq: at, kinds: [] }
@@ -290,8 +315,12 @@ export function createRecorder() {
       walk: (visit: (fiber: Fiber, id: number) => void) => void,
     ) {
       const records = new Map<number, RenderRecord>()
+      // The walk visits parents before children: a remount's new ancestors
+      // are known by the time it is.
+      const ids = new Map<Fiber, number>()
       const at = seq++
       walk((fiber, id) => {
+        ids.set(fiber, id)
         if (!COMPONENTS.has(fiber.tag)) return
         // A function component re-run by its own update with nothing changed
         // bails out before React flags the work: still a render.
@@ -299,7 +328,7 @@ export function createRecorder() {
           updaters.has(fiber) ||
           (fiber.alternate !== null && updaters.has(fiber.alternate))
         if (updated || (fiber as Flagged).flags & PERFORMED_WORK)
-          records.set(id, reasons(at, fiber, updated))
+          records.set(id, reasons(at, fiber, updated, ids))
       })
       commits.push({ seq: at, time: performance.now(), rootId, records })
       if (commits.length > MAX_COMMITS) commits.shift()

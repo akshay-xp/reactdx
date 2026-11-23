@@ -56,25 +56,26 @@ async function mount(node: React.ReactNode) {
     for (const op of list) if (op.op === "add") ids.set(op.name, op.id)
   }
   learn(ops)
-  // React clears the updaters once onCommitFiberRoot returns: kept from there.
-  let updaters = new Set<unknown>()
+  // Recorded inside onCommitFiberRoot, as the agent does: React clears the
+  // updaters once it returns, and passive effects (after it) detach deleted
+  // subtrees.
   hookRecord().listeners.add((_, root) => {
-    if (root === fiberRoot)
-      updaters = new Set(
+    if (root !== fiberRoot) return
+    const added: TreeOp[] = []
+    recorder.commit(
+      1,
+      new Set(
         (root as unknown as { memoizedUpdaters?: Set<unknown> })
           .memoizedUpdaters,
-      )
+      ),
+      (visit) => tree.commit(fiberRoot, 1, added, visit),
+    )
+    learn(added)
   })
-  // Runs `update` in act, then records the commit it made.
   const record = async (update: () => void) => {
     await React.act(() => {
       update()
     })
-    const added: TreeOp[] = []
-    recorder.commit(1, updaters, (visit) =>
-      tree.commit(fiberRoot, 1, added, visit),
-    )
-    learn(added)
   }
   const id = (name: string) => {
     const found = ids.get(name)
@@ -374,5 +375,24 @@ test("a key change remounts the keyed child", async () => {
     cause: "key",
     from: "a",
     to: "b",
+  })
+})
+
+let setWrap: (on: boolean) => void = () => {}
+function Inner() {
+  return null
+}
+function Wrapper() {
+  const [on, set] = React.useState(false)
+  setWrap = set
+  return on ? h("section", null, h(Inner)) : h("div", null, h(Inner))
+}
+
+test("an ancestor's type change remounts the components inside it", async () => {
+  const { record, recorder, id } = await mount(h(Wrapper))
+  await record(() => setWrap(true))
+  expect(recorder.latest(id("Inner"))?.remount).toEqual({
+    cause: "ancestor",
+    ancestor: id("section"),
   })
 })
