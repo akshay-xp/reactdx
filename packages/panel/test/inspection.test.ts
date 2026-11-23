@@ -2,6 +2,7 @@ import {
   type Container,
   expanded,
   inspected,
+  reasoned,
   type Value,
   valueStored,
   valueText,
@@ -205,4 +206,43 @@ test("force asks the page to show a fallback or an error UI, or the children aga
     { type: "force", id: 3, kind: "error", on: true },
     { type: "force", id: 3, kind: "fallback", on: false },
   ])
+})
+
+test("stepping through history loads older renders; the newest follows re-sends", () => {
+  const { sent, store } = setup()
+  store.inspect(3)
+  const latest = { seq: 9, kinds: ["state" as const] }
+  const older = { seq: 5, kinds: ["props" as const] }
+  store.receive(
+    inspected(3, { props: object({}), render: latest, history: [2, 5, 9] }),
+  )
+  expect(store.history()).toEqual([2, 5, 9])
+  expect(store.shown()).toBe(9)
+  expect(store.render()).toEqual(latest)
+  store.step(5)
+  expect(sent.at(-1)).toEqual({ type: "reason", id: 3, seq: 5 })
+  expect(store.shown()).toBe(5)
+  expect(store.render()).toBeUndefined()
+  store.receiveReasoned(reasoned(3, 2, { seq: 2, kinds: ["mount"] }))
+  store.receiveReasoned(reasoned(4, 5, older))
+  expect(store.render()).toBeUndefined()
+  store.receiveReasoned(reasoned(3, 5, older))
+  expect(store.render()).toEqual(older)
+  // A new render keeps the step.
+  const newer = { seq: 11, kinds: ["state" as const] }
+  store.receive(
+    inspected(3, { props: object({}), render: newer, history: [2, 5, 9, 11] }),
+  )
+  expect(store.shown()).toBe(5)
+  expect(store.render()).toEqual(older)
+  store.step(2)
+  store.receiveReasoned(reasoned(3, 2, null))
+  expect(store.render()).toBeNull()
+  store.step(11)
+  expect(sent.at(-1)).toEqual({ type: "reason", id: 3, seq: 2 })
+  expect(store.render()).toEqual(newer)
+  store.step(5)
+  store.inspect(4)
+  expect(store.shown()).toBeUndefined()
+  expect(store.render()).toBeUndefined()
 })

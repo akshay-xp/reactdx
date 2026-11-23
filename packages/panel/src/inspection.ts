@@ -5,6 +5,8 @@ import type {
   ExpandedMessage,
   InspectedData,
   InspectedMessage,
+  ReasonedMessage,
+  RenderReason,
   Value,
   ValueKey,
   ValueStoredMessage,
@@ -28,6 +30,7 @@ export type InspectorCommand =
     }
   | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
   | { type: "rerender"; id: number }
+  | { type: "reason"; id: number; seq: number }
   | { type: "force"; id: number; kind: "fallback" | "error"; on: boolean }
   | {
       type: "rename-path"
@@ -71,6 +74,14 @@ export function createInspectorStore(
   const [expansions, setExpansions] = createSignal(new Map<number, Value>())
   let copyAsked = false
   let storeAsked = false
+  // The older render stepped to (none: the newest, following re-sends) and
+  // the page's reply for it.
+  const [stepped, setStepped] = createSignal<number>()
+  const [loaded, setLoaded] = createSignal<{
+    seq: number
+    render: RenderReason | null
+  }>()
+  const history = () => data()?.history ?? []
   // The page global the last Store as global variable went to, while shown.
   const [stored, setStored] = createSignal<string>()
 
@@ -98,6 +109,8 @@ export function createInspectorStore(
     inspect(next: number | undefined) {
       setId(next)
       setData(undefined)
+      setStepped(undefined)
+      setLoaded(undefined)
       setOpen(new Map())
       setExpansions(new Map())
       ask()
@@ -110,6 +123,28 @@ export function createInspectorStore(
       setData(message.data)
       setExpansions(new Map())
       for (const ref of open().values()) if (ref !== undefined) expand(ref)
+    },
+    history,
+    // The commit of the render shown.
+    shown: () => stepped() ?? history().at(-1),
+    // The render shown: undefined while an older one loads, null if released.
+    render() {
+      const at = stepped()
+      if (at === undefined) return data()?.render
+      const reply = loaded()
+      return reply?.seq === at ? reply.render : undefined
+    },
+    step(seq: number) {
+      const at = id()
+      if (at === undefined) return
+      if (seq === history().at(-1)) return setStepped(undefined)
+      setStepped(seq)
+      setLoaded(undefined)
+      send({ type: "reason", id: at, seq })
+    },
+    receiveReasoned(message: ReasonedMessage) {
+      if (message.id === id() && message.seq === stepped())
+        setLoaded({ seq: message.seq, render: message.render })
     },
     receiveExpanded(message: ExpandedMessage) {
       const map = new Map(expansions())
