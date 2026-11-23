@@ -406,3 +406,50 @@ test("an unrelated commit sends no inspected message", { skip }, async () => {
     await browser.close()
   }
 })
+
+type Bench = Window & { __bench: (mode: string, n: number) => number[] }
+
+// Recording (M6) runs inside React's commit hook while the panel watches:
+// flushSync's time includes it. Medians of five after a warm-up commit.
+test("watching adds under 1 ms to a one-cell commit, under 25% to all cells", {
+  skip,
+}, async (t) => {
+  const { browser } = await launchWithExtension(name)
+  try {
+    const [page] = await browser.pages()
+    if (!page) throw new Error("no page")
+    await page.goto(BENCH)
+    await page.waitForFunction(
+      () => document.querySelectorAll("[data-testid=cell]").length === 10000,
+      { timeout: 10_000 },
+    )
+    const median = async (mode: "one" | "all") => {
+      await page.evaluate((mode) => (window as Bench).__bench(mode, 1), mode)
+      const times = await page.evaluate(
+        (mode) => (window as Bench).__bench(mode, 5),
+        mode,
+      )
+      return [...times].sort((a, b) => a - b)[2] as number
+    }
+    const before = { one: await median("one"), all: await median("all") }
+    const panel = await openPanel(browser)
+    await panel.waitForFunction(
+      () =>
+        [...document.querySelectorAll("[data-testid=node]")].some(
+          (n) => n.textContent === "Bench",
+        ),
+      { timeout: 10_000 },
+    )
+    const watched = { one: await median("one"), all: await median("all") }
+    t.diagnostic(
+      `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} ms`,
+    )
+    assert.ok(watched.one - before.one < 1, JSON.stringify({ before, watched }))
+    assert.ok(
+      watched.all / before.all < 1.25,
+      JSON.stringify({ before, watched }),
+    )
+  } finally {
+    await browser.close()
+  }
+})

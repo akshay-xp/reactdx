@@ -338,7 +338,9 @@ export function createRecorder() {
       const ids = new Map<Fiber, number>()
       const at = seq++
       walk((fiber, id) => {
-        ids.set(fiber, id)
+        // remountOf looks up only new fibers: a commit touching one of 10,000
+        // cells visits them all, and storing each cost more than the rest.
+        if (fiber.alternate === null) ids.set(fiber, id)
         if (!COMPONENTS.has(fiber.tag)) return
         // A function component re-run by its own update with nothing changed
         // bails out before React flags the work: still a render.

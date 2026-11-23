@@ -90,10 +90,11 @@ export function createTree() {
   const ids = new WeakMap<Fiber, number>()
   let nextId = 1
   const idOf = (fiber: Fiber) => {
-    const id =
-      ids.get(fiber) ??
-      (fiber.alternate && ids.get(fiber.alternate)) ??
-      nextId++
+    const known = ids.get(fiber)
+    // Both fibers of a pair are set together: a hit needs no writes (a parent
+    // of 10,000 cells looks each up on every commit).
+    if (known !== undefined) return known
+    const id = (fiber.alternate && ids.get(fiber.alternate)) ?? nextId++
     ids.set(fiber, id)
     if (fiber.alternate) ids.set(fiber.alternate, id)
     return id
@@ -195,18 +196,22 @@ export function createTree() {
     const stale = new Set<Fiber>()
     const kids = visible(fiber, [], stale)
     const next = kids.map(idOf)
-    const kept = new Set(next)
-    for (const id of prev ?? [])
-      if (!kept.has(id)) {
+    // The same children in the same order (a parent of 10,000 cells, one of
+    // them updated): no removes, adds or reorder to work out.
+    const same =
+      prev?.length === next.length && next.every((id, i) => id === prev[i])
+    const kept = same ? undefined : new Set(next)
+    for (const id of same ? [] : (prev ?? []))
+      if (!kept?.has(id)) {
         ops.push({ op: "remove", id })
         forget(id)
       }
-    const known = new Set(prev)
+    const known = same ? undefined : new Set(prev)
     // What the panel holds after the removes and adds, in its order.
-    const applied = (prev ?? []).filter((id) => kept.has(id))
+    const applied = same ? next : (prev ?? []).filter((id) => kept?.has(id))
     kids.forEach((kid, index) => {
       const id = next[index] as number
-      if (known.has(id)) {
+      if (same || known?.has(id)) {
         fibers.set(id, kid)
         const name = label(kid)
         if (name !== names.get(id)) {
@@ -222,7 +227,7 @@ export function createTree() {
         applied.splice(index, 0, id)
       }
     })
-    if (applied.some((id, index) => id !== next[index]))
+    if (!same && applied.some((id, index) => id !== next[index]))
       ops.push({ op: "reorder", rootId, parentId, children: next })
     children.set(key, next)
   }
