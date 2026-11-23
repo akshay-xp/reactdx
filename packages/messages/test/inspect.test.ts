@@ -521,3 +521,14 @@ test("a render's updaters are ids with their labeled hook changes", () => {
   ])
     expect(parse(bad)).toBeUndefined()
 })
+
+test("an inspection's history is at most 100 increasing commit ids", () => {
+  const parse = (history: unknown) =>
+    parseInspected(inspected(3, { props: 1, history } as never))?.data
+  for (const history of [[1, 4, 9], []])
+    expect(parse(history)).toEqual({ props: 1, history })
+  const long = Array.from({ length: 101 }, (_, i) => i + 1)
+  expect(parse(long.slice(0, 100))?.history).toHaveLength(100)
+  for (const bad of [[4, 1], [1, 1], [0], long, "1"])
+    expect(parse(bad)).toBeUndefined()
+})

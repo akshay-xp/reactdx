@@ -107,7 +107,11 @@ export type InspectedData = {
   source?: SourceRef
   boundaries?: Boundaries
   render?: RenderReason
+  // The commits (seqs) of the node's recorded renders, oldest first (M6 #66).
+  history?: number[]
 }
+// The page keeps its last 100 commits.
+export const MAX_HISTORY = 100
 
 // Why the node last rendered, while the panel watched (M6; docs/messages.md,
 // Render reasons): the changes with both values, hooks by call indexes (as in
@@ -568,6 +572,7 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     source,
     boundaries,
     render,
+    history,
   } = message.data as Record<string, unknown>
   const budget = { left: MAX_VALUES }
   const parsed: InspectedData = { props: null }
@@ -620,6 +625,15 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     const reason = parseRender(render, budget)
     if (!reason) return
     parsed.render = reason
+  }
+  if (history !== undefined) {
+    if (
+      !Array.isArray(history) ||
+      history.length > MAX_HISTORY ||
+      !history.every((seq, i) => isId(seq) && (i === 0 || seq > history[i - 1]))
+    )
+      return
+    parsed.history = [...history]
   }
   return inspected(message.id, parsed)
 }
