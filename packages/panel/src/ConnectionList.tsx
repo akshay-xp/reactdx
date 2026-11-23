@@ -1,11 +1,13 @@
 import type { RendererView } from "@reactdx/messages"
 import { For, Match, Show, Switch } from "solid-js"
+import { CommitStrip } from "./CommitStrip"
 import { Empty, EmptyAction } from "./Empty"
 import { Inspector, type Settings } from "./Inspector"
 import type { InspectorStore } from "./inspection"
 import type { Sources } from "./source"
 import { ReloadGlyph, Toolbar } from "./Toolbar"
 import { TreeView } from "./TreeView"
+import type { TimelineStore } from "./timeline"
 import type { TreeStore } from "./tree"
 
 const build = (bundleType: number) =>
@@ -18,6 +20,8 @@ export function ConnectionList(props: {
   renderers: RendererView[]
   tree: TreeStore
   inspector: InspectorStore
+  // Recent commits (M6 #67): the strip above the trees and their row marks.
+  timeline?: TimelineStore
   sources: Sources
   settings: Settings
   stale?: boolean
@@ -58,6 +62,11 @@ export function ConnectionList(props: {
         >
           <div class="flex min-h-0 min-w-0 flex-1 flex-col">
             <Toolbar tree={props.tree} />
+            <Show when={props.timeline}>
+              {(timeline) => (
+                <CommitStrip timeline={timeline()} tree={props.tree} />
+              )}
+            </Show>
             {/* The one scroller for every copy's trees, both ways; each TreeView
                 renders the rows in this pane's view. The content is as wide as
                 its widest row, so rows and the selection span it. */}
@@ -87,7 +96,11 @@ export function ConnectionList(props: {
                                 {root.commits} commits
                               </span>
                               <Show when={renderer.bundleType === 1}>
-                                <TreeView tree={props.tree} rootId={root.id} />
+                                <TreeView
+                                  tree={props.tree}
+                                  rootId={root.id}
+                                  marks={props.timeline?.marks}
+                                />
                               </Show>
                             </li>
                           )}

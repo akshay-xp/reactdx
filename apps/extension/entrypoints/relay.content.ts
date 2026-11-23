@@ -2,6 +2,8 @@ import {
   GET_SNAPSHOT,
   type GetStateMessage,
   type InjectAgentMessage,
+  parseCommits,
+  parseCommitted,
   parseExpanded,
   parseInspected,
   parsePageMessage,
@@ -85,6 +87,8 @@ export default defineContentScript({
         parseInspected(event.data) ??
         parseExpanded(event.data) ??
         parseReasoned(event.data) ??
+        parseCommits(event.data) ??
+        parseCommitted(event.data) ??
         parseValueText(event.data) ??
         parseValueStored(event.data)
       if (forward) {

@@ -103,3 +103,61 @@ for (const { fixture, port } of fixtures)
       await browser.close()
     }
   })
+
+for (const { fixture, port } of fixtures)
+  test(`${fixture}: the commit timeline marks, names and steps to a commit`, async () => {
+    const { browser, page, panel } = await panelFor(
+      name,
+      `http://localhost:${port}/insight.html`,
+      "after",
+    )
+    const inspectorShows = async (part: string) => {
+      const text = await until(panel.inspector, (t) => t.includes(part))
+      assert.ok(text.includes(part), text)
+    }
+    const stripShows = async (part: string) => {
+      const text = await until(panel, (t) => t.includes(part))
+      assert.ok(text.includes(part), text)
+    }
+    const marked = async (expected: string[]) => {
+      const deadline = Date.now() + 5000
+      let names = await panel.marked()
+      while (JSON.stringify(names) !== JSON.stringify(expected)) {
+        if (Date.now() > deadline) break
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        names = await panel.marked()
+      }
+      assert.deepEqual(names, expected)
+    }
+    try {
+      await page.waitForSelector("[data-testid=insight]")
+      await selectListed(panel, "Counter")
+      await page.click("[data-testid=count]")
+      await page.click("[data-testid=count]")
+      await inspectorShows("Render 2 of 2")
+      // The newest commit: Counter's second update.
+      await panel.key("Commits", "ArrowLeft")
+      await stripShows("rendered. Triggered by Counter")
+      await marked(["Counter"])
+      await inspectorShows("Render 2 of 2")
+      await panel.key("Commits", "ArrowLeft")
+      await inspectorShows("Render 1 of 2")
+      await selectListed(panel, "Shown", (t) =>
+        t.includes("Didn't render in this commit."),
+      )
+      await panel.key("Commits", "End")
+      await stripShows("Live")
+      await marked([])
+      await selectListed(panel, "Counter", (t) => t.includes("Render 2 of 2"))
+
+      await page.click("[data-testid=bump]")
+      await selectListed(panel, "Shown", (t) => t.includes("Props changed"))
+      await panel.key("Commits", "ArrowLeft")
+      await stripShows("Triggered by Insight")
+      await panel.key("Commits", "Escape")
+      await stripShows("Live")
+      await marked([])
+    } finally {
+      await browser.close()
+    }
+  })

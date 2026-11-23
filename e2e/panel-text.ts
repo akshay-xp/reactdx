@@ -8,7 +8,8 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // hover(name) puts the pointer on
 // the tree row with that name; leave() moves it off the trees. close() closes DevTools.
 // press(name) clicks the button with that name (its text or aria-label), pressed(name)
-// reads its aria-pressed, key(text, key) presses a key on an inspector row,
+// reads its aria-pressed, key(text, key) presses a key on a row or the commit
+// strip, marked() names the tree rows the picked commit rendered,
 // selected() is the selected row's name, select(name) clicks the row with that name.
 // The text leaves out the inspector pane; inspector() reads only that.
 // frame is the panel's document (Chrome only: Firefox's is out of Puppeteer's reach).
@@ -22,14 +23,25 @@ export type PanelText = (() => Promise<string>) & {
   close(): Promise<void>
   press(name: string): Promise<void>
   pressed(name: string): Promise<boolean>
-  // Focuses the inspector row whose text includes `text` and presses `key`.
-  key(text: string, key: "ArrowLeft" | "ArrowRight"): Promise<void>
+  // Focuses the row (or the listbox) whose text or name includes `text` and
+  // presses `key`.
+  key(text: string, key: Key): Promise<void>
+  // The names of the tree rows marked as rendered in the picked commit.
+  marked(): Promise<string[]>
   // Replaces the text of the input with that accessible name ("" empties it).
   type(label: string, text: string): Promise<void>
   // Edits the inspector value row reading `row`: opens its editor, enters `text`
   // and presses Enter.
   edit(row: string, text: string): Promise<void>
   selected(): Promise<string | undefined>
+}
+
+type Key = "ArrowLeft" | "ArrowRight" | "End" | "Escape"
+const KEY_CODES: Record<Key, string> = {
+  ArrowLeft: "LEFT",
+  ArrowRight: "RIGHT",
+  End: "END",
+  Escape: "ESCAPE",
 }
 
 // Text pieces are joined with spaces (the accessibility tree splits text differently
@@ -122,18 +134,28 @@ export async function openPanelText(
       await frame.page().keyboard.type(text)
       await frame.page().keyboard.press("Enter")
     }
-    const key = async (text: string, key: "ArrowLeft" | "ArrowRight") => {
+    const key = async (text: string, key: Key) => {
       await frame.evaluate(
         (text) =>
           (
-            [...document.querySelectorAll("[role=treeitem]")].find((el) =>
-              el.textContent?.includes(text),
+            [
+              ...document.querySelectorAll("[role=treeitem], [role=listbox]"),
+            ].find(
+              (el) =>
+                el.getAttribute("aria-label") === text ||
+                el.textContent?.includes(text),
             ) as HTMLElement | undefined
           )?.focus(),
         text,
       )
       await frame.page().keyboard.press(key)
     }
+    const marked = () =>
+      frame.evaluate(() =>
+        [
+          ...document.querySelectorAll("[data-rendered] [data-testid=name]"),
+        ].map((el) => el.textContent ?? ""),
+      )
     const selected = () =>
       frame.evaluate(
         () =>
@@ -152,6 +174,7 @@ export async function openPanelText(
       press,
       pressed,
       key,
+      marked,
       type,
       edit,
       selected,
@@ -389,13 +412,13 @@ export async function openPanelText(
     }
   }
   // The row's accessible takes focus, then a trusted key from the parent.
-  const key = async (text: string, key: "ArrowLeft" | "ArrowRight") => {
+  const key = async (text: string, key: Key) => {
     await onAccessible(
-      `node.role === ${role("OUTLINEITEM")} && node.name?.includes(${json(text)})`,
+      `[${role("OUTLINEITEM")}, ${role("LISTBOX")}].includes(node.role) && node.name?.includes(${json(text)})`,
       `node.takeFocus()
       const tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor)
       tip.beginInputTransactionForTests(window)
-      const event = new KeyboardEvent("", { key: ${json(key)}, code: ${json(key)}, keyCode: KeyboardEvent.DOM_VK_${key === "ArrowLeft" ? "LEFT" : "RIGHT"} })
+      const event = new KeyboardEvent("", { key: ${json(key)}, code: ${json(key)}, keyCode: KeyboardEvent.DOM_VK_${KEY_CODES[key]} })
       return new Promise((r) => setTimeout(() => {
         tip.keydown(event)
         tip.keyup(event)
@@ -403,6 +426,34 @@ export async function openPanelText(
       }, 50))`,
     )
   }
+  // Tree items described as rendered, by their first text leaf (the name).
+  const marked = async () =>
+    JSON.parse(
+      (await chromeEval(
+        browser,
+        `(() => {
+          ${panelBrowser}
+          if (!panel) return "[]"
+          const names = []
+          const leaf = (at) => {
+            if (at.role === ${role("TEXT_LEAF")}) return at
+            for (let i = 0; i < at.childCount; i++) {
+              const found = leaf(at.getChildAt(i))
+              if (found) return found
+            }
+            return null
+          }
+          const walk = (node) => {
+            if (!node) return
+            if (node.role === ${role("OUTLINEITEM")} && node.description === "Rendered in this commit")
+              names.push(leaf(node)?.name ?? "")
+            for (let i = 0; i < node.childCount; i++) walk(node.getChildAt(i))
+          }
+          walk(service.getAccessibleFor(panel))
+          return JSON.stringify(names)
+        })()`,
+      )) ?? "[]",
+    ) as string[]
   const pressed = async (name: string) =>
     (await onAccessible(
       button(name),
@@ -439,6 +490,7 @@ export async function openPanelText(
     press,
     pressed,
     key,
+    marked,
     type,
     edit,
     selected,

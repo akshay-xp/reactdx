@@ -1,5 +1,7 @@
 import type {
   ClearHighlightMessage,
+  CommitsMessage,
+  CommittedMessage,
   ExpandedMessage,
   HighlightMessage,
   InspectedMessage,
@@ -21,6 +23,7 @@ import { createHookNamer } from "@reactdx/panel/names"
 import { createSettings } from "@reactdx/panel/settings"
 import { createSourceResolver, type Sources } from "@reactdx/panel/source"
 import { applyTheme, defaultTheme, type Theme } from "@reactdx/panel/themes"
+import { createTimelineStore } from "@reactdx/panel/timeline"
 import { createTreeStore } from "@reactdx/panel/tree"
 import { createEffect, createSignal, on } from "solid-js"
 import { render } from "solid-js/web"
@@ -40,6 +43,10 @@ const tabId = browser.devtools.inspectedWindow.tabId
 const inspector = createInspectorStore(
   (command) => port.postMessage({ ...command, tabId }),
   (text) => editor.copy(text),
+)
+const timeline = createTimelineStore(
+  (command) => port.postMessage({ ...command, tabId }),
+  inspector,
 )
 // Requests go only to the inspected page's own server (docs/panel.md, Sources).
 const editor = {
@@ -104,6 +111,8 @@ function connect() {
         | InspectedMessage
         | ExpandedMessage
         | ReasonedMessage
+        | CommitsMessage
+        | CommittedMessage
         | ValueTextMessage
         | ValueStoredMessage,
     ) => {
@@ -114,11 +123,16 @@ function connect() {
       else if (message.type === "inspected") inspector.receive(message)
       else if (message.type === "expanded") inspector.receiveExpanded(message)
       else if (message.type === "reasoned") inspector.receiveReasoned(message)
+      else if (message.type === "commits")
+        timeline.receiveCommits(message.commits)
+      else if (message.type === "committed") timeline.receiveCommitted(message)
       else if (message.type === "value-text")
         inspector.receiveValueText(message)
       else if (message.type === "value-stored")
         inspector.receiveValueStored(message)
       else {
+        // A new watch: the page sends its commits again after the tree.
+        if (message.ops[0]?.op === "reset") timeline.reset()
         if (tree.apply(message))
           next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)
         // A new watch (reconnect, reload) starts the agent without a selection.
@@ -181,6 +195,7 @@ render(() => {
       renderers={renderers()}
       tree={tree}
       inspector={inspector}
+      timeline={timeline}
       sources={sources}
       settings={settings}
       stale={stale()}
