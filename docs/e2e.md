@@ -32,7 +32,7 @@ Both browsers run **headed** (DevTools, and so the devtools page, doesn't exist 
 
 ## Coexisting with RDT (`e2e/coexist.test.ts`)
 
-Per fixture, with the store RDT installed, each case asserts that RDT's backend attached (`rendererInterfaces.size` = renderers, `getFiberRoots` non-empty for every `react-dom` renderer), that ReactDX's record has the same renderers, and that a ReactDX commit listener fires on a click.
+Per fixture, with the store RDT installed, each case asserts that RDT's backend attached (`rendererInterfaces.size` = renderers, `getFiberRoots` non-empty for every `react-dom` renderer), that ReactDX's record has the same renderers, and that a ReactDX commit listener fires on a click, seeing at least one fiber in `root.memoizedUpdaters` (M6 #65: what "Triggered by" reads; React clears it once the hook returns, so it's read inside the listener).
 
 | Case                       | How the order is forced                                                                                                | Asserts order              |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------- |
