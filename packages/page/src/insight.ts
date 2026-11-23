@@ -53,11 +53,17 @@ export type ContextChange = { read: number; old: unknown; new: unknown }
 
 export type HookChange = { index: number; old: unknown; new: unknown }
 
+// A component whose update scheduled a commit, with the state it changed.
+export type Updater = { id: number; hooks: HookChange[] }
+
 type Commit = {
   seq: number
   time: number
   rootId: number
   records: Map<number, RenderRecord>
+  // Ids of the components among root.memoizedUpdaters (a root render lists
+  // the root itself, which isn't one).
+  updaters: number[]
 }
 
 // Commits kept: an older one is dropped with the values it holds.
@@ -315,6 +321,7 @@ export function createRecorder() {
       walk: (visit: (fiber: Fiber, id: number) => void) => void,
     ) {
       const records = new Map<number, RenderRecord>()
+      const updaterIds: number[] = []
       // The walk visits parents before children: a remount's new ancestors
       // are known by the time it is.
       const ids = new Map<Fiber, number>()
@@ -327,14 +334,28 @@ export function createRecorder() {
         const updated =
           updaters.has(fiber) ||
           (fiber.alternate !== null && updaters.has(fiber.alternate))
+        if (updated) updaterIds.push(id)
         if (updated || (fiber as Flagged).flags & PERFORMED_WORK)
           records.set(id, reasons(at, fiber, updated, ids))
       })
-      commits.push({ seq: at, time: performance.now(), rootId, records })
+      commits.push({
+        seq: at,
+        time: performance.now(),
+        rootId,
+        records,
+        updaters: updaterIds,
+      })
       if (commits.length > MAX_COMMITS) commits.shift()
     },
     clear() {
       commits.length = 0
+    },
+    updatersOf(seq: number): Updater[] {
+      const found = commits.find((commit) => commit.seq === seq)
+      return (found?.updaters ?? []).map((id) => ({
+        id,
+        hooks: found?.records.get(id)?.hooks ?? [],
+      }))
     },
     latest(id: number) {
       for (let i = commits.length - 1; i >= 0; i--) {

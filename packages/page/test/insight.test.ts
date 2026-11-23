@@ -83,7 +83,7 @@ async function mount(node: React.ReactNode) {
     return found
   }
   const kinds = (name: string) => recorder.latest(id(name))?.kinds
-  return { recorder, record, id, kinds, tree }
+  return { recorder, record, id, kinds, tree, root }
 }
 
 let setParent: (n: number) => void = () => {}
@@ -425,4 +425,51 @@ test("a mount in a later commit, or a moved sibling, isn't a remount", async () 
   expect(added).not.toBe(first)
   expect(listed.recorder.latest(added)).not.toHaveProperty("remount")
   expect(listed.kinds("Item")).toEqual(["mount"])
+})
+
+let setCounting: (n: number) => void = () => {}
+function Counting() {
+  const [n, set] = React.useState(3)
+  setCounting = set
+  return n
+}
+let setTwinA: (n: number) => void = () => {}
+let setTwinB: (n: number) => void = () => {}
+function TwinA() {
+  const [n, set] = React.useState(0)
+  setTwinA = set
+  return n
+}
+function TwinB() {
+  const [n, set] = React.useState(0)
+  setTwinB = set
+  return n
+}
+
+test("a commit lists its updaters with the state they changed", async () => {
+  const { record, recorder, id, root } = await mount(
+    h(React.Fragment, null, h(Counting), h(TwinA), h(TwinB)),
+  )
+  await record(() => setCounting(4))
+  const counted = recorder.latest(id("Counting"))?.seq ?? 0
+  expect(recorder.updatersOf(counted)).toEqual([
+    { id: id("Counting"), hooks: [{ index: 0, old: 3, new: 4 }] },
+  ])
+  // One event, two updates: both are updaters of the one commit.
+  await record(() => {
+    setTwinA(1)
+    setTwinB(2)
+  })
+  const twins = recorder.latest(id("TwinA"))?.seq ?? 0
+  expect(recorder.latest(id("TwinB"))?.seq).toBe(twins)
+  expect(recorder.updatersOf(twins)).toEqual([
+    { id: id("TwinA"), hooks: [{ index: 0, old: 0, new: 1 }] },
+    { id: id("TwinB"), hooks: [{ index: 0, old: 0, new: 2 }] },
+  ])
+  // A root render: React lists the root, which isn't a component.
+  await record(() => root.render(h(React.Fragment, null, h(Counting))))
+  const rendered = recorder.latest(id("Counting"))?.seq ?? 0
+  expect(rendered).toBeGreaterThan(twins)
+  expect(recorder.updatersOf(rendered)).toEqual([])
+  expect(recorder.updatersOf(9999)).toEqual([])
 })
