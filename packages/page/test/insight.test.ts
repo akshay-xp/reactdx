@@ -244,3 +244,31 @@ test("records are kept for the last 100 commits, and clear drops them", async ()
   recorder.clear()
   expect(recorder.latest(id("Child"))).toBeUndefined()
 })
+
+let setStyle: (n: number) => void = () => {}
+const Styled = React.memo(function Styled(_: Record<string, unknown>) {
+  return null
+})
+function StyleParent() {
+  const [n, set] = React.useState(1)
+  setStyle = set
+  return h(Styled, { style: { color: "red" }, list: [1, [2]], data: { n } })
+}
+const changeOf = (
+  recorder: ReturnType<typeof createRecorder>,
+  id: number,
+  key: string,
+) => recorder.latest(id)?.props?.find((change) => change.key === key)
+
+test("a prop that's a new object or array equal to the old is a new reference", async () => {
+  const { record, kinds, recorder, id } = await mount(h(StyleParent))
+  await record(() => setStyle(2))
+  expect(kinds("Styled")).toEqual(["props"])
+  expect(changeOf(recorder, id("Styled"), "style")?.reference).toBe(
+    "same-value",
+  )
+  expect(changeOf(recorder, id("Styled"), "list")?.reference).toBe("same-value")
+  expect(changeOf(recorder, id("Styled"), "data")).not.toHaveProperty(
+    "reference",
+  )
+})

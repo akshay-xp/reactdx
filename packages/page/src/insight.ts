@@ -14,7 +14,13 @@ export type RenderKind =
   | "force"
 
 // A key whose value changed, with both values (references, not copies).
-export type Change = { key: string; old: unknown; new: unknown }
+// `reference`: a prop that's only a new reference (an equal object or array).
+export type Change = {
+  key: string
+  old: unknown
+  new: unknown
+  reference?: "same-value"
+}
 
 export type RenderRecord = {
   seq: number
@@ -79,14 +85,51 @@ export function contextsOf(fiber: Fiber) {
   })
 }
 
-// The keys whose values differ (Object.is), over both objects' keys.
-function diffKeys(prev: unknown, next: unknown): Change[] {
+const isPlain = (value: unknown): value is object => {
+  if (value === null || typeof value !== "object") return false
+  if (Array.isArray(value)) return true
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
+// Equal plain objects and arrays, key by key through descriptors (no getter
+// runs; an accessor counts as different), within `budget` values: past it,
+// not the same. Anything else is the same only if it's the same reference.
+function sameValue(a: unknown, b: unknown, budget = { left: 1000 }): boolean {
+  if (--budget.left < 0) return false
+  if (Object.is(a, b)) return true
+  if (!isPlain(a) || !isPlain(b) || Array.isArray(a) !== Array.isArray(b))
+    return false
+  const keys = Object.keys(a)
+  if (keys.length !== Object.keys(b).length) return false
+  return keys.every((key) => {
+    const x = Object.getOwnPropertyDescriptor(a, key)
+    const y = Object.getOwnPropertyDescriptor(b, key)
+    return (
+      x !== undefined &&
+      y !== undefined &&
+      "value" in x &&
+      "value" in y &&
+      sameValue(x.value, y.value, budget)
+    )
+  })
+}
+
+// The keys whose values differ (Object.is), over both objects' keys; with
+// `mark`, a new reference to an equal value says so.
+function diffKeys(prev: unknown, next: unknown, mark = false): Change[] {
   const a = (prev ?? {}) as Record<string, unknown>
   const b = (next ?? {}) as Record<string, unknown>
   const changes: Change[] = []
   for (const key of new Set([...Object.keys(a), ...Object.keys(b)]))
     if (!Object.is(a[key], b[key]))
-      changes.push({ key, old: a[key], new: b[key] })
+      changes.push({
+        key,
+        old: a[key],
+        new: b[key],
+        ...(mark &&
+          sameValue(a[key], b[key]) && { reference: "same-value" as const }),
+      })
   return changes
 }
 
@@ -142,7 +185,11 @@ export function createRecorder() {
       if (!record.kinds.includes(kind)) record.kinds.push(kind)
       record[field] = changes
     }
-    note("props", "props", diffKeys(prev.memoizedProps, fiber.memoizedProps))
+    note(
+      "props",
+      "props",
+      diffKeys(prev.memoizedProps, fiber.memoizedProps, true),
+    )
     if (fiber.tag === 1)
       note("state", "state", diffKeys(prev.memoizedState, fiber.memoizedState))
     else
