@@ -664,95 +664,157 @@ function Reasons(props: {
     return []
   }
   return (
-    <Show
-      when={props.inspector.data()?.render}
-      fallback={
-        <p class="pl-6 text-muted">
-          No renders recorded since DevTools opened.
-        </p>
-      }
-    >
-      {(render) => (
-        <>
-          <For each={render().kinds}>
-            {(kind) => (
-              <>
-                <ReasonRow name={kind}>
-                  {kind === "mount" && render().remount ? (
-                    <Remounted
-                      remount={render().remount as Remount}
-                      tree={props.tree}
-                    />
-                  ) : (
-                    KIND_TEXT[kind]
-                  )}
-                </ReasonRow>
-                <For each={changesOf(render(), kind)}>
-                  {(change) => (
-                    <ChangeRow
-                      inspector={props.inspector}
-                      name={change.name}
-                      old={change.old}
-                      new={change.new}
-                      path={{ root: change.root, keys: [change.name] }}
-                      badge={change.badge}
-                      depth={1}
-                      onMenu={props.onMenu}
-                    />
-                  )}
-                </For>
-              </>
-            )}
-          </For>
-          <Show when={render().effects?.length}>
-            <ReasonRow name="effects">Effects ran</ReasonRow>
-            <For each={render().effects}>
-              {(run) => {
-                const name = hookName(run.hook)
-                return (
-                  <>
-                    <div
-                      role="treeitem"
-                      aria-level={3}
-                      tabIndex={-1}
-                      data-testid="effect"
-                      data-path={`effect:${run.hook.join()}`}
-                      class={ROW}
-                      style={{ "padding-left": "36px" }}
-                    >
-                      {run.changed
-                        ? `${name}: deps [${run.changed.map((c) => c.dep).join(", ")}] changed`
-                        : `${name}: no deps`}
-                    </div>
-                    <For each={run.changed}>
-                      {(change) => (
-                        <ChangeRow
-                          inspector={props.inspector}
-                          name={`[${change.dep}]`}
-                          old={change.old}
-                          new={change.new}
-                          path={{
-                            root: { render: "effects" },
-                            keys: [name, change.dep],
-                          }}
-                          depth={2}
-                          onMenu={props.onMenu}
-                        />
-                      )}
-                    </For>
-                  </>
-                )
-              }}
+    <>
+      <Show when={props.inspector.history().length}>
+        <History inspector={props.inspector} />
+      </Show>
+      <Show
+        when={props.inspector.render()}
+        fallback={
+          <Switch>
+            <Match when={props.inspector.render() === null}>
+              <p class="pl-6 text-muted">This render is no longer recorded.</p>
+            </Match>
+            {/* Stepped back, the render is loading: nothing yet. */}
+            <Match when={!props.inspector.history().length}>
+              <p class="pl-6 text-muted">
+                No renders recorded since DevTools opened.
+              </p>
+            </Match>
+          </Switch>
+        }
+      >
+        {(render) => (
+          <>
+            <For each={render().kinds}>
+              {(kind) => (
+                <>
+                  <ReasonRow name={kind}>
+                    {kind === "mount" && render().remount ? (
+                      <Remounted
+                        remount={render().remount as Remount}
+                        tree={props.tree}
+                      />
+                    ) : (
+                      KIND_TEXT[kind]
+                    )}
+                  </ReasonRow>
+                  <For each={changesOf(render(), kind)}>
+                    {(change) => (
+                      <ChangeRow
+                        inspector={props.inspector}
+                        name={change.name}
+                        old={change.old}
+                        new={change.new}
+                        path={{ root: change.root, keys: [change.name] }}
+                        badge={change.badge}
+                        depth={1}
+                        onMenu={props.onMenu}
+                      />
+                    )}
+                  </For>
+                </>
+              )}
             </For>
-          </Show>
-          <Show when={render().updaters}>
-            {(updaters) => (
-              <Triggered updaters={updaters()} tree={props.tree} />
-            )}
-          </Show>
-        </>
-      )}
-    </Show>
+            <Show when={render().effects?.length}>
+              <ReasonRow name="effects">Effects ran</ReasonRow>
+              <For each={render().effects}>
+                {(run) => {
+                  const name = hookName(run.hook)
+                  return (
+                    <>
+                      <div
+                        role="treeitem"
+                        aria-level={3}
+                        tabIndex={-1}
+                        data-testid="effect"
+                        data-path={`effect:${run.hook.join()}`}
+                        class={ROW}
+                        style={{ "padding-left": "36px" }}
+                      >
+                        {run.changed
+                          ? `${name}: deps [${run.changed.map((c) => c.dep).join(", ")}] changed`
+                          : `${name}: no deps`}
+                      </div>
+                      <For each={run.changed}>
+                        {(change) => (
+                          <ChangeRow
+                            inspector={props.inspector}
+                            name={`[${change.dep}]`}
+                            old={change.old}
+                            new={change.new}
+                            path={{
+                              root: { render: "effects" },
+                              keys: [name, change.dep],
+                            }}
+                            depth={2}
+                            onMenu={props.onMenu}
+                          />
+                        )}
+                      </For>
+                    </>
+                  )
+                }}
+              </For>
+            </Show>
+            <Show when={render().updaters}>
+              {(updaters) => (
+                <Triggered updaters={updaters()} tree={props.tree} />
+              )}
+            </Show>
+          </>
+        )}
+      </Show>
+    </>
+  )
+}
+
+// "Render 3 of 12": steps through the node's recorded renders, by its buttons
+// or Left/Right on the row (handled before the values tree, where they'd
+// move between rows).
+function History(props: { inspector: InspectorStore }) {
+  const at = () =>
+    props.inspector.history().indexOf(props.inspector.shown() ?? 0)
+  const go = (by: number) => {
+    const seq = props.inspector.history()[at() + by]
+    if (seq !== undefined) props.inspector.step(seq)
+  }
+  const STEP =
+    "px-1 text-muted hover:text-fg disabled:opacity-40 disabled:hover:text-muted"
+  return (
+    <div
+      role="treeitem"
+      aria-level={2}
+      tabIndex={-1}
+      data-testid="history"
+      data-path="reason:history"
+      class={ROW}
+      style={{ "padding-left": "24px" }}
+      on:keydown={(event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+        event.preventDefault()
+        event.stopPropagation()
+        go(event.key === "ArrowLeft" ? -1 : 1)
+      }}
+    >
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Previous render"
+        disabled={at() <= 0}
+        class={`${STEP} before:content-['‹']`}
+        onClick={() => go(-1)}
+      />
+      Render {at() + 1} of {props.inspector.history().length}
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Next render"
+        disabled={at() >= props.inspector.history().length - 1}
+        class={`${STEP} before:content-['›']`}
+        onClick={() => go(1)}
+      />
+    </div>
   )
 }
 

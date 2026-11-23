@@ -1,6 +1,7 @@
 import {
   expanded,
   inspected,
+  reasoned,
   type TreeKind,
   treeBatch,
   type Value,
@@ -1892,4 +1893,48 @@ test("what triggered a render: each updater with its changed hooks", () => {
   expect(trigger()).toBe("Triggered by: unknown")
   show(undefined)
   expect(trigger()).toBeNull()
+})
+
+test("a history stepper steps through the node's recorded renders", () => {
+  const { container, inspector, select, sent, getByRole } = setup()
+  select()
+  const latest = {
+    seq: 9,
+    kinds: ["state" as const],
+    hooks: [{ hook: [0], old: 2, new: 3 }],
+  }
+  const data = {
+    props: object({}),
+    hooks: [{ name: "State", value: 3 }],
+    render: latest,
+  }
+  inspector.receive(inspected(3, data))
+  const stepper = () => container.querySelector("[data-testid=history]")
+  expect(stepper()).toBeNull()
+  inspector.receive(inspected(3, { ...data, history: [2, 5, 7, 9] }))
+  expect(stepper()?.textContent).toBe("Render 4 of 4")
+  expect(
+    (getByRole("button", { name: "Next render" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true)
+  fireEvent.click(getByRole("button", { name: "Previous render" }))
+  expect(stepper()?.textContent).toBe("Render 3 of 4")
+  expect(sent.at(-1)).toEqual({ type: "reason", id: 3, seq: 7 })
+  inspector.receiveReasoned(
+    reasoned(3, 7, {
+      seq: 7,
+      kinds: ["state"],
+      hooks: [{ hook: [0], old: 1, new: 2 }],
+    }),
+  )
+  expect(changes(container)).toEqual(["State #1: 1 → 2"])
+  fireEvent.keyDown(stepper() as Element, { key: "ArrowLeft" })
+  expect(stepper()?.textContent).toBe("Render 2 of 4")
+  inspector.receiveReasoned(reasoned(3, 5, null))
+  expect(container.textContent).toContain("This render is no longer recorded.")
+  fireEvent.keyDown(stepper() as Element, { key: "ArrowRight" })
+  expect(stepper()?.textContent).toBe("Render 3 of 4")
+  fireEvent.keyDown(stepper() as Element, { key: "ArrowRight" })
+  expect(stepper()?.textContent).toBe("Render 4 of 4")
+  expect(changes(container)).toEqual(["State #1: 2 → 3"])
 })
