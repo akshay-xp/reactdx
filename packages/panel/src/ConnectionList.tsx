@@ -1,5 +1,14 @@
 import type { RendererView } from "@reactdx/messages"
-import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
+import {
+  createSignal,
+  For,
+  type JSX,
+  Match,
+  onCleanup,
+  Show,
+  Switch,
+} from "solid-js"
+import { Commits } from "./Commits"
 import { Empty, EmptyAction } from "./Empty"
 import { Inspector, type Settings } from "./Inspector"
 import type { InspectorStore } from "./inspection"
@@ -27,6 +36,10 @@ export function ConnectionList(props: {
   onReload?: () => void
 }) {
   const development = () => props.renderers.some((r) => r.bundleType === 1)
+  // Commit times are shown against this, a second at a time.
+  const [now, setNow] = createSignal(Date.now())
+  const clock = setInterval(() => setNow(Date.now()), 1000)
+  onCleanup(() => clearInterval(clock))
   // Side by side; stacked when the panel is narrower than sm (640 px).
   const split = () => (
     <div data-testid="split" class="flex min-h-0 flex-1 flex-col sm:flex-row">
@@ -110,12 +123,25 @@ export function ConnectionList(props: {
       </Match>
       <Match when={development()}>
         <Show when={props.timeline} fallback={split()}>
-          <Tabs
-            tabs={[
-              { name: "Components", content: split() },
-              { name: "Commits", content: <div data-testid="commits" /> },
-            ]}
-          />
+          {(timeline) => (
+            <Tabs
+              tabs={[
+                { name: "Components", content: split() },
+                {
+                  name: "Commits",
+                  content: (
+                    <Commits
+                      timeline={timeline()}
+                      tree={props.tree}
+                      inspector={props.inspector}
+                      now={now}
+                      onReveal={(id) => props.tree.reveal(id)}
+                    />
+                  ),
+                },
+              ]}
+            />
+          )}
         </Show>
       </Match>
     </Switch>
