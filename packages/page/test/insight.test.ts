@@ -314,13 +314,26 @@ function Effects() {
   setB = set
   React.useEffect(noop, [a, b])
   React.useEffect(noop, [a])
+  React.useEffect(noop)
   return null
 }
 
 test("a re-render records the effects it ran, with the deps that changed", async () => {
   const { record, recorder, id } = await mount(h(Effects))
   await record(() => setB(2))
-  expect(recorder.latest(id("Effects"))?.effects).toEqual([
-    { index: 2, changed: [{ dep: 1, old: 1, new: 2 }] },
-  ])
+  const effects = recorder.latest(id("Effects"))?.effects
+  expect(effects).toContainEqual({
+    index: 2,
+    changed: [{ dep: 1, old: 1, new: 2 }],
+  })
+  // [a] didn't change: it doesn't run.
+  expect(effects?.map((run) => run.index)).not.toContain(3)
+})
+
+test("an effect with no deps array runs on every render, with nothing changed", async () => {
+  const { record, recorder, id } = await mount(h(Effects))
+  await record(() => setB(2))
+  const effects = recorder.latest(id("Effects"))?.effects
+  expect(effects).toContainEqual({ index: 4 })
+  expect(effects?.find((run) => run.index === 4)).not.toHaveProperty("changed")
 })

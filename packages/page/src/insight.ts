@@ -205,8 +205,13 @@ function diffEffects(prev: Fiber, next: Fiber): EffectRun[] {
     if (!ring.has(b.memoizedState)) continue
     const effect = b.memoizedState as Effect
     if (!(effect.tag & HAS_EFFECT)) continue
+    // No deps array: it runs every render, nothing to blame.
+    if (effect.deps === null) {
+      runs.push({ index })
+      continue
+    }
     const before = (a.memoizedState as Effect).deps ?? []
-    const changed = (effect.deps ?? []).flatMap((value, dep) =>
+    const changed = effect.deps.flatMap((value, dep) =>
       Object.is(before[dep], value)
         ? []
         : [{ dep, old: before[dep], new: value }],
