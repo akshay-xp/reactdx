@@ -1,5 +1,6 @@
 import {
   type CommitSummary,
+  committed,
   inspected,
   treeBatch,
   type Value,
@@ -127,4 +128,52 @@ test("Only <selected> limits the list to the selected node's renders", () => {
   fireEvent.click(only())
   expect(only().getAttribute("aria-pressed")).toBe("true")
   expect(rows().map((row) => row?.split(" ")[0])).toEqual(["#3", "#1"])
+})
+
+test("the detail says what triggered the picked commit and what rendered why", () => {
+  const { timeline, revealed, container } = setup()
+  const detail = () =>
+    container.querySelector("[data-testid=commit-detail]")?.textContent
+  timeline.receiveCommits([summary(1, 0, 3, [2, 3]), summary(2, 0, 1)])
+  expect(detail()).toBe("Pick a commit to see what rendered and why.")
+  timeline.pick(1)
+  expect(detail()).toBe("")
+  timeline.receiveCommitted(
+    committed(
+      1,
+      [
+        { id: 2, kinds: ["state"] },
+        { id: 3, kinds: ["props", "context"] },
+        { id: 7, kinds: ["parent"] },
+      ],
+      [
+        { id: 2, hooks: [{ name: "State #1", old: 3, new: 4 }] },
+        { id: 3, hooks: [] },
+      ],
+    ),
+  )
+  const lines = (testid: string) =>
+    [...container.querySelectorAll(`[data-testid=${testid}]`)].map(
+      (line) => line.textContent,
+    )
+  expect(lines("commit-trigger")).toEqual([
+    "Counter (State #1: 3 → 4)",
+    "Shown",
+  ])
+  expect(lines("commit-render")).toEqual([
+    "Counter State changed",
+    "Shown Props changed, Context changed",
+    "Unmounted Parent rendered",
+  ])
+  // A trigger's name, then a rendered one.
+  const link = (name: string, at: number) =>
+    screen.getAllByRole("button", { name })[at] as HTMLElement
+  fireEvent.click(link("Counter", 0))
+  fireEvent.click(link("Shown", 1))
+  expect(revealed).toEqual([2, 3])
+  timeline.pick(2)
+  timeline.receiveCommitted(committed(2, [{ id: 1, kinds: ["mount"] }], []))
+  expect(lines("commit-trigger")).toEqual(["Unknown (a root render)"])
+  timeline.receiveCommitted(committed(2, null))
+  expect(detail()).toBe("This commit is no longer recorded.")
 })

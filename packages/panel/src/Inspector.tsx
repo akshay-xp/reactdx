@@ -91,7 +91,7 @@ export type Settings = {
 const STORED_MS = 4000
 
 // What each reason kind reads as, above its changes if it has any.
-const KIND_TEXT: Record<RenderKind, string> = {
+export const KIND_TEXT: Record<RenderKind, string> = {
   mount: "Mounted",
   props: "Props changed",
   state: "State changed",
@@ -851,8 +851,13 @@ function Remounted(props: { remount: Remount; tree: TreeStore }) {
   )
 }
 
-// A node's name that highlights it on hover and selects it on click.
-function NodeLink(props: { id: number; tree: TreeStore }) {
+// A node's name that highlights it on hover and selects it on click (or
+// `onReveal`, from another tab).
+export function NodeLink(props: {
+  id: number
+  tree: TreeStore
+  onReveal?: (id: number) => void
+}) {
   return (
     <button
       type="button"
@@ -862,7 +867,8 @@ function NodeLink(props: { id: number; tree: TreeStore }) {
       onPointerLeave={() => props.tree.hover(undefined)}
       onClick={() => {
         props.tree.hover(undefined)
-        props.tree.reveal(props.id)
+        if (props.onReveal) props.onReveal(props.id)
+        else props.tree.reveal(props.id)
       }}
     >
       {props.tree.info(props.id)?.name}
