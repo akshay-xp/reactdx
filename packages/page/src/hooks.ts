@@ -66,6 +66,21 @@ export function hookPath(
   }
 }
 
+// The hook at a hook list index as the panel's Hooks section labels it
+// (`State #3`): rows numbered depth-first, custom hooks' group rows included.
+export function hookLabel(hooks: RawHook[], index: number) {
+  let n = 0
+  const find = (list: RawHook[] = []): string | undefined => {
+    for (const hook of list) {
+      n++
+      if (hook.index === index) return `${hook.name} #${n}`
+      const inner = find(hook.hooks)
+      if (inner) return inner
+    }
+  }
+  return find(hooks)
+}
+
 type Call = {
   name: string
   value?: unknown

@@ -12,6 +12,7 @@ import { installHook } from "../src/hook.ts"
 import {
   type DispatcherRef,
   type HooksFiber,
+  hookLabel,
   hookPath,
   inspectHooks,
 } from "../src/hooks.ts"
@@ -530,4 +531,14 @@ test("hookPath gives the call indexes of the hook at a hook list index", async (
   // The transition's second entry starts no hook.
   expect(hookPath(hooks, 4)).toBeUndefined()
   expect(hookPath(hooks, 99)).toBeUndefined()
+})
+
+test("hookLabel names the hook at a hook list index as the Hooks section numbers it", async () => {
+  await mount(h(Indexed))
+  const { hooks } = rawHooksOf("Indexed")
+  expect(hookLabel(hooks, 1)).toBe("State #2")
+  // Rows count depth-first, the custom hook's group row (#6) included.
+  expect(hookLabel(hooks, 6)).toBe("State #7")
+  expect(hookLabel(hooks, 4)).toBeUndefined()
+  expect(hookLabel(hooks, 99)).toBeUndefined()
 })
