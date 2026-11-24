@@ -21,9 +21,14 @@ export type Row = {
   wasted: number
   // Rendered in the newest counts (the page's last flush), for RECENT_MS.
   recent: boolean
+  // A run of same-named siblings shown as one row (its id is minus the first
+  // member's): how many, and their wasted renders.
+  group?: { size: number; wasted: number }
 }
 
 const RECENT_MS = 1000
+// Consecutive siblings with the same name and kind that make a group row.
+const GROUP_MIN = 5
 
 type Node = {
   rootId: number
@@ -126,10 +131,12 @@ export function createTreeStore() {
     )
   }
 
-  // Hidden host elements: their children take their place and depth.
+  // Hidden host elements: their children take their place and depth. Runs of
+  // GROUP_MIN or more same-named siblings fold into a group row.
   const rows = (rootId: number): Row[] => {
     version()
     const rows: Row[] = []
+    const countOf = (id: number) => counts.get(id) ?? { renders: 0, wasted: 0 }
     const visit = (id: number, depth: number) => {
       const node = nodes.get(id) as Node
       const { name, kind, key, children } = node
@@ -144,13 +151,45 @@ export function createTreeStore() {
         expandable: kids.length > 0,
         expanded,
         match: isMatch(node),
-        renders: counts.get(id)?.renders ?? 0,
-        wasted: counts.get(id)?.wasted ?? 0,
+        renders: countOf(id).renders,
+        wasted: countOf(id).wasted,
         recent: recent().has(id),
       })
-      if (expanded) for (const kid of kids) visit(kid, depth + 1)
+      if (expanded) visitAll(kids, depth + 1)
     }
-    for (const id of shown(tops.get(rootId) ?? [])) visit(id, 0)
+    const group = (members: number[], depth: number) => {
+      const { name, kind } = nodes.get(members[0] as number) as Node
+      const wasted = members.reduce((sum, id) => sum + countOf(id).wasted, 0)
+      rows.push({
+        id: -(members[0] as number),
+        name,
+        depth,
+        kind,
+        key: null,
+        expandable: true,
+        expanded: false,
+        match: false,
+        renders: 0,
+        wasted,
+        recent: members.some((id) => recent().has(id)),
+        group: { size: members.length, wasted },
+      })
+    }
+    const visitAll = (ids: number[], depth: number) => {
+      for (let at = 0; at < ids.length; ) {
+        const first = nodes.get(ids[at] as number) as Node
+        let end = at + 1
+        while (end < ids.length) {
+          const next = nodes.get(ids[end] as number) as Node
+          if (next.name !== first.name || next.kind !== first.kind) break
+          end++
+        }
+        if (end - at >= GROUP_MIN) group(ids.slice(at, end), depth)
+        else for (const id of ids.slice(at, end)) visit(id, depth)
+        at = end
+      }
+    }
+    visitAll(shown(tops.get(rootId) ?? []), 0)
     return rows
   }
 

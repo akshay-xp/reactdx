@@ -380,3 +380,36 @@ test("the rows in the newest counts are recent for a second", () => {
     vi.useRealTimers()
   }
 })
+
+// App > 5 keyed Rows (ids 2 to 6), then 4 Items (ids 7 to 10).
+const listed = treeBatch(1, [
+  { op: "reset" },
+  add(1, 0, "App"),
+  ...[0, 1, 2, 3, 4].map((i) => ({ ...add(2 + i, 1, "Row", i), key: `r${i}` })),
+  ...[0, 1, 2, 3].map((i) => add(7 + i, 1, "Item", 5 + i)),
+])
+
+test("five or more same-named siblings in a row become one group row", () => {
+  const tree = createTreeStore()
+  tree.apply(listed)
+  tree.receiveCounts(
+    countsMessage([2, 3, 4, 5, 6].map((id) => ({ id, renders: 3, wasted: 2 }))),
+  )
+  const rows = tree.rows(1)
+  expect(names(rows)).toEqual([
+    "0 App",
+    "1 Row",
+    "1 Item",
+    "1 Item",
+    "1 Item",
+    "1 Item",
+  ])
+  expect(rows[1]).toMatchObject({
+    id: -2,
+    key: null,
+    expandable: true,
+    expanded: false,
+    group: { size: 5, wasted: 10 },
+  })
+  expect(rows[2]?.group).toBeUndefined()
+})
