@@ -7,7 +7,7 @@ export default defineConfig({
   // The polyfill fetches preload links; both browsers support modulepreload natively, and shipped code must make no network calls.
   vite: () => ({
     plugins: [tailwindcss()],
-    build: { modulePreload: { polyfill: false } },
+    build: { modulePreload: { polyfill: false }, minify: false },
   }),
   manifest: ({ browser }) => ({
     name: "ReactDX",
