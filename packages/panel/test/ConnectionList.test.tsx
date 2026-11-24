@@ -368,3 +368,20 @@ test("links move between a commit and its components", () => {
   expect(timeline.picked()).toBeUndefined()
   expect(inspector.pinned()).toBeUndefined()
 })
+
+test("a legend under the trees says what the numbers count", () => {
+  const { container } = render(() => (
+    <ConnectionList
+      tree={createTreeStore()}
+      inspector={inspection()}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "18.3.1", 1, [{ id: 1, commits: 3 }])]}
+    />
+  ))
+  const legend = screen.getByText("Numbers: renders since DevTools opened")
+  const trees = container.querySelector("[data-testid=trees]") as Element
+  expect(
+    trees.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+})

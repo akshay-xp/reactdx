@@ -85,6 +85,9 @@ export function ConnectionList(props: {
             </For>
           </ul>
         </div>
+        <p class="border-border border-t px-2 leading-6 text-muted">
+          Numbers: renders since DevTools opened
+        </p>
       </div>
       <aside
         data-testid="inspector"
