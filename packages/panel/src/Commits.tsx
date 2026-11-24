@@ -1,4 +1,4 @@
-import type { CommitSummary } from "@reactdx/messages"
+import type { CommitRender, CommitSummary } from "@reactdx/messages"
 import { For, type JSX, Match, Show, Switch } from "solid-js"
 import { ago } from "./ago"
 import { KIND_TEXT, NodeLink } from "./Inspector"
@@ -223,6 +223,45 @@ export function Commits(props: {
   )
 }
 
+// A line of "What rendered": one render, or `count` same-named siblings
+// with the same reasons, at its depth in the cascade.
+type Cascaded = { render: CommitRender; count: number; depth: number }
+
+// The renders as the tree they cascaded down: each under the nearest
+// ancestor that also rendered, in the page's order; runs of same-named
+// siblings with the same reasons fold into one line.
+function cascade(renders: CommitRender[], tree: TreeStore) {
+  const rendered = new Set(renders.map((render) => render.id))
+  const children = new Map<number | undefined, CommitRender[]>()
+  for (const render of renders) {
+    let parent = tree.parentOf(render.id)
+    while (parent !== undefined && !rendered.has(parent))
+      parent = tree.parentOf(parent)
+    children.set(parent, [...(children.get(parent) ?? []), render])
+  }
+  const name = (id: number) => tree.info(id)?.name
+  const out: Cascaded[] = []
+  const visit = (list: CommitRender[], depth: number) => {
+    for (let at = 0; at < list.length; ) {
+      const first = list[at] as CommitRender
+      let end = at + 1
+      while (
+        end < list.length &&
+        name(first.id) !== undefined &&
+        name((list[end] as CommitRender).id) === name(first.id) &&
+        (list[end] as CommitRender).kinds.join() === first.kinds.join()
+      )
+        end++
+      out.push({ render: first, count: end - at, depth })
+      // A folded run's own renders aren't followed: one line stands for all.
+      if (end - at === 1) visit(children.get(first.id) ?? [], depth + 1)
+      at = end
+    }
+  }
+  visit(children.get(undefined) ?? [], 0)
+  return out
+}
+
 // A filter button: pressed while it applies.
 function Toggle(props: {
   pressed: boolean
@@ -283,13 +322,18 @@ function Detail(props: {
         </For>
       </div>
       <div>
-        <h3 class={HEADING}>Rendered</h3>
-        <For each={props.detail.renders}>
-          {(render) => (
-            <p data-testid="commit-render">
-              <Name id={render.id} />{" "}
+        <h3 class={HEADING}>What rendered</h3>
+        <For each={cascade(props.detail.renders, props.tree)}>
+          {(line) => (
+            <p
+              data-testid="commit-render"
+              data-depth={line.depth}
+              style={{ "padding-left": `${line.depth * 12}px` }}
+            >
+              <Name id={line.render.id} />
+              {line.count > 1 && ` ×${line.count}`}{" "}
               <span class="text-muted">
-                {render.kinds.map((kind) => KIND_TEXT[kind]).join(", ")}
+                {line.render.kinds.map((kind) => KIND_TEXT[kind]).join(", ")}
               </span>
             </p>
           )}

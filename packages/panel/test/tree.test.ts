@@ -456,3 +456,11 @@ test("a component's counts are read by id", () => {
   expect(tree.countOf(3)).toEqual({ id: 3, renders: 4, wasted: 1 })
   expect(tree.countOf(5)).toBeUndefined()
 })
+
+test("a node's parent is the node above it, none at a root", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  expect(tree.parentOf(3)).toBe(2)
+  expect(tree.parentOf(1)).toBeUndefined()
+  expect(tree.parentOf(99)).toBeUndefined()
+})

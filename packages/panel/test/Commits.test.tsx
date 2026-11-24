@@ -268,3 +268,42 @@ test("the toolbar filters to updates with wasted renders, and clears", () => {
   expect(sent.at(-1)).toEqual({ type: "clear-updates" })
   expect(container.textContent).toContain("No updates since DevTools opened.")
 })
+
+test("what rendered nests under what rendered above it; repeated siblings fold", () => {
+  const { tree, timeline, container } = setup()
+  tree.apply(
+    treeBatch(2, [
+      { ...add(10, "List"), parentId: 1 },
+      ...[11, 12, 13, 14].map((id, index) => ({
+        ...add(id, "Row"),
+        parentId: 10,
+        index,
+      })),
+    ]),
+  )
+  timeline.receiveCommits(commitsMessage([summary(1, 0, 6, [1])], 1, false))
+  timeline.pick(1)
+  timeline.receiveCommitted(
+    committed(
+      1,
+      [
+        { id: 1, kinds: ["state"] },
+        { id: 10, kinds: ["props"] },
+        { id: 11, kinds: ["props"] },
+        { id: 12, kinds: ["props"] },
+        { id: 13, kinds: ["props"] },
+        { id: 14, kinds: ["state"] },
+      ],
+      [{ id: 1, hooks: [] }],
+    ),
+  )
+  const rendered = [
+    ...container.querySelectorAll<HTMLElement>("[data-testid=commit-render]"),
+  ].map((line) => `${line.dataset.depth} ${line.textContent}`)
+  expect(rendered).toEqual([
+    "0 App State changed",
+    "1 List Props changed",
+    "2 Row ×3 Props changed",
+    "2 Row State changed",
+  ])
+})
