@@ -702,7 +702,7 @@ test("reason loads an older render; one out of the buffer loads as null", async 
   })
   send({ source: "reactdx-relay", type: "reason", id: idOf("Other"), seq })
   expect(reasonedReplies()).toHaveLength(1)
-  for (let n = 1; n <= 101; n++) await React.act(() => setEffecting(100 + n))
+  for (let n = 1; n <= 1001; n++) await React.act(() => setEffecting(100 + n))
   send({ source: "reactdx-relay", type: "reason", id: reasoned, seq })
   expect(reasonedReplies().at(-1)).toMatchObject({ seq, render: null })
 })

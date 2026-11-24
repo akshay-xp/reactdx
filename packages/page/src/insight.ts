@@ -76,8 +76,11 @@ type Commit = {
   updaters: number[]
 }
 
-// Commits kept: an older one is dropped with the values it holds.
-const MAX_COMMITS = 100
+// The buffer's bounds: past either, whole commits drop oldest first with the
+// values they hold. Records bound memory (a commit of 10,000 cells is 10,000);
+// commits bound the panel's list when each renders little.
+const MAX_RECORDS = 20_000
+const MAX_COMMITS = 1_000
 
 // Function, class, forwardRef and memo components: the fibers that render.
 const COMPONENTS = new Set([0, 1, 11, 14, 15])
@@ -279,9 +282,14 @@ function remountOf(fiber: Fiber, ids: Map<Fiber, number>): Remount | undefined {
     : { cause: "ancestor", ancestor }
 }
 
-export function createRecorder() {
+export function createRecorder({
+  maxRecords = MAX_RECORDS,
+  maxCommits = MAX_COMMITS,
+} = {}) {
   let seq = 1
   const commits: Commit[] = []
+  let held = 0
+  let dropped = false
   const commitAt = (seq: number) => commits.find((commit) => commit.seq === seq)
 
   const reasons = (
@@ -358,11 +366,25 @@ export function createRecorder() {
         records,
         updaters: updaterIds,
       })
-      if (commits.length > MAX_COMMITS) commits.shift()
+      held += records.size
+      // The newest commit stays whole, however many it rendered.
+      while (
+        commits.length > 1 &&
+        (held > maxRecords || commits.length > maxCommits)
+      ) {
+        held -= commits.shift()?.records.size ?? 0
+        dropped = true
+      }
     },
     clear() {
       commits.length = 0
+      held = 0
+      dropped = false
     },
+    // Whether a commit has dropped since the last clear.
+    dropped: () => dropped,
+    // The seq of the oldest buffered commit (the next one's when empty).
+    oldest: () => commits[0]?.seq ?? seq,
     updatersOf(seq: number): Updater[] {
       const found = commitAt(seq)
       return (found?.updaters ?? []).map((id) => ({

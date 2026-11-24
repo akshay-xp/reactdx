@@ -41,7 +41,10 @@ function fiberRootOf(container: Element) {
 }
 
 // Renders `node`, walks it with a fresh tree, and records commits on request.
-async function mount(node: React.ReactNode) {
+async function mount(
+  node: React.ReactNode,
+  limits?: Parameters<typeof createRecorder>[0],
+) {
   const container = document.createElement("div")
   const root = createRoot(container)
   roots.push(root)
@@ -50,7 +53,7 @@ async function mount(node: React.ReactNode) {
   const tree = createTree()
   const ops: TreeOp[] = []
   tree.full(fiberRoot, 1, ops)
-  const recorder = createRecorder()
+  const recorder = createRecorder(limits)
   const ids = new Map<string, number>()
   const learn = (list: TreeOp[]) => {
     for (const op of list) if (op.op === "add") ids.set(op.name, op.id)
@@ -232,18 +235,49 @@ test("a render by its own update with nothing changed is forced", async () => {
   expect(kinds("Child")).toEqual(["force"])
 })
 
-test("records are kept for the last 100 commits, and clear drops them", async () => {
-  const { record, recorder, id } = await mount(h(Parent))
+test("past the commit cap the oldest commit drops, and clear drops them all", async () => {
+  const { record, recorder, id } = await mount(h(Parent), { maxCommits: 5 })
   await record(() => setParent(1))
-  const late = id("Late")
   // Odd counts keep Late mounted without rendering it again.
-  for (let i = 1; i < 100; i++) await record(() => setParent(1 + 2 * i))
-  expect(recorder.latest(late)?.seq).toBe(1)
-  await record(() => setParent(201))
-  expect(recorder.latest(late)).toBeUndefined()
+  for (let i = 1; i < 5; i++) await record(() => setParent(1 + 2 * i))
+  expect(recorder.rendered(1)).toBeDefined()
+  expect(recorder.dropped()).toBe(false)
+  await record(() => setParent(11))
+  expect(recorder.rendered(1)).toBeUndefined()
+  expect(recorder.summaries(0)).toHaveLength(5)
   expect(recorder.latest(id("Child"))).toBeDefined()
   recorder.clear()
   expect(recorder.latest(id("Child"))).toBeUndefined()
+  expect(recorder.dropped()).toBe(false)
+})
+
+function Cell() {
+  return null
+}
+let setCells: (n: number) => void = () => {}
+function Cells() {
+  const [n, set] = React.useState(0)
+  setCells = set
+  return [0, 1, 2].map((key) => h(Cell, { key, n }))
+}
+
+test("past the record budget whole commits drop, oldest first", async () => {
+  const { record, recorder } = await mount(h(Cells), { maxRecords: 8 })
+  for (let n = 1; n <= 4; n++) await record(() => setCells(n))
+  const kept = recorder.summaries(0)
+  expect(kept.map((commit) => commit.renders)).toEqual([4, 4])
+  expect(recorder.rendered(1)).toBeUndefined()
+  expect(recorder.dropped()).toBe(true)
+  expect(recorder.oldest()).toBe(kept[0]?.seq)
+})
+
+test("the newest commit is kept whole even over the budget", async () => {
+  const { record, recorder } = await mount(h(Cells), { maxRecords: 2 })
+  await record(() => setCells(1))
+  await record(() => setCells(2))
+  const kept = recorder.summaries(0)
+  expect(kept).toHaveLength(1)
+  expect(recorder.rendered(kept[0]?.seq ?? 0)).toHaveLength(4)
 })
 
 let setStyle: (n: number) => void = () => {}
@@ -488,7 +522,7 @@ test("history lists a node's records in the buffer, oldest first", async () => {
 })
 
 test("history and records drop with the commits that fall out", async () => {
-  const { record, recorder, id } = await mount(h(Parent))
+  const { record, recorder, id } = await mount(h(Parent), { maxCommits: 100 })
   await record(() => setParent(1))
   const late = id("Late")
   expect(recorder.history(late)).toEqual([1])
