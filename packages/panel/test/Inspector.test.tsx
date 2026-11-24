@@ -1,4 +1,5 @@
 import {
+  countsMessage,
   expanded,
   inspected,
   type TreeKind,
@@ -6,7 +7,7 @@ import {
   type Value,
   valueStored,
 } from "@reactdx/messages"
-import { fireEvent, render } from "@solidjs/testing-library"
+import { fireEvent, render, within } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { expect, test, vi } from "vitest"
 import { Inspector } from "../src/Inspector"
@@ -1821,7 +1822,7 @@ test("the effects a render ran list under Effects ran, with their changed deps",
 })
 
 test("a remount says what caused it; an ancestor's name selects it", () => {
-  const { container, inspector, select, tree, getByRole } = setup()
+  const { container, inspector, select, tree } = setup()
   select()
   const show = (remount: unknown) =>
     inspector.receive(
@@ -1852,7 +1853,8 @@ test("a remount says what caused it; an ancestor's name selects it", () => {
   )
   show({ cause: "ancestor", ancestor: 4 })
   expect(reasons(container)).toEqual(["Remounted: ancestor Layout remounted"])
-  fireEvent.click(getByRole("button", { name: "Layout" }))
+  const reason = container.querySelector("[data-testid=reason]") as HTMLElement
+  fireEvent.click(within(reason).getByRole("button", { name: "Layout" }))
   expect(tree.selected()).toBe(4)
 })
 
@@ -1948,4 +1950,57 @@ test("a picked commit shows; one the node didn't render in says so", () => {
   expect(container.querySelector("[data-testid=pinned]")).toBeNull()
   expect(container.textContent).not.toContain("Didn't render in this commit.")
   expect(reasons(container)).toEqual(["Parent rendered"])
+})
+
+test("the answer comes first: why the component rendered, and one hint", () => {
+  const { container, inspector, tree, select, getByRole } = setup()
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 5,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "ProductList",
+        key: null,
+        index: 1,
+      },
+    ]),
+  )
+  tree.receiveCounts(countsMessage([{ id: 3, renders: 5, wasted: 4 }]))
+  select()
+  const answer = () => container.querySelector("[data-testid=answer]")
+  inspector.receive(inspected(3, { props: object({ step: 1 }) }))
+  expect(answer()?.textContent).toBe("No renders since DevTools opened.")
+  inspector.receive(
+    inspected(3, {
+      props: object({ step: 1 }),
+      owners: [
+        { id: 5, name: "ProductList" },
+        { id: null, name: "App" },
+      ],
+      render: { seq: 1, kinds: ["parent"], time: Date.now() - 2000 },
+    }),
+  )
+  expect(answer()?.textContent).toBe(
+    "Rendered 2s ago because its parent ProductList rendered. None of its props changed.",
+  )
+  expect(container.querySelector("[data-testid=hint]")?.textContent).toMatch(
+    /^4 of its 5 renders were like this\. Wrap Counter in memo\(\) to skip them\./,
+  )
+  const why = getByRole("treeitem", { name: /Why did this render/ })
+  if (why.getAttribute("aria-expanded") === "true") fireEvent.click(why)
+  fireEvent.click(getByRole("button", { name: "See renders" }))
+  expect(
+    getByRole("treeitem", { name: /Why did this render/ }).getAttribute(
+      "aria-expanded",
+    ),
+  ).toBe("true")
+  fireEvent.click(
+    within(answer() as HTMLElement).getByRole("button", {
+      name: "ProductList",
+    }),
+  )
+  expect(tree.selected()).toBe(5)
 })

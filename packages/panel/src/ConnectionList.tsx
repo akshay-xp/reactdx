@@ -108,6 +108,7 @@ export function ConnectionList(props: {
             setTab(COMMITS)
           }}
           onLatest={() => props.timeline?.live()}
+          now={now}
         />
       </aside>
     </div>

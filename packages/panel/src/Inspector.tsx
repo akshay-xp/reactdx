@@ -20,6 +20,8 @@ import {
   Show,
   Switch,
 } from "solid-js"
+import { ago } from "./ago"
+import { answerOf, hintOf, type Part } from "./answer"
 import { Empty, EmptyAction } from "./Empty"
 import type { InspectorStore } from "./inspection"
 import { type PathRoot, pathKey } from "./paths"
@@ -124,6 +126,8 @@ export function Inspector(props: {
   onCommit?: (seq: number) => void
   sources: Sources
   settings: Settings
+  // The clock "2s ago" is shown against (Date.now, ticking).
+  now?: () => number
 }) {
   // Keyed by value: a re-send's equal source keeps the last resolution shown
   // (no flash), and another source never shows the previous one's location (an
@@ -281,6 +285,35 @@ export function Inspector(props: {
     (props.inspector.data()?.owners ?? []).filter((owner) =>
       matches(owner.name, query()),
     )
+  // The answer for the render shown (the latest, or the pinned commit's).
+  const answer = (): Part[] => {
+    const inspector = props.inspector
+    if (inspector.absent()) return ["Didn't render in this commit."]
+    const render = inspector.render()
+    if (render === null) return ["This render is no longer recorded."]
+    // Stepped back, the render is loading: nothing yet.
+    if (!render && inspector.history().length) return []
+    const data = inspector.data()
+    const now = props.now?.() ?? Date.now()
+    return answerOf(render, {
+      ago: render?.time === undefined ? undefined : ago(now - render.time),
+      parent: data?.owners?.[0],
+      hookName: (path) => hookNameOf(data?.hooks ?? [], path, labelOf),
+      contextName: (read) => data?.contexts?.[read]?.name ?? "Context",
+      nodeName: (id) => props.tree.info(id)?.name,
+    })
+  }
+  const hint = () => {
+    const render = props.inspector.render()
+    const node = info()
+    const id = props.tree.selected()
+    if (!render || !node || id === undefined || props.inspector.absent()) return
+    return hintOf(render, {
+      name: node.name,
+      memo: node.kind === "memo",
+      count: props.tree.countOf(id),
+    })
+  }
   const anyShown = () => {
     const data = props.inspector.data()
     return (
@@ -423,6 +456,32 @@ export function Inspector(props: {
               </Show>
               <Show when={query() !== "" && !anyShown()}>
                 <p class="p-2 text-muted">No matches</p>
+              </Show>
+              <Show when={query() === ""}>
+                <div class="flex flex-col gap-1 border-border border-b px-2 py-2">
+                  <p data-testid="answer">
+                    <Parts parts={answer()} tree={props.tree} />
+                  </p>
+                  <Show when={hint()}>
+                    {(parts) => (
+                      <p
+                        data-testid="hint"
+                        class="rounded bg-highlight/40 px-2 py-1"
+                      >
+                        <Parts parts={parts()} tree={props.tree} />{" "}
+                        <button
+                          type="button"
+                          class="text-accent hover:underline"
+                          onClick={() => {
+                            if (collapsed().has(WHY)) toggle(WHY)
+                          }}
+                        >
+                          See renders
+                        </button>
+                      </p>
+                    )}
+                  </Show>
+                </div>
               </Show>
               {/* Reasons aren't keys or values: the search hides them. */}
               <Show when={query() === ""}>
@@ -612,6 +671,46 @@ function Section(props: {
   )
 }
 
+// A changed hook as the Hooks section shows it, numbered by its row there
+// (depth-first, groups included): two State hooks read apart.
+function hookNameOf(
+  hooks: HookValue[],
+  path: number[],
+  labelOf: (hook: HookValue) => string,
+) {
+  let n = 0
+  let name = "Hook"
+  const walk = (list: HookValue[], at: number[]) =>
+    list.forEach((hook, i) => {
+      n++
+      const here = [...at, i]
+      if (here.join() === path.join()) name = `${labelOf(hook)} #${n}`
+      walk(hook.hooks ?? [], here)
+    })
+  walk(hooks, [])
+  return name
+}
+
+// A sentence's parts (answer.ts): names in code, components as links when the
+// tree has them.
+function Parts(props: { parts: Part[]; tree: TreeStore }) {
+  return (
+    <For each={props.parts}>
+      {(part) =>
+        typeof part === "string" ? (
+          part
+        ) : "code" in part ? (
+          <code class="font-mono">{part.code}</code>
+        ) : part.node !== null && props.tree.info(part.node) ? (
+          <NodeLink id={part.node} tree={props.tree} />
+        ) : (
+          <code class="font-mono">{part.name}</code>
+        )
+      }
+    </For>
+  )
+}
+
 // Why the node last rendered: a row per reason, its changes under it.
 function Reasons(props: {
   inspector: InspectorStore
@@ -622,21 +721,8 @@ function Reasons(props: {
   onLatest?: () => void
   onCommit?: (seq: number) => void
 }) {
-  // A changed hook as the Hooks section shows it, numbered by its row there
-  // (depth-first, groups included): two State hooks read apart.
-  const hookName = (path: number[]) => {
-    let n = 0
-    let name = "Hook"
-    const walk = (hooks: HookValue[], at: number[]) =>
-      hooks.forEach((hook, i) => {
-        n++
-        const here = [...at, i]
-        if (here.join() === path.join()) name = `${props.labelOf(hook)} #${n}`
-        walk(hook.hooks ?? [], here)
-      })
-    walk(props.inspector.data()?.hooks ?? [], [])
-    return name
-  }
+  const hookName = (path: number[]) =>
+    hookNameOf(props.inspector.data()?.hooks ?? [], path, props.labelOf)
   type Section = "props" | "state" | "hooks" | "contexts"
   type KeyChangeLike = {
     old: Value
