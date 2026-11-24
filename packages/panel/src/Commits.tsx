@@ -1,5 +1,5 @@
 import type { CommitSummary } from "@reactdx/messages"
-import { For, Match, Show, Switch } from "solid-js"
+import { For, type JSX, Match, Show, Switch } from "solid-js"
 import { ago } from "./ago"
 import { KIND_TEXT, NodeLink } from "./Inspector"
 import type { InspectorStore } from "./inspection"
@@ -69,25 +69,43 @@ export function Commits(props: {
     // Side by side like Components; stacked when narrower than sm (640 px).
     <div class="flex min-h-0 flex-1 flex-col sm:flex-row">
       <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div class="flex h-10 shrink-0 items-center gap-2 border-border border-b px-2">
-          <button
-            type="button"
-            aria-pressed={props.timeline.filtered()}
+        <div class="flex h-10 shrink-0 items-center gap-1 border-border border-b px-2">
+          <Toggle
+            pressed={!props.timeline.filtered() && !props.timeline.wasted()}
+            onClick={() => {
+              props.timeline.setFiltered(false)
+              props.timeline.setWasted(false)
+            }}
+          >
+            All
+          </Toggle>
+          <Toggle
+            pressed={props.timeline.wasted()}
+            onClick={() => props.timeline.setWasted(!props.timeline.wasted())}
+          >
+            With wasted renders
+          </Toggle>
+          <Toggle
+            pressed={props.timeline.filtered()}
             disabled={selectedName() === undefined}
-            class="rounded px-2 py-0.5 text-muted hover:text-fg disabled:opacity-40 aria-pressed:bg-selected aria-pressed:text-fg"
             onClick={() =>
               props.timeline.setFiltered(!props.timeline.filtered())
             }
           >
             Only {selectedName() ?? "the selected component"}
+          </Toggle>
+          <button
+            type="button"
+            class="ml-auto rounded px-2 py-0.5 text-muted hover:text-fg"
+            onClick={() => props.timeline.clearUpdates()}
+          >
+            Clear
           </button>
         </div>
         <Show
           when={props.timeline.commits().length}
           fallback={
-            <p class="p-2 text-muted">
-              No commits recorded since DevTools opened.
-            </p>
+            <p class="p-2 text-muted">No updates since DevTools opened.</p>
           }
         >
           <div
@@ -202,6 +220,26 @@ export function Commits(props: {
         </Switch>
       </section>
     </div>
+  )
+}
+
+// A filter button: pressed while it applies.
+function Toggle(props: {
+  pressed: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: JSX.Element
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={props.pressed}
+      disabled={props.disabled}
+      class="rounded px-2 py-0.5 text-muted hover:text-fg disabled:opacity-40 aria-pressed:bg-selected aria-pressed:text-fg"
+      onClick={() => props.onClick()}
+    >
+      {props.children}
+    </button>
   )
 }
 

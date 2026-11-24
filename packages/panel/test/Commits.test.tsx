@@ -241,3 +241,30 @@ test("the detail says what triggered the picked commit and what rendered why", (
   timeline.receiveCommitted(committed(2, null))
   expect(detail()).toBe("This commit is no longer recorded.")
 })
+
+test("the toolbar filters to updates with wasted renders, and clears", () => {
+  const { timeline, seqs, sent, container } = setup()
+  timeline.receiveCommits(
+    commitsMessage(
+      [summary(1, 0, 3, [2], 2), summary(2, 0, 1, [3]), summary(3, 0, 1)],
+      1,
+      false,
+    ),
+  )
+  const button = (name: string) => screen.getByRole("button", { name })
+  expect(button("All").getAttribute("aria-pressed")).toBe("true")
+  fireEvent.click(button("With wasted renders"))
+  expect(button("With wasted renders").getAttribute("aria-pressed")).toBe(
+    "true",
+  )
+  expect(button("All").getAttribute("aria-pressed")).toBe("false")
+  expect(seqs()).toEqual(["1"])
+  fireEvent.click(button("All"))
+  expect(button("With wasted renders").getAttribute("aria-pressed")).toBe(
+    "false",
+  )
+  expect(seqs()).toEqual(["3", "2", "1"])
+  fireEvent.click(button("Clear"))
+  expect(sent.at(-1)).toEqual({ type: "clear-updates" })
+  expect(container.textContent).toContain("No updates since DevTools opened.")
+})
