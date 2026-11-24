@@ -1,5 +1,5 @@
 import type { CommitRender, CommitSummary } from "@reactdx/messages"
-import { For, type JSX, Match, Show, Switch } from "solid-js"
+import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { ago } from "./ago"
 import { KIND_TEXT, NodeLink } from "./Inspector"
 import type { InspectorStore } from "./inspection"
@@ -223,6 +223,10 @@ export function Commits(props: {
   )
 }
 
+// Rendered only because its parent did.
+const isWasted = (render: CommitRender) =>
+  render.kinds.length === 1 && render.kinds[0] === "parent"
+
 // A line of "What rendered": one render, or `count` same-named siblings
 // with the same reasons, at its depth in the cascade.
 type Cascaded = { render: CommitRender; count: number; depth: number }
@@ -282,8 +286,9 @@ function Toggle(props: {
   )
 }
 
-// What triggered a commit, each updater on its own line with the state it
-// changed, then every component it rendered and why.
+// An update's cause (each updater, with the state it set), what it cost, and
+// what rendered as a cascade; renders with no reason of their own hide
+// behind one line unless asked for.
 function Detail(props: {
   detail: CommitDetail
   tree: TreeStore
@@ -297,33 +302,54 @@ function Detail(props: {
       <NodeLink id={link.id} tree={props.tree} onReveal={props.onReveal} />
     </Show>
   )
-  const HEADING = "pb-1 text-muted"
+  const [hide, setHide] = createSignal(true)
+  const wasted = () => props.detail.renders.filter(isWasted).length
+  const shown = () =>
+    hide()
+      ? props.detail.renders.filter((render) => !isWasted(render))
+      : props.detail.renders
+  const cost = () => {
+    const all = props.detail.renders.length
+    return `${all} ${all === 1 ? "component" : "components"} rendered · ${all - wasted()} had a reason, ${wasted()} only because a parent rendered`
+  }
   return (
     <div class="flex flex-col gap-3 font-mono">
-      <div>
-        <h3 class={HEADING}>Triggered by</h3>
+      <div class="flex flex-col gap-1">
         <For
           each={props.detail.updaters}
-          fallback={<p data-testid="commit-trigger">Unknown (a root render)</p>}
+          fallback={<p data-testid="commit-trigger">Root render</p>}
         >
           {(updater) => (
             <p data-testid="commit-trigger" class="break-words">
               <Name id={updater.id} />
-              <Show when={updater.hooks.length}>
-                {` (${updater.hooks
-                  .map(
-                    (hook) =>
-                      `${hook.name}: ${previewText(hook.old)} → ${previewText(hook.new)}`,
-                  )
-                  .join(", ")})`}
-              </Show>
+              {updater.hooks.length
+                ? ` set ${updater.hooks
+                    .map(
+                      (hook) =>
+                        `${hook.name}: ${previewText(hook.old)} → ${previewText(hook.new)}`,
+                    )
+                    .join(", ")}`
+                : " updated"}
             </p>
           )}
         </For>
+        <p data-testid="commit-cost" class="text-muted">
+          {cost()}
+        </p>
       </div>
       <div>
-        <h3 class={HEADING}>What rendered</h3>
-        <For each={cascade(props.detail.renders, props.tree)}>
+        <div class="flex items-center gap-2 pb-1">
+          <h3 class="text-muted">What rendered</h3>
+          <label class="ml-auto flex items-center gap-1 text-muted">
+            <input
+              type="checkbox"
+              checked={hide()}
+              onChange={(event) => setHide(event.currentTarget.checked)}
+            />
+            Hide renders with no reason
+          </label>
+        </div>
+        <For each={cascade(shown(), props.tree)}>
           {(line) => (
             <p
               data-testid="commit-render"
@@ -338,6 +364,11 @@ function Detail(props: {
             </p>
           )}
         </For>
+        <Show when={hide() && wasted()}>
+          <p data-testid="commit-hidden" class="text-muted">
+            {wasted()} wasted, hidden
+          </p>
+        </Show>
       </div>
     </div>
   )

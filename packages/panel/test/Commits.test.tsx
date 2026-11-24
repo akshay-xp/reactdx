@@ -192,54 +192,46 @@ test("Only <selected> limits the list to the selected node's renders", () => {
   expect(seqs()).toEqual(["3", "1"])
 })
 
-test("the detail says what triggered the picked commit and what rendered why", () => {
+test("the detail says the cause and the cost; renders with no reason hide behind one line", () => {
   const { timeline, revealed, container } = setup()
-  const detail = () =>
-    container.querySelector("[data-testid=commit-detail]")?.textContent
+  const text = (testid: string) =>
+    [...container.querySelectorAll(`[data-testid=${testid}]`)].map(
+      (line) => line.textContent,
+    )
   timeline.receiveCommits(
-    commitsMessage([summary(1, 0, 3, [2, 3]), summary(2, 0, 1)], 1, false),
+    commitsMessage([summary(1, 0, 4, [2], 3), summary(2, 0, 1)], 1, false),
   )
-  expect(detail()).toBe("Pick a commit to see what rendered and why.")
   timeline.pick(1)
-  expect(detail()).toBe("")
   timeline.receiveCommitted(
     committed(
       1,
       [
+        { id: 1, kinds: ["parent"] },
         { id: 2, kinds: ["state"] },
-        { id: 3, kinds: ["props", "context"] },
+        { id: 3, kinds: ["parent"] },
         { id: 7, kinds: ["parent"] },
       ],
-      [
-        { id: 2, hooks: [{ name: "State #1", old: 3, new: 4 }] },
-        { id: 3, hooks: [] },
-      ],
+      [{ id: 2, hooks: [{ name: "State #1", old: 3, new: 4 }] }],
     ),
   )
-  const lines = (testid: string) =>
-    [...container.querySelectorAll(`[data-testid=${testid}]`)].map(
-      (line) => line.textContent,
-    )
-  expect(lines("commit-trigger")).toEqual([
-    "Counter (State #1: 3 → 4)",
-    "Shown",
+  expect(text("commit-trigger")).toEqual(["Counter set State #1: 3 → 4"])
+  expect(text("commit-cost")).toEqual([
+    "4 components rendered · 1 had a reason, 3 only because a parent rendered",
   ])
-  expect(lines("commit-render")).toEqual([
-    "Counter State changed",
-    "Shown Props changed, Context changed",
-    "Unmounted Parent rendered",
-  ])
-  // A trigger's name, then a rendered one.
-  const link = (name: string, at: number) =>
-    screen.getAllByRole("button", { name })[at] as HTMLElement
-  fireEvent.click(link("Counter", 0))
-  fireEvent.click(link("Shown", 1))
-  expect(revealed).toEqual([2, 3])
+  expect(text("commit-render")).toEqual(["Counter State changed"])
+  expect(text("commit-hidden")).toEqual(["3 wasted, hidden"])
+  // The cause's name, then the render's.
+  for (const link of screen.getAllByRole("button", { name: "Counter" }))
+    fireEvent.click(link)
+  expect(revealed).toEqual([2, 2])
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "Hide renders with no reason" }),
+  )
+  expect(text("commit-render")).toHaveLength(4)
+  expect(text("commit-hidden")).toEqual([])
   timeline.pick(2)
   timeline.receiveCommitted(committed(2, [{ id: 1, kinds: ["mount"] }], []))
-  expect(lines("commit-trigger")).toEqual(["Unknown (a root render)"])
-  timeline.receiveCommitted(committed(2, null))
-  expect(detail()).toBe("This commit is no longer recorded.")
+  expect(text("commit-trigger")).toEqual(["Root render"])
 })
 
 test("the toolbar filters to updates with wasted renders, and clears", () => {
