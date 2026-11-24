@@ -114,6 +114,18 @@ test("a click or a key picks a commit; Escape stays in the panel", () => {
   expect(timeline.picked()).toBeUndefined()
 })
 
+test("the list ends with a note once the page's limit dropped older commits", () => {
+  const { timeline } = setup()
+  timeline.receiveCommits(commitsMessage([summary(1, 0, 1)], 1, false))
+  expect(screen.queryByText(/Older updates dropped/)).toBeNull()
+  timeline.receiveCommits(commitsMessage([summary(2, 0, 1)], 2, true))
+  const note = screen.getByText("Older updates dropped (limit reached)")
+  const list = screen.getByRole("listbox")
+  expect(
+    list.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+})
+
 test("Only <selected> limits the list to the selected node's renders", () => {
   const { tree, inspector, timeline, rows } = setup()
   timeline.receiveCommits(

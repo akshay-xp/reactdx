@@ -119,6 +119,11 @@ export function Commits(props: {
               )}
             </For>
           </div>
+          <Show when={props.timeline.dropped()}>
+            <p class="border-border border-t px-2 leading-6 text-muted">
+              Older updates dropped (limit reached)
+            </p>
+          </Show>
         </Show>
       </div>
       <section
