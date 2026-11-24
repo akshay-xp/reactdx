@@ -97,6 +97,13 @@ const sections = (container: Element) =>
   [...container.querySelectorAll("[data-testid=section]")].map(
     (section) => section.querySelector("button")?.textContent,
   )
+// The Rendered by section's owners (the header names the nearest too).
+const renderedBy = (container: Element) => [
+  ...(container
+    .querySelector("[data-path='section:Rendered by']")
+    ?.closest("section")
+    ?.querySelectorAll("[data-testid=owner]") ?? []),
+]
 const rows = (container: Element) =>
   [...container.querySelectorAll("[data-testid=value]")].map(
     (row) => row.textContent,
@@ -587,7 +594,7 @@ test("Rendered by lists owners; tree nodes are buttons that select", () => {
     }),
   )
   expect(sections(container)).toEqual(["Props", "Renders", "Rendered by"])
-  const owner = [...container.querySelectorAll("[data-testid=owner]")]
+  const owner = [...renderedBy(container)]
   expect(owner.map((el) => [el.tagName, el.textContent])).toEqual([
     ["BUTTON", "App"],
     ["SPAN", "Page"],
@@ -622,7 +629,7 @@ test("hovering an owner in the tree highlights it, like its tree row; a click cl
       ],
     }),
   )
-  const [app, page] = container.querySelectorAll("[data-testid=owner]")
+  const [app, page] = renderedBy(container)
   fireEvent.pointerEnter(app as Element)
   expect(tree.hovered()).toBe(2)
   fireEvent.pointerLeave(app as Element)
@@ -2039,4 +2046,44 @@ test("Renders, Context and Rendered by start folded, each with a summary", () =>
   expect(sections(container)[2]).toBe("Renders")
   fireEvent.click(getByRole("treeitem", { name: /^Hooks/ }))
   expect(sections(container)[1]).toBe("Hooks State, Effect")
+})
+
+test("the header says where the component sits: its nearest two owners", () => {
+  const { container, inspector, tree, select } = setup()
+  tree.apply(
+    treeBatch(2, [
+      ...[
+        [5, "ProductList"],
+        [4, "Layout"],
+      ].map(([id, name], index) => ({
+        op: "add" as const,
+        id: id as number,
+        parentId: 0,
+        rootId: 1,
+        kind: "function" as const,
+        name: name as string,
+        key: null,
+        index: index + 1,
+      })),
+    ]),
+  )
+  select()
+  const header = () =>
+    container.querySelector("[data-testid=inspector-header]") as HTMLElement
+  const where = () => header().querySelector("[data-testid=owners]")
+  inspector.receive(inspected(3, { props: object({}) }))
+  expect(where()).toBeNull()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      owners: [
+        { id: 5, name: "ProductList" },
+        { id: 4, name: "Layout" },
+        { id: null, name: "App" },
+      ],
+    }),
+  )
+  expect(where()?.textContent).toBe("in … › Layout › ProductList")
+  fireEvent.click(within(header()).getByRole("button", { name: "Layout" }))
+  expect(tree.selected()).toBe(4)
 })

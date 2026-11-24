@@ -293,6 +293,9 @@ export function Inspector(props: {
     (props.inspector.data()?.owners ?? []).filter((owner) =>
       matches(owner.name, query()),
     )
+  // Where the node sits: its nearest two owners, outer first.
+  const nearestOwners = () =>
+    (props.inspector.data()?.owners ?? []).slice(0, 2).reverse()
   // Renders' summary: the selected node's counts since the watch.
   const rendersSummary = () => {
     const id = props.tree.selected()
@@ -381,6 +384,23 @@ export function Inspector(props: {
               </Show>
               <Show when={node().key !== null}>
                 <span class="truncate text-muted">{`key="${node().key}"`}</span>
+              </Show>
+              <Show when={props.inspector.data()?.owners?.length}>
+                <span data-testid="owners" class="truncate text-muted">
+                  in{" "}
+                  {(props.inspector.data()?.owners?.length ?? 0) > 2 && "… › "}
+                  <For each={nearestOwners()}>
+                    {(owner, i) => (
+                      <>
+                        {i() > 0 && " › "}
+                        <Parts
+                          parts={[{ node: owner.id, name: owner.name }]}
+                          tree={props.tree}
+                        />
+                      </>
+                    )}
+                  </For>
+                </span>
               </Show>
               <span class="ml-auto flex">
                 <For each={toggles()}>
