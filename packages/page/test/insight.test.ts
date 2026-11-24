@@ -521,15 +521,28 @@ test("history lists a node's records in the buffer, oldest first", async () => {
   ])
 })
 
-test("history and records drop with the commits that fall out", async () => {
-  const { record, recorder, id } = await mount(h(Parent), { maxCommits: 100 })
+test("a component's latest render outlives its commit; older ones drop", async () => {
+  const { record, recorder, id } = await mount(h(Parent), { maxCommits: 5 })
   await record(() => setParent(1))
   const late = id("Late")
+  const mounted = recorder.latest(late)
+  for (let i = 1; i <= 6; i++) await record(() => setParent(1 + 2 * i))
+  expect(recorder.rendered(1)).toBeUndefined()
+  expect(recorder.latest(late)?.seq).toBe(1)
+  expect(recorder.record(late, 1)).toBe(mounted)
   expect(recorder.history(late)).toEqual([1])
-  for (let i = 1; i <= 100; i++) await record(() => setParent(1 + 2 * i))
-  expect(recorder.history(late)).toEqual([])
-  expect(recorder.record(late, 1)).toBeUndefined()
-  expect(recorder.history(id("Child"))).toHaveLength(100)
+  const child = id("Child")
+  expect(recorder.history(child)).toHaveLength(5)
+  expect(recorder.history(child).at(-1)).toBe(recorder.latest(child)?.seq)
+  expect(recorder.record(child, 2)).toBeUndefined()
+})
+
+test("history lists a component's last 100 renders", async () => {
+  const { record, recorder, id } = await mount(h(Parent), { maxCommits: 200 })
+  for (let i = 1; i <= 150; i++) await record(() => setParent(2 * i))
+  const child = id("Child")
+  expect(recorder.history(child)).toHaveLength(100)
+  expect(recorder.history(child).at(-1)).toBe(recorder.latest(child)?.seq)
 })
 
 test("commits are summarized in clock time, with what each rendered and why", async () => {

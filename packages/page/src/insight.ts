@@ -2,7 +2,7 @@
 // (docs/page.md, Render insight). Values stay as references: nothing is
 // serialized until the panel shows a record.
 
-import { MAX_TREE_STRING } from "@reactdx/messages"
+import { MAX_HISTORY, MAX_TREE_STRING } from "@reactdx/messages"
 import type { Fiber } from "./tree.ts"
 
 export type RenderKind =
@@ -290,6 +290,9 @@ export function createRecorder({
   const commits: Commit[] = []
   let held = 0
   let dropped = false
+  // Each component's newest record, kept past its commit's drop: the
+  // Inspector's answer for a component that hasn't rendered in a while.
+  const latest = new Map<number, RenderRecord>()
   const commitAt = (seq: number) => commits.find((commit) => commit.seq === seq)
 
   const reasons = (
@@ -356,8 +359,11 @@ export function createRecorder({
           updaters.has(fiber) ||
           (fiber.alternate !== null && updaters.has(fiber.alternate))
         if (updated) updaterIds.push(id)
-        if (updated || (fiber as Flagged).flags & PERFORMED_WORK)
-          records.set(id, reasons(at, fiber, updated, ids))
+        if (updated || (fiber as Flagged).flags & PERFORMED_WORK) {
+          const record = reasons(at, fiber, updated, ids)
+          records.set(id, record)
+          latest.set(id, record)
+        }
       })
       commits.push({
         seq: at,
@@ -380,6 +386,7 @@ export function createRecorder({
       commits.length = 0
       held = 0
       dropped = false
+      latest.clear()
     },
     // Whether a commit has dropped since the last clear.
     dropped: () => dropped,
@@ -410,20 +417,20 @@ export function createRecorder({
         [...found.records].map(([id, record]) => ({ id, kinds: record.kinds }))
       )
     },
-    // The seqs of an id's records still in the buffer, oldest first.
+    // The seqs of an id's records, oldest first: those in the buffer, after
+    // its latest if that one's commit dropped; the last MAX_HISTORY.
     history(id: number) {
-      return commits.flatMap((commit) =>
+      const seqs = commits.flatMap((commit) =>
         commit.records.has(id) ? [commit.seq] : [],
       )
+      const newest = latest.get(id)?.seq
+      if (newest !== undefined && !seqs.includes(newest)) seqs.unshift(newest)
+      return seqs.slice(-MAX_HISTORY)
     },
     record(id: number, seq: number) {
-      return commitAt(seq)?.records.get(id)
+      const found = latest.get(id)
+      return found?.seq === seq ? found : commitAt(seq)?.records.get(id)
     },
-    latest(id: number) {
-      for (let i = commits.length - 1; i >= 0; i--) {
-        const found = commits[i]?.records.get(id)
-        if (found) return found
-      }
-    },
+    latest: (id: number) => latest.get(id),
   }
 }
