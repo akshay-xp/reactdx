@@ -16,6 +16,24 @@ export type TimelineStore = ReturnType<typeof createTimelineStore>
 
 export type CommitDetail = { renders: CommitRender[]; updaters: Updater[] }
 
+// A row of the Updates list: one update, or a run of updates with the same
+// cause (`id` its oldest member's seq), its members following while open.
+export type UpdateRow =
+  | { kind: "update"; commit: CommitSummary }
+  | {
+      kind: "group"
+      id: number
+      commits: CommitSummary[]
+      wasted: number
+      open: boolean
+    }
+
+// Same updaters, same changed hook: the same cause again (a burst of typing).
+const sameCause = (a: CommitSummary, b: CommitSummary) =>
+  a.updaters.length > 0 &&
+  a.updaters.join() === b.updaters.join() &&
+  a.change?.hook === b.change?.hook
+
 // The recent commits (docs/panel.md, Commits), the one picked and what it
 // rendered and why: undefined while loading, null once the page released it.
 // A pick pins the inspector to that commit. Filtered, the list holds only the
@@ -41,7 +59,48 @@ export function createTimelineStore(
           (!wasted() || commit.wasted > 0),
       )
       .reverse()
+  // Groups opened or closed by hand, by id; a pick resets them, so the
+  // group holding it opens.
+  const [groups, setGroups] = createSignal(new Map<number, boolean>())
+  const rows = (history: number[]): UpdateRow[] => {
+    const list = shown(history)
+    const out: UpdateRow[] = []
+    for (let at = 0; at < list.length; ) {
+      const first = list[at] as CommitSummary
+      let end = at + 1
+      while (end < list.length && sameCause(first, list[end] as CommitSummary))
+        end++
+      const run = list.slice(at, end)
+      at = end
+      if (run.length < 2) {
+        out.push({ kind: "update", commit: first })
+        continue
+      }
+      const id = (run.at(-1) as CommitSummary).seq
+      const open =
+        groups().get(id) ?? run.some((commit) => commit.seq === picked())
+      out.push({
+        kind: "group",
+        id,
+        commits: run,
+        wasted: run.reduce((sum, commit) => sum + commit.wasted, 0),
+        open,
+      })
+      if (open) for (const commit of run) out.push({ kind: "update", commit })
+    }
+    return out
+  }
+  const setGroup = (id: number, open: boolean) =>
+    setGroups(new Map(groups()).set(id, open))
+  // The group holding the picked update, if any.
+  const pickedGroup = (history: number[]) =>
+    rows(history).find(
+      (row): row is Extract<UpdateRow, { kind: "group" }> =>
+        row.kind === "group" &&
+        row.commits.some((commit) => commit.seq === picked()),
+    )
   const pick = (seq: number) => {
+    setGroups(new Map())
     setPicked(seq)
     setDetail(undefined)
     send({ type: "commit", seq })
@@ -62,6 +121,8 @@ export function createTimelineStore(
     setFiltered,
     wasted,
     setWasted,
+    rows,
+    setGroup,
     // Empties the page's recorded updates and the list.
     clearUpdates() {
       send({ type: "clear-updates" })
@@ -95,6 +156,11 @@ export function createTimelineStore(
     // picks the newest); Home and End pick the newest and oldest; Escape
     // unpicks. True if handled.
     key(key: string, history: number[]) {
+      if (key === "ArrowLeft" || key === "ArrowRight") {
+        const group = pickedGroup(history)
+        if (group) setGroup(group.id, key === "ArrowRight")
+        return group !== undefined
+      }
       const seqs = shown(history).map((commit) => commit.seq)
       const at = picked()
       const index = at === undefined ? -1 : seqs.indexOf(at)

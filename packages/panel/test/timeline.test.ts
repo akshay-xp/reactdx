@@ -170,3 +170,50 @@ test("With wasted renders keeps the updates that had some; clear empties the lis
   expect(timeline.shown([])).toEqual([])
   expect(timeline.picked()).toBeUndefined()
 })
+
+test("consecutive updates with the same cause fold into a group that opens with the pick", () => {
+  const { timeline } = setup()
+  const by = (seq: number, updater: number, hook = 0) => ({
+    ...summary(seq),
+    updaters: [updater],
+    renders: 3,
+    wasted: 2,
+    change: { hook, old: seq - 1, new: seq },
+  })
+  timeline.receiveCommits(
+    holding([by(1, 7), by(2, 7), by(3, 7), by(4, 7), by(5, 9)]),
+  )
+  const shape = () =>
+    timeline
+      .rows([])
+      .map((row) =>
+        row.kind === "group"
+          ? `group ${row.id} ${row.commits.map((c) => c.seq).join(",")} ${row.wasted} ${row.open ? "open" : "closed"}`
+          : `update ${row.commit.seq}`,
+      )
+  expect(shape()).toEqual(["update 5", "group 1 4,3,2,1 8 closed"])
+  timeline.pick(3)
+  expect(shape()).toEqual([
+    "update 5",
+    "group 1 4,3,2,1 8 open",
+    "update 4",
+    "update 3",
+    "update 2",
+    "update 1",
+  ])
+  timeline.key("ArrowLeft", [])
+  expect(shape()).toEqual(["update 5", "group 1 4,3,2,1 8 closed"])
+  expect(timeline.picked()).toBe(3)
+  timeline.key("ArrowRight", [])
+  expect(shape()[1]).toBe("group 1 4,3,2,1 8 open")
+  timeline.setGroup(1, false)
+  expect(shape()[1]).toBe("group 1 4,3,2,1 8 closed")
+  timeline.pick(5)
+  timeline.key("ArrowDown", [])
+  expect(timeline.picked()).toBe(4)
+  expect(shape()[1]).toBe("group 1 4,3,2,1 8 open")
+
+  const other = setup().timeline
+  other.receiveCommits(holding([by(1, 7, 0), by(2, 7, 1)]))
+  expect(other.rows([]).map((row) => row.kind)).toEqual(["update", "update"])
+})
