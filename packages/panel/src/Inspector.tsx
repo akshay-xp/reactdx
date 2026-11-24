@@ -101,7 +101,9 @@ export const KIND_TEXT: Record<RenderKind, string> = {
   parent: "Parent rendered",
   force: "Forced",
 }
-const WHY = "Why did this render"
+const WHY = "Renders"
+// The detail behind one-line summaries until opened.
+const FOLDED = [WHY, "Context", "Rendered by"]
 // A prop change that's only a new reference (M6 #62), which still re-renders a
 // memo child.
 const REFERENCE_BADGE = {
@@ -128,6 +130,8 @@ export function Inspector(props: {
   settings: Settings
   // The clock "2s ago" is shown against (Date.now, ticking).
   now?: () => number
+  // The sections that start folded (FOLDED).
+  folded?: string[]
 }) {
   // Keyed by value: a re-send's equal source keeps the last resolution shown
   // (no flash), and another source never shows the previous one's location (an
@@ -214,8 +218,11 @@ export function Inspector(props: {
     items.push(...more)
     setMenu({ x: event.clientX, y: event.clientY, items })
   }
-  // Collapsed sections, kept while the panel is open.
-  const [collapsed, setCollapsed] = createSignal(new Set<string>())
+  // Collapsed sections, kept while the panel is open: the detail starts folded
+  // behind its header's summary.
+  const [collapsed, setCollapsed] = createSignal(
+    new Set<string>(props.folded ?? FOLDED),
+  )
   const toggle = (name: string) => {
     const next = new Set(collapsed())
     if (!next.delete(name)) next.add(name)
@@ -235,6 +242,7 @@ export function Inspector(props: {
           open={!collapsed().has(name)}
           forced={query() !== ""}
           onToggle={() => toggle(name)}
+          summary={firstEntry(container())}
         >
           <Children
             inspector={props.inspector}
@@ -285,6 +293,14 @@ export function Inspector(props: {
     (props.inspector.data()?.owners ?? []).filter((owner) =>
       matches(owner.name, query()),
     )
+  // Renders' summary: the selected node's counts since the watch.
+  const rendersSummary = () => {
+    const id = props.tree.selected()
+    const count = id === undefined ? undefined : props.tree.countOf(id)
+    if (!count) return "none since DevTools opened"
+    const wasted = count.wasted ? ` · ${count.wasted} wasted` : ""
+    return `${count.renders} since DevTools opened${wasted}`
+  }
   // The answer for the render shown (the latest, or the pinned commit's).
   const answer = (): Part[] => {
     const inspector = props.inspector
@@ -483,25 +499,6 @@ export function Inspector(props: {
                   </Show>
                 </div>
               </Show>
-              {/* Reasons aren't keys or values: the search hides them. */}
-              <Show when={query() === ""}>
-                <Section
-                  name={WHY}
-                  open={!collapsed().has(WHY)}
-                  forced={false}
-                  onToggle={() => toggle(WHY)}
-                >
-                  <Reasons
-                    inspector={props.inspector}
-                    tree={props.tree}
-                    labelOf={labelOf}
-                    onMenu={onMenu}
-                    onRenders={props.onRenders}
-                    onLatest={props.onLatest}
-                    onCommit={props.onCommit}
-                  />
-                </Section>
-              </Show>
               {section("Props", "props", props.inspector.data()?.props)}
               {section("State", "state", props.inspector.data()?.state)}
               <Show when={hooksShow()}>
@@ -510,6 +507,13 @@ export function Inspector(props: {
                   open={!collapsed().has("Hooks")}
                   forced={query() !== ""}
                   onToggle={() => toggle("Hooks")}
+                  summary={[
+                    ...new Set(
+                      (props.inspector.data()?.hooks ?? []).map(
+                        (hook) => hook.name,
+                      ),
+                    ),
+                  ].join(", ")}
                 >
                   <Show when={props.inspector.data()?.hooksError}>
                     {(error) => (
@@ -531,12 +535,35 @@ export function Inspector(props: {
                   />
                 </Section>
               </Show>
+              {/* Reasons aren't keys or values: the search hides them. */}
+              <Show when={query() === ""}>
+                <Section
+                  name={WHY}
+                  open={!collapsed().has(WHY)}
+                  forced={false}
+                  onToggle={() => toggle(WHY)}
+                  summary={rendersSummary()}
+                >
+                  <Reasons
+                    inspector={props.inspector}
+                    tree={props.tree}
+                    labelOf={labelOf}
+                    onMenu={onMenu}
+                    onRenders={props.onRenders}
+                    onLatest={props.onLatest}
+                    onCommit={props.onCommit}
+                  />
+                </Section>
+              </Show>
               <Show when={contexts().some(contextShows)}>
                 <Section
                   name="Context"
                   open={!collapsed().has("Context")}
                   forced={query() !== ""}
                   onToggle={() => toggle("Context")}
+                  summary={contexts()
+                    .map((context) => context.name)
+                    .join(", ")}
                 >
                   <For each={contexts()}>
                     {(context) => (
@@ -571,6 +598,7 @@ export function Inspector(props: {
                   open={!collapsed().has("Rendered by")}
                   forced={query() !== ""}
                   onToggle={() => toggle("Rendered by")}
+                  summary={owners()[0]?.name}
                 >
                   <For each={owners()}>
                     {(owner) => (
@@ -642,6 +670,8 @@ export function Inspector(props: {
 // An empty inspector: centered, the picker's crosshair above what to do.
 function Section(props: {
   name: string
+  // What's inside, in a line, shown while it's closed.
+  summary?: string
   open: boolean
   // Shown open regardless (while searching), without changing `open`.
   forced: boolean
@@ -663,12 +693,22 @@ function Section(props: {
       >
         <Triangle open={open()} />
         {props.name}
+        <Show when={!open() && props.summary}>
+          {" "}
+          <span class="truncate font-normal font-mono">{props.summary}</span>
+        </Show>
       </button>
       <Show when={open()}>
         <div class="pb-1 font-mono">{props.children}</div>
       </Show>
     </section>
   )
+}
+
+// A container's first entry and its preview: a folded section's summary.
+function firstEntry(value: Container) {
+  const [first] = entriesOf(value).entries
+  return first && `${first.name}: ${previewText(first.value)}`
 }
 
 // A changed hook as the Hooks section shows it, numbered by its row there

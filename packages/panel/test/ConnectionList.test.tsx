@@ -346,6 +346,8 @@ test("links move between a commit and its components", () => {
     }),
   )
 
+  // The full reasons are folded under Renders.
+  fireEvent.click(screen.getByRole("treeitem", { name: /^Renders/ }))
   fireEvent.click(screen.getByRole("button", { name: "+1 more" }))
   expect(selectedTab()).toBe("Commits")
   expect(timeline.picked()).toBe(4)

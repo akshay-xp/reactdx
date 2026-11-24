@@ -47,6 +47,8 @@ function setup(
   key: string | null = null,
   sources = noSources,
   settings = createSettings(),
+  // Open sections unless a test is about folding (null: the defaults).
+  folded: string[] | null = [],
 ) {
   const tree = createTreeStore()
   tree.apply(
@@ -81,6 +83,7 @@ function setup(
       onRenders={() => nav.push(["renders"])}
       onLatest={() => nav.push(["latest"])}
       onCommit={(seq) => nav.push(["commit", seq])}
+      folded={folded ?? undefined}
     />
   ))
   const select = () => {
@@ -133,7 +136,7 @@ test("Props then State, one row per value", () => {
       state: object({ ticks: 2 }),
     }),
   )
-  expect(sections(container)).toEqual(["Why did this render", "Props", "State"])
+  expect(sections(container)).toEqual(["Props", "State", "Renders"])
   expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
 })
 
@@ -224,7 +227,7 @@ test("search hides rows whose name and value don't match; clearing restores them
 
   fireEvent.keyDown(getByLabelText("Search keys and values"), { key: "Escape" })
   expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
-  expect(sections(container)).toEqual(["Why did this render", "Props", "State"])
+  expect(sections(container)).toEqual(["Props", "State", "Renders"])
   search(container, "zzz")
   fireEvent.click(getByLabelText("Clear value search"))
   expect(rows(container)).toEqual(['label: "Count"', "step: 1", "ticks: 2"])
@@ -237,7 +240,7 @@ test("empty sections aren't shown", () => {
   const { container, inspector, select } = setup("class")
   select()
   inspector.receive(inspected(3, { props: object({}) }))
-  expect(sections(container)).toEqual(["Why did this render"])
+  expect(sections(container)).toEqual(["Renders"])
 })
 
 test("a section header collapses and expands it", () => {
@@ -460,7 +463,7 @@ test("Hooks list each hook; custom hooks open to theirs", () => {
   const { container, inspector, select } = setup()
   select()
   inspector.receive(inspected(3, { props: object({}), hooks }))
-  expect(sections(container)).toEqual(["Why did this render", "Hooks"])
+  expect(sections(container)).toEqual(["Hooks", "Renders"])
   expect(rows(container)).toEqual(["State: 0", 'useCart: "2 items"', "Effect"])
   fireEvent.click(toggle(container, "useCart") as Element)
   expect(rows(container)).toEqual([
@@ -530,7 +533,7 @@ test("hooks that couldn't be read say why", () => {
   inspector.receive(
     inspected(3, { props: object({}), hooks: [], hooksError: "boom" }),
   )
-  expect(sections(container)).toEqual(["Why did this render", "Hooks"])
+  expect(sections(container)).toEqual(["Hooks", "Renders"])
   expect(container.textContent).toContain("Couldn't read hooks: boom")
 })
 
@@ -547,11 +550,7 @@ test("Context lists each context read, after Hooks", () => {
       ],
     }),
   )
-  expect(sections(container)).toEqual([
-    "Why did this render",
-    "Hooks",
-    "Context",
-  ])
+  expect(sections(container)).toEqual(["Hooks", "Renders", "Context"])
   expect(rows(container)).toEqual([
     "State: 0",
     "Context: {a: 1}",
@@ -587,11 +586,7 @@ test("Rendered by lists owners; tree nodes are buttons that select", () => {
       ],
     }),
   )
-  expect(sections(container)).toEqual([
-    "Why did this render",
-    "Props",
-    "Rendered by",
-  ])
+  expect(sections(container)).toEqual(["Props", "Renders", "Rendered by"])
   const owner = [...container.querySelectorAll("[data-testid=owner]")]
   expect(owner.map((el) => [el.tagName, el.textContent])).toEqual([
     ["BUTTON", "App"],
@@ -644,7 +639,7 @@ test("no owners, no Rendered by", () => {
   const { container, inspector, select } = setup()
   select()
   inspector.receive(inspected(3, { props: object({ a: 1 }), owners: [] }))
-  expect(sections(container)).toEqual(["Why did this render", "Props"])
+  expect(sections(container)).toEqual(["Props", "Renders"])
 })
 
 const frame = { url: "http://h/src/Counter.jsx", line: 14, column: 47 }
@@ -1015,13 +1010,18 @@ test("rows are one tab stop; Up, Down, Home and End move focus", async () => {
   expect(document.activeElement).toBe(rowOf(container, "b: 2"))
   expect(tabs()).toEqual(["-1", "0", "-1"])
   press("End")
+  // The last row: Renders' header, after the values.
+  expect((document.activeElement as HTMLElement).dataset.path).toBe(
+    "section:Renders",
+  )
+  press("ArrowUp")
   expect(document.activeElement).toBe(rowOf(container, "c: 3"))
   press("ArrowUp")
   press("ArrowUp")
   expect(document.activeElement).toBe(rowOf(container, "a: 1"))
   press("Home")
   // The first row of the tree: the first section's header.
-  expect(document.activeElement?.textContent).toBe("Why did this render")
+  expect(document.activeElement?.textContent).toBe("Props")
 })
 
 test("Right and Left open, close and move between levels", async () => {
@@ -1078,14 +1078,14 @@ test("section headers are rows: Tab reaches each section's rows by arrows, Left 
   await settled()
   const header = (name: string) =>
     [...container.querySelectorAll<HTMLElement>("[role=treeitem]")].find(
-      (row) => row.tagName === "BUTTON" && row.textContent === name,
+      (row) => row.dataset.path === `section:${name}`,
     ) as HTMLElement
   const stops = () =>
     [...container.querySelectorAll<HTMLElement>("[tabindex='0']")].filter(
       (el) => el.closest("[role=tree]"),
     )
   // One stop for the whole tree: the first header until a row is focused.
-  expect(stops()).toEqual([header("Why did this render")])
+  expect(stops()).toEqual([header("Props")])
   rowOf(container, "a: 1").focus()
   press("ArrowDown")
   expect(document.activeElement).toBe(header("Hooks"))
@@ -1646,11 +1646,11 @@ const reasons = (container: Element) =>
     (row) => row.textContent,
   )
 
-test("Why did this render comes first, with the latest render's reasons", () => {
+test("Renders lists the latest render's reasons, after the values", () => {
   const { container, inspector, select, getByRole } = setup()
   select()
   inspector.receive(inspected(3, { props: object({ step: 1 }) }))
-  expect(sections(container)).toEqual(["Why did this render", "Props"])
+  expect(sections(container)).toEqual(["Props", "Renders"])
   expect(container.textContent).toContain(
     "No renders recorded since DevTools opened.",
   )
@@ -1667,7 +1667,7 @@ test("Why did this render comes first, with the latest render's reasons", () => 
     )
     expect(reasons(container)).toEqual([text])
   }
-  fireEvent.click(getByRole("treeitem", { name: /Why did this render/ }))
+  fireEvent.click(getByRole("treeitem", { name: /^Renders/ }))
   expect(reasons(container)).toEqual([])
 })
 
@@ -1989,13 +1989,11 @@ test("the answer comes first: why the component rendered, and one hint", () => {
   expect(container.querySelector("[data-testid=hint]")?.textContent).toMatch(
     /^4 of its 5 renders were like this\. Wrap Counter in memo\(\) to skip them\./,
   )
-  const why = getByRole("treeitem", { name: /Why did this render/ })
+  const why = getByRole("treeitem", { name: /^Renders/ })
   if (why.getAttribute("aria-expanded") === "true") fireEvent.click(why)
   fireEvent.click(getByRole("button", { name: "See renders" }))
   expect(
-    getByRole("treeitem", { name: /Why did this render/ }).getAttribute(
-      "aria-expanded",
-    ),
+    getByRole("treeitem", { name: /^Renders/ }).getAttribute("aria-expanded"),
   ).toBe("true")
   fireEvent.click(
     within(answer() as HTMLElement).getByRole("button", {
@@ -2003,4 +2001,42 @@ test("the answer comes first: why the component rendered, and one hint", () => {
     }),
   )
   expect(tree.selected()).toBe(5)
+})
+
+test("Renders, Context and Rendered by start folded, each with a summary", () => {
+  const { container, inspector, tree, select, getByRole } = setup(
+    "function",
+    null,
+    noSources,
+    createSettings(),
+    null,
+  )
+  tree.receiveCounts(countsMessage([{ id: 3, renders: 5, wasted: 4 }]))
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ step: 1 }),
+      hooks: [
+        { name: "State", value: 1 },
+        { name: "Effect", value: 2 },
+        { name: "State", value: 3 },
+      ],
+      contexts: [{ name: "Theme", value: "dark" }],
+      owners: [{ id: null, name: "App" }],
+      render: { seq: 1, kinds: ["parent"] },
+    }),
+  )
+  expect(sections(container)).toEqual([
+    "Props",
+    "Hooks",
+    "Renders 5 since DevTools opened · 4 wasted",
+    "Context Theme",
+    "Rendered by App",
+  ])
+  expect(reasons(container)).toEqual([])
+  fireEvent.click(getByRole("treeitem", { name: /^Renders/ }))
+  expect(reasons(container)).toEqual(["Parent rendered"])
+  expect(sections(container)[2]).toBe("Renders")
+  fireEvent.click(getByRole("treeitem", { name: /^Hooks/ }))
+  expect(sections(container)[1]).toBe("Hooks State, Effect")
 })
