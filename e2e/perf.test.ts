@@ -445,7 +445,20 @@ test("watching keeps a one-cell commit under 2x, all cells under +25%", {
       () => document.querySelectorAll("[data-testid=cell]").length === 10000,
       { timeout: 10_000 },
     )
-    const settle = () => new Promise((resolve) => setTimeout(resolve, 500))
+    let panel: Awaited<ReturnType<typeof openPanel>> | undefined
+    // The flush (100 ms) has reached the panel, and the panel has handled it:
+    // three 50 ms timers in a row fire on time. A fixed wait wasn't enough on
+    // CI for 10,000 counts. (requestIdleCallback never fires in the panel.)
+    const settle = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      await panel?.evaluate(async () => {
+        for (let quiet = 0; quiet < 3; ) {
+          const start = performance.now()
+          await new Promise((resolve) => setTimeout(resolve, 50))
+          quiet = performance.now() - start < 60 ? quiet + 1 : 0
+        }
+      })
+    }
     const median = async (mode: "one" | "all") => {
       await page.evaluate((mode) => (window as Bench).__bench(mode, 1), mode)
       await settle()
@@ -456,7 +469,7 @@ test("watching keeps a one-cell commit under 2x, all cells under +25%", {
       return [...times].sort((a, b) => a - b)[2] as number
     }
     const before = { one: await median("one"), all: await median("all") }
-    const panel = await openPanel(browser)
+    panel = await openPanel(browser)
     await panel.waitForFunction(
       () =>
         document
