@@ -293,6 +293,10 @@ export function createRecorder({
   // Each component's newest record, kept past its commit's drop: the
   // Inspector's answer for a component that hasn't rendered in a while.
   const latest = new Map<number, RenderRecord>()
+  // Renders per component since the watch (not bounded by the buffer), and
+  // the ids changed since the last takeCounts.
+  const counts = new Map<number, { renders: number; wasted: number }>()
+  const changed = new Set<number>()
   const commitAt = (seq: number) => commits.find((commit) => commit.seq === seq)
 
   const reasons = (
@@ -363,6 +367,12 @@ export function createRecorder({
           const record = reasons(at, fiber, updated, ids)
           records.set(id, record)
           latest.set(id, record)
+          const count = counts.get(id) ?? { renders: 0, wasted: 0 }
+          count.renders++
+          if (record.kinds.length === 1 && record.kinds[0] === "parent")
+            count.wasted++
+          counts.set(id, count)
+          changed.add(id)
         }
       })
       commits.push({
@@ -387,6 +397,17 @@ export function createRecorder({
       held = 0
       dropped = false
       latest.clear()
+      counts.clear()
+      changed.clear()
+    },
+    // The counts changed since the last call (`all`: every one).
+    takeCounts(all = false) {
+      const ids = all ? [...counts.keys()] : [...changed]
+      changed.clear()
+      return ids.flatMap((id) => {
+        const count = counts.get(id)
+        return count ? [{ id, ...count }] : []
+      })
     },
     // Whether a commit has dropped since the last clear.
     dropped: () => dropped,
@@ -432,10 +453,12 @@ export function createRecorder({
       return found?.seq === seq ? found : commitAt(seq)?.records.get(id)
     },
     latest: (id: number) => latest.get(id),
-    // An unmounted component's kept record goes (its buffered ones drop with
+    // An unmounted component's kept record and counts go (its buffered ones drop with
     // their commits).
     forget: (id: number) => {
       latest.delete(id)
+      counts.delete(id)
+      changed.delete(id)
     },
   }
 }

@@ -271,6 +271,36 @@ test("past the record budget whole commits drop, oldest first", async () => {
   expect(recorder.oldest()).toBe(kept[0]?.seq)
 })
 
+test("renders and wasted renders are counted per component, handed out once", async () => {
+  const { record, recorder, id } = await mount(h(Cells))
+  await record(() => setCells(1))
+  await record(() => setCells(2))
+  const counts = recorder.takeCounts()
+  expect(counts).toHaveLength(4)
+  for (const count of counts)
+    expect(count).toMatchObject({ renders: 2, wasted: 0 })
+  expect(counts.map((count) => count.id)).toContain(id("Cells"))
+  expect(recorder.takeCounts()).toEqual([])
+  expect(recorder.takeCounts(true)).toHaveLength(4)
+})
+
+test("a render only because the parent rendered counts as wasted", async () => {
+  const { record, recorder, id } = await mount(h(Parent))
+  await record(() => setParent(2))
+  await record(() => setParent(4))
+  const child = id("Child")
+  const of = (all: { id: number }[]) => all.find((count) => count.id === child)
+  expect(of(recorder.takeCounts())).toEqual({
+    id: child,
+    renders: 2,
+    wasted: 2,
+  })
+  recorder.forget(child)
+  expect(of(recorder.takeCounts(true))).toBeUndefined()
+  recorder.clear()
+  expect(recorder.takeCounts(true)).toEqual([])
+})
+
 test("the newest commit is kept whole even over the budget", async () => {
   const { record, recorder } = await mount(h(Cells), { maxRecords: 2 })
   await record(() => setCells(1))
