@@ -205,9 +205,11 @@ export type CommitSummary = {
   renders: number
   // Renders only because the parent rendered (M6 #74).
   wasted: number
-  // The first updater's first changed hook, labeled as in Hooks (M6 #74).
-  change?: UpdaterHook
+  // The first updater's first changed hook (M6 #74): its list index (no
+  // label: that takes a shadow render of the updater, too much per update).
+  change?: SummaryChange
 }
+export type SummaryChange = { hook: number; old: Value; new: Value }
 export type CommitsMessage = {
   source: "reactdx"
   type: "commits"
@@ -255,7 +257,7 @@ export function parseCommits(data: unknown): CommitsMessage | undefined {
       wasted,
     }
     if (change !== undefined) {
-      const parsed = parseUpdaterHook(change, { left: MAX_VALUES })
+      const parsed = parseSummaryChange(change, { left: MAX_VALUES })
       if (!parsed) return
       summary.change = parsed
     }
@@ -846,17 +848,24 @@ function parseRender(
   return reason
 }
 
-// A labeled hook change: `{ name, old, new }`, the values on `budget`.
-function parseUpdaterHook(
-  data: unknown,
-  budget: { left: number },
-): UpdaterHook | undefined {
-  if (typeof data !== "object" || data === null) return
-  const hook = data as Record<string, unknown>
+// Both sides of a change, the values on `budget`.
+function parseSides(hook: Record<string, unknown>, budget: { left: number }) {
   const old = parseValue(hook.old, 0, budget)
   const next = parseValue(hook.new, 0, budget)
-  return old !== undefined && next !== undefined && isName(hook.name)
-    ? { name: hook.name, old, new: next }
+  return old === undefined || next === undefined
+    ? undefined
+    : { old, new: next }
+}
+
+function parseSummaryChange(
+  data: unknown,
+  budget: { left: number },
+): SummaryChange | undefined {
+  if (typeof data !== "object" || data === null) return
+  const change = data as Record<string, unknown>
+  const sides = parseSides(change, budget)
+  return sides && isCount(change.hook)
+    ? { hook: change.hook, ...sides }
     : undefined
 }
 
@@ -865,9 +874,12 @@ export function parseUpdaters(
   budget: { left: number } = { left: MAX_VALUES },
 ): Updater[] | undefined {
   return parseList(data, MAX_CHANGES, (item) => {
-    const changes = parseList(item.hooks, MAX_CHANGES, (hook) =>
-      parseUpdaterHook(hook, budget),
-    )
+    const changes = parseList(item.hooks, MAX_CHANGES, (hook) => {
+      const sides = parseSides(hook, budget)
+      return sides && isName(hook.name)
+        ? { name: hook.name, ...sides }
+        : undefined
+    })
     return changes && isId(item.id)
       ? { id: item.id, hooks: changes }
       : undefined

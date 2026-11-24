@@ -670,7 +670,7 @@ test("a summary says how many renders were wasted and what changed", () => {
     updaters: [4],
     renders: 2,
     wasted: 1,
-    change: { name: "State #1", old: 1, new: 2 },
+    change: { hook: 0, old: 1, new: 2 },
   }
   const list = (commits: unknown[]) =>
     commitsMessage(commits as never, 1, false)
@@ -685,6 +685,6 @@ test("a summary says how many renders were wasted and what changed", () => {
   const { wasted: __, ...noWasted } = plain
   expect(parseCommits(list([noWasted]))).toBeUndefined()
   expect(
-    parseCommits(list([{ ...summary, change: { name: 1, old: 1, new: 2 } }])),
+    parseCommits(list([{ ...summary, change: { hook: -1, old: 1, new: 2 } }])),
   ).toBeUndefined()
 })
