@@ -202,8 +202,45 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
         { name: "DROPPED", site: { url: "http://h/a.js", line: 0, column: 1 } },
       ],
     },
+    {
+      props: object({}),
+      render: {
+        seq: 1,
+        kinds: ["props", "DROPPED"],
+        props: [{ key: "DROPPED", old: 1, new: 2 }],
+      },
+    },
+    {
+      props: object({}),
+      render: {
+        seq: 1,
+        kinds: ["props"],
+        props: Array(1001).fill({ key: "DROPPED", old: 1, new: 2 }),
+      },
+    },
+    { props: object({ DROPPED: 1 }), history: [4, 1] },
+    {
+      props: object({ DROPPED: 1 }),
+      history: Array.from({ length: 101 }, (_, i) => i + 1),
+    },
   ])
     inspected(data)
+  const reasoned = (fields: Record<string, unknown>) =>
+    post({
+      source: "reactdx",
+      type: "reasoned",
+      id,
+      seq: 1,
+      render: {
+        seq: 1,
+        kinds: ["props"],
+        props: [{ key: "DROPPED", old: 1, new: 2 }],
+      },
+      ...fields,
+    })
+  reasoned({ render: { seq: 1, kinds: ["DROPPED"] } })
+  reasoned({ seq: "1" })
+  reasoned({ render: undefined })
   post({
     source: "reactdx",
     type: "expanded",
@@ -229,6 +266,45 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
   command({ type: "inspect", id: 1e9 })
   command({ type: "expand", objectId: -1, offset: 0 })
   command({ type: "expand", objectId: 1, offset: "a" })
+  // Commit summaries and replies: seqs from 9001, so a forged row would show.
+  const summary = (seq: number) => ({
+    seq,
+    time: 1,
+    rootId: 1,
+    updaters: [],
+    renders: 1,
+    wasted: 0,
+  })
+  const commits = (list: unknown[], fields: Record<string, unknown> = {}) =>
+    post({
+      source: "reactdx",
+      type: "commits",
+      commits: list,
+      oldest: 1,
+      dropped: false,
+      ...fields,
+    })
+  commits(Array.from({ length: 101 }, (_, i) => summary(9001 + i)))
+  commits([summary(9002), summary(9001)])
+  commits([{ ...summary(9001), renders: "x" }])
+  commits([summary(9001)], { oldest: 0 })
+  commits([summary(9001)], { dropped: "yes" })
+  commits([{ ...summary(9001), wasted: 2 }])
+  const forgedCommitted = (fields: Record<string, unknown>) =>
+    post({ source: "reactdx", type: "committed", seq: 1, ...fields })
+  forgedCommitted({ renders: Array(2001).fill({ id: 1, kinds: ["state"] }) })
+  forgedCommitted({ renders: [{ id: 0, kinds: ["state"] }] })
+  forgedCommitted({ renders: [{ id: 1, kinds: ["DROPPED"] }] })
+  forgedCommitted({ renders: [], updaters: [{ id: 1, hooks: [{ name: 1 }] }] })
+  const counts = (list: unknown[]) =>
+    post({ source: "reactdx", type: "counts", counts: list })
+  counts([{ id: 0, renders: 9001, wasted: 0 }])
+  counts([{ id: 1, renders: 2, wasted: 9001 }])
+  counts(Array(2001).fill({ id: 1, renders: 9001, wasted: 0 }))
+  command({ type: "commit", seq: 0 })
+  command({ type: "commit", seq: "x" })
+  command({ type: "reason", id: 1, seq: 0 })
+  command({ type: "reason", id: "x", seq: 1 })
 }
 
 type Inspecting = Window & { inspectedId?: number }
@@ -273,8 +349,17 @@ test("forged inspect messages and commands break nothing", {
     const after = await until(panel.inspector, forged)
     assert.ok(!after.includes("DROPPED"), after)
     assert.ok(forged(after), after)
-    if (name === "chrome")
-      assert.equal(await (await openPanel(browser)).$("img"), null)
+    // No forged render count reached a row.
+    const tree = await panel()
+    assert.ok(!tree.includes("9001"), tree)
+    if (name === "chrome") {
+      const frame = await openPanel(browser)
+      assert.equal(await frame.$("img"), null)
+      // No forged update joined the list: their time, 1 ms after the epoch,
+      // would read hundreds of thousands of hours ago.
+      const rows = await panel.commits()
+      assert.ok(!rows.some((row) => /\d{5,}h ago/.test(row)), String(rows))
+    }
 
     // The agent and panel still work. A forged inspect command (valid-shaped ids)
     // moves the agent's selection: a page can change its own panel's view, and

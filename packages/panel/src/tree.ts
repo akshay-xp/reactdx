@@ -1,4 +1,10 @@
-import type { TreeBatchMessage, TreeKind, TreeOp } from "@reactdx/messages"
+import type {
+  CountsMessage,
+  RenderCount,
+  TreeBatchMessage,
+  TreeKind,
+  TreeOp,
+} from "@reactdx/messages"
 import { batch, createSignal } from "solid-js"
 
 export type Row = {
@@ -10,7 +16,14 @@ export type Row = {
   expandable: boolean
   expanded: boolean
   match: boolean
+  // A run of same-named siblings shown as one row (its id is minus the first
+  // member's): how many.
+  group?: { size: number }
 }
+
+const RECENT_MS = 1000
+// Consecutive siblings with the same name and kind that make a group row.
+const GROUP_MIN = 5
 
 type Node = {
   rootId: number
@@ -28,6 +41,17 @@ export function createTreeStore() {
   const nodes = new Map<number, Node>()
   const tops = new Map<number, number[]>()
   const collapsed = new Set<number>()
+  // Members of open groups: a group is open when any of its members is here.
+  const opened = new Set<number>()
+  // Each group row's members, by its id, as the last rows() found them.
+  const groups = new Map<number, number[]>()
+  // The page's render counts by id (docs/messages.md, counts).
+  const counts = new Map<number, RenderCount>()
+  // Counts and recency change on every flush: rows read them through their own
+  // signal, so a flush doesn't rebuild the rows.
+  const [tally, setTally] = createSignal(0)
+  let recent = new Set<number>()
+  let fade: ReturnType<typeof setTimeout> | undefined
   const [version, setVersion] = createSignal(0)
   const [selected, select] = createSignal<number>()
   const [showHosts, showHostsSignal] = createSignal(false)
@@ -47,6 +71,8 @@ export function createTreeStore() {
   const reset = () => {
     nodes.clear()
     tops.clear()
+    counts.clear()
+    setTally(tally() + 1)
   }
   const forget = (id: number) => {
     for (const child of nodes.get(id)?.children ?? []) forget(child)
@@ -108,7 +134,8 @@ export function createTreeStore() {
     )
   }
 
-  // Hidden host elements: their children take their place and depth.
+  // Hidden host elements: their children take their place and depth. Runs of
+  // GROUP_MIN or more same-named siblings fold into a group row.
   const rows = (rootId: number): Row[] => {
     version()
     const rows: Row[] = []
@@ -127,23 +154,52 @@ export function createTreeStore() {
         expanded,
         match: isMatch(node),
       })
-      if (expanded) for (const kid of kids) visit(kid, depth + 1)
+      if (expanded) visitAll(kids, depth + 1)
     }
-    for (const id of shown(tops.get(rootId) ?? [])) visit(id, 0)
+    const group = (members: number[], depth: number) => {
+      const { name, kind } = nodes.get(members[0] as number) as Node
+      const id = -(members[0] as number)
+      const expanded = members.some((member) => opened.has(member))
+      groups.set(id, members)
+      rows.push({
+        id,
+        name,
+        depth,
+        kind,
+        key: null,
+        expandable: true,
+        expanded,
+        match: false,
+        group: { size: members.length },
+      })
+      if (expanded) for (const member of members) visit(member, depth + 1)
+    }
+    const visitAll = (ids: number[], depth: number) => {
+      for (let at = 0; at < ids.length; ) {
+        const first = nodes.get(ids[at] as number) as Node
+        let end = at + 1
+        while (end < ids.length) {
+          const next = nodes.get(ids[end] as number) as Node
+          if (next.name !== first.name || next.kind !== first.kind) break
+          end++
+        }
+        if (end - at >= GROUP_MIN) group(ids.slice(at, end), depth)
+        else for (const id of ids.slice(at, end)) visit(id, depth)
+        at = end
+      }
+    }
+    visitAll(shown(tops.get(rootId) ?? []), 0)
     return rows
   }
 
   const toggle = (id: number) => {
-    if (!collapsed.delete(id)) collapsed.add(id)
+    if (id < 0) {
+      const members = groups.get(id) ?? [-id]
+      if (members.some((member) => opened.has(member)))
+        for (const member of members) opened.delete(member)
+      else opened.add(-id)
+    } else if (!collapsed.delete(id)) collapsed.add(id)
     setVersion(version() + 1)
-  }
-
-  // The nearest visible ancestor, or undefined at the top of a root.
-  const parentOf = (id: number) => {
-    let parent = nodes.get(id)?.parentId
-    while (parent && !visible(nodes.get(parent)))
-      parent = nodes.get(parent)?.parentId
-    return parent || undefined
   }
 
   // Every root's matches depth-first, collapsed subtrees included.
@@ -166,8 +222,11 @@ export function createTreeStore() {
   const [reveals, setReveals] = createSignal(0)
   const reveal = (id: number) =>
     batch(() => {
-      for (let at = nodes.get(id)?.parentId; at; at = nodes.get(at)?.parentId)
+      opened.add(id)
+      for (let at = nodes.get(id)?.parentId; at; at = nodes.get(at)?.parentId) {
         collapsed.delete(at)
+        opened.add(at)
+      }
       select(id)
       setVersion(version() + 1)
       setReveals(reveals() + 1)
@@ -179,9 +238,12 @@ export function createTreeStore() {
     const at = list.findIndex((row) => row.id === selected())
     const current = list[at]
     if (current && name === "ArrowLeft") {
-      const parent = parentOf(current.id)
+      // The row's parent in the list: a group row for its members.
+      let parent: Row | undefined
+      for (let i = at - 1; i >= 0 && !parent; i--)
+        if ((list[i] as Row).depth < current.depth) parent = list[i]
       if (current.expandable && current.expanded) toggle(current.id)
-      else if (parent) select(parent)
+      else if (parent) select(parent.id)
       return true
     }
     if (current && name === "ArrowRight") {
@@ -210,12 +272,47 @@ export function createTreeStore() {
       else if (batch.seq !== expected) stale = true
       if (!stale) stale = !batch.ops.every(applyOp)
       expected = batch.seq + 1
-      if (!nodes.has(selected() as number)) select(undefined)
+      // A group row's id is minus its first member's.
+      if (!nodes.has(Math.abs(selected() ?? 0))) select(undefined)
       setVersion(version() + 1)
       return stale
     },
 
     rows,
+    receiveCounts(message: CountsMessage) {
+      for (const count of message.counts) counts.set(count.id, count)
+      recent = new Set(message.counts.map((count) => count.id))
+      clearTimeout(fade)
+      fade = setTimeout(() => {
+        recent = new Set()
+        setTally(tally() + 1)
+      }, RECENT_MS)
+      setTally(tally() + 1)
+    },
+    // A node's parent id (undefined at the top of a root, or unknown).
+    parentOf(id: number) {
+      version()
+      return nodes.get(id)?.parentId || undefined
+    },
+    // A node's render counts (undefined: none since the watch). A group row's
+    // are its members' wasted renders.
+    countOf(id: number): RenderCount | undefined {
+      tally()
+      if (id > 0) return counts.get(id)
+      const wasted = (groups.get(id) ?? []).reduce(
+        (sum, member) => sum + (counts.get(member)?.wasted ?? 0),
+        0,
+      )
+      return { id, renders: 0, wasted }
+    },
+    // In the newest counts (the page's last flush) for RECENT_MS; a group row
+    // while any member is.
+    isRecent(id: number) {
+      tally()
+      return id > 0
+        ? recent.has(id)
+        : (groups.get(id) ?? []).some((member) => recent.has(member))
+    },
     // A node's name, kind and key, for the inspector's header.
     info(id: number) {
       version()
@@ -263,13 +360,14 @@ export function createTreeStore() {
     showHosts,
     setShowHosts(on: boolean) {
       showHostsSignal(on)
-      if (!visible(nodes.get(selected() as number))) select(undefined)
+      if (!visible(nodes.get(Math.abs(selected() ?? 0)))) select(undefined)
       setVersion(version() + 1)
     },
 
     clear() {
       reset()
       collapsed.clear()
+      opened.clear()
       select(undefined)
       hover(undefined)
       setPicking(false)

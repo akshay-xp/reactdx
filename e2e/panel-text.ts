@@ -7,9 +7,11 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // one (Next's) shows its last rows, where the app's components are, only then.
 // hover(name) puts the pointer on
 // the tree row with that name; leave() moves it off the trees. close() closes DevTools.
-// press(name) clicks the button with that name (its text or aria-label), pressed(name)
-// reads its aria-pressed,
-// selected() is the selected row's name, select(name) clicks the row with that name.
+// press(name) clicks the button with that name (its text or aria-label) or the
+// checkbox with that label, pressed(name)
+// reads its aria-pressed, key(text, key) presses a key on a row or the commits
+// list, tab(name) selects the panel tab with that name, commits() reads the
+// commit rows as listed, selected() is the selected row's name, select(name) clicks the row with that name.
 // The text leaves out the inspector pane; inspector() reads only that.
 // frame is the panel's document (Chrome only: Firefox's is out of Puppeteer's reach).
 export type PanelText = (() => Promise<string>) & {
@@ -22,12 +24,37 @@ export type PanelText = (() => Promise<string>) & {
   close(): Promise<void>
   press(name: string): Promise<void>
   pressed(name: string): Promise<boolean>
+  // Focuses the row (or the listbox) whose text or name includes `text` and
+  // presses `key`.
+  key(text: string, key: Key): Promise<void>
+  // Selects the panel tab ("Components", "Commits") with that name.
+  tab(name: string): Promise<void>
+  // The commit rows' text, as listed (newest first).
+  commits(): Promise<string[]>
   // Replaces the text of the input with that accessible name ("" empties it).
   type(label: string, text: string): Promise<void>
   // Edits the inspector value row reading `row`: opens its editor, enters `text`
   // and presses Enter.
   edit(row: string, text: string): Promise<void>
   selected(): Promise<string | undefined>
+}
+
+type Key =
+  | "ArrowLeft"
+  | "ArrowRight"
+  | "ArrowUp"
+  | "ArrowDown"
+  | "Home"
+  | "End"
+  | "Escape"
+const KEY_CODES: Record<Key, string> = {
+  ArrowLeft: "LEFT",
+  ArrowRight: "RIGHT",
+  ArrowUp: "UP",
+  ArrowDown: "DOWN",
+  Home: "HOME",
+  End: "END",
+  Escape: "ESCAPE",
 }
 
 // Text pieces are joined with spaces (the accessibility tree splits text differently
@@ -53,9 +80,12 @@ export async function openPanelText(
           if (!root) return ""
           const texts: string[] = []
           const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-          while (walker.nextNode())
+          while (walker.nextNode()) {
+            // A hidden tab isn't shown (nor in Firefox's accessibility tree).
+            if (walker.currentNode.parentElement?.closest("[hidden]")) continue
             if (inspector || !pane?.contains(walker.currentNode))
               texts.push(walker.currentNode.textContent ?? "")
+          }
           return texts.join(" ")
         }, inspector),
       )
@@ -90,8 +120,9 @@ export async function openPanelText(
       await frame.hover("[data-testid=search]")
     }
     const close = () => frame.page().close()
+    // A button by its name, or a checkbox by its label's text.
     const button = (name: string) =>
-      `[...document.querySelectorAll("button")].find((el) => (el.getAttribute("aria-label") ?? el.textContent.trim()) === ${json(name)})`
+      `[...document.querySelectorAll("button, input[type=checkbox]")].find((el) => !el.closest("[hidden]") && (el.getAttribute("aria-label") ?? (el.labels?.[0] ?? el).textContent.trim()) === ${json(name)})`
     const press = async (name: string) => {
       await frame.evaluate(`${button(name)}.click()`)
     }
@@ -120,6 +151,39 @@ export async function openPanelText(
       await frame.page().keyboard.type(text)
       await frame.page().keyboard.press("Enter")
     }
+    const key = async (text: string, key: Key) => {
+      // An exact name first (a section header named by its aria-label), then
+      // any row whose text includes it.
+      await frame.evaluate((text) => {
+        const all = [
+          ...document.querySelectorAll<HTMLElement>(
+            "[role=treeitem], [role=listbox]",
+          ),
+        ]
+        ;(
+          all.find((el) => el.getAttribute("aria-label") === text) ??
+          all.find((el) => el.textContent?.includes(text))
+        )?.focus()
+      }, text)
+      await frame.page().keyboard.press(key)
+    }
+    const tab = async (name: string) => {
+      await frame.evaluate(
+        (name) =>
+          (
+            [...document.querySelectorAll("[role=tab]")].find(
+              (el) => el.getAttribute("aria-label") === name,
+            ) as HTMLElement | undefined
+          )?.click(),
+        name,
+      )
+    }
+    const commits = () =>
+      frame.evaluate(() =>
+        [...document.querySelectorAll("[role=option]")].map((el) =>
+          (el.textContent ?? "").trim(),
+        ),
+      )
     const selected = () =>
       frame.evaluate(
         () =>
@@ -137,6 +201,9 @@ export async function openPanelText(
       close,
       press,
       pressed,
+      key,
+      tab,
+      commits,
       type,
       edit,
       selected,
@@ -314,7 +381,7 @@ export async function openPanelText(
   }
   const role = (name: string) => `Ci.nsIAccessibleRole.ROLE_${name}`
   const button = (name: string) =>
-    `(node.role === ${role("PUSHBUTTON")} || node.role === ${role("TOGGLE_BUTTON")}) && node.name === ${json(name)}`
+    `[${role("PUSHBUTTON")}, ${role("TOGGLE_BUTTON")}, ${role("CHECKBUTTON")}].includes(node.role) && node.name === ${json(name)}`
   const press = async (name: string) => {
     await onAccessible(button(name), `node.doAction(0); return "ok"`)
   }
@@ -373,6 +440,54 @@ export async function openPanelText(
       if (!focused) await new Promise((resolve) => setTimeout(resolve, 200))
     }
   }
+  // The row's accessible takes focus, then a trusted key from the parent.
+  const key = async (text: string, key: Key) => {
+    // An exact name first (a section header), then any row that includes it.
+    const rows = `[${role("OUTLINEITEM")}, ${role("LISTBOX")}].includes(node.role)`
+    const exact = await onAccessible(
+      `${rows} && node.name === ${json(text)}`,
+      `return "found"`,
+      false,
+    )
+    await onAccessible(
+      exact
+        ? `${rows} && node.name === ${json(text)}`
+        : `${rows} && node.name?.includes(${json(text)})`,
+      `node.takeFocus()
+      const tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor)
+      tip.beginInputTransactionForTests(window)
+      const event = new KeyboardEvent("", { key: ${json(key)}, code: ${json(key)}, keyCode: KeyboardEvent.DOM_VK_${KEY_CODES[key]} })
+      return new Promise((r) => setTimeout(() => {
+        tip.keydown(event)
+        tip.keyup(event)
+        r("ok")
+      }, 50))`,
+    )
+  }
+  const tab = async (name: string) => {
+    await onAccessible(
+      `node.role === ${role("PAGETAB")} && node.name === ${json(name)}`,
+      `node.doAction(0); return "ok"`,
+    )
+  }
+  const commits = async () =>
+    JSON.parse(
+      (await chromeEval(
+        browser,
+        `(() => {
+          ${panelBrowser}
+          if (!panel) return "[]"
+          const rows = []
+          const walk = (node) => {
+            if (!node) return
+            if (node.role === ${role("OPTION")}) rows.push(node.name ?? "")
+            for (let i = 0; i < node.childCount; i++) walk(node.getChildAt(i))
+          }
+          walk(service.getAccessibleFor(panel))
+          return JSON.stringify(rows)
+        })()`,
+      )) ?? "[]",
+    ) as string[]
   const pressed = async (name: string) =>
     (await onAccessible(
       button(name),
@@ -408,6 +523,9 @@ export async function openPanelText(
     close,
     press,
     pressed,
+    key,
+    tab,
+    commits,
     type,
     edit,
     selected,
@@ -419,10 +537,12 @@ const json = JSON.stringify
 export type Copy = { heading: string; commits: number[]; names: string[] }
 
 const HEADING = /React (\S+) (development|production) (\S+)/g
-const ROOT = /Root \d+ (\d+) commits/g
+const ROOT = /Root \d+ (\d+) updates/g
+const LEGEND = "Numbers: renders since DevTools opened"
 
-// "React 18.3.1 development react-dom Root 1 3 commits App Counter ..." into copies:
-// each root's commit count, and the component names listed under its roots.
+// "React 18.3.1 development react-dom Root 1 3 commits App Counter 2 ..." into
+// copies: each root's commit count, and the component names listed under its
+// roots (not the rows' render counts, nor the legend under the trees).
 export function parseCopies(text: string): Copy[] {
   const headings = [...text.matchAll(HEADING)]
   return headings.map((match, i) => {
@@ -435,7 +555,11 @@ export function parseCopies(text: string): Copy[] {
     return {
       heading: match[0],
       commits: [...segment.matchAll(ROOT)].map(([, n]) => Number(n)),
-      names: segment.replace(ROOT, " ").split(" ").filter(Boolean),
+      names: segment
+        .replace(ROOT, " ")
+        .replace(LEGEND, " ")
+        .split(" ")
+        .filter((name) => name && !/^\d+$/.test(name)),
     }
   })
 }

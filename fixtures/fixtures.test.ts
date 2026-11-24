@@ -71,6 +71,50 @@ for (const [script, port, version] of [
       await page.close()
     })
 
+    test("serves the insight page: a button per render reason", async () => {
+      const page = await browser.newPage()
+      const errors: string[] = []
+      page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
+      await page.goto(`http://localhost:${port}/insight.html`)
+      await page.waitForSelector("[data-testid=insight]")
+      const shows = async (selector: string, expected: string) =>
+        page.waitForFunction(
+          (s, e) => document.querySelector(s)?.textContent === e,
+          {},
+          selector,
+          expected,
+        )
+      await shows("[data-testid=shown]", "Count 1")
+      await shows("[data-testid=styled]", "Styled 1")
+      await page.click("[data-testid=bump]")
+      await shows("[data-testid=shown]", "Count 2")
+      await shows("[data-testid=stateful]", "State 0")
+      await page.click("[data-testid=state]")
+      await shows("[data-testid=stateful]", "State 1")
+      await shows("[data-testid=counted]", "Counter 3")
+      await page.click("[data-testid=count]")
+      await shows("[data-testid=counted]", "Counter 4")
+      await shows("[data-testid=reader]", "Theme dark")
+      await page.click("[data-testid=theme]")
+      await shows("[data-testid=reader]", "Theme light")
+      await shows("[data-testid=effects]", "Effects a1 b1")
+      await page.click("[data-testid=b]")
+      await shows("[data-testid=effects]", "Effects a1 b2")
+      await page.waitForSelector("[data-testid=item]")
+      await page.click("[data-testid=rekey]")
+      await page.waitForSelector("[data-testid=item]")
+      await page.waitForSelector("div > [data-testid=inner]")
+      await page.click("[data-testid=wrap]")
+      await page.waitForSelector("section > [data-testid=inner]")
+      await page.click("[data-testid=add]")
+      await page.waitForSelector("[data-testid=late]")
+      await shows("[data-testid=stepped]", "Stepped 0")
+      await page.click("[data-testid=step]")
+      await shows("[data-testid=stepped]", "Stepped 1")
+      assert.deepEqual(errors, [])
+      await page.close()
+    })
+
     test("serves the hook-cost bench page", async () => {
       const page = await browser.newPage()
       await openBench(page, port)

@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "bench": "playwright install chromium && node run.ts",
+    "memory": "playwright install chromium && pnpm --dir ../.. --filter @reactdx/extension build:chrome && node memory.ts",
     "test": "node --test \"*.test.ts\""
   },
   "devDependencies": {

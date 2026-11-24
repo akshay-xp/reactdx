@@ -1,6 +1,12 @@
 import {
+  type CommitsMessage,
+  type CommittedMessage,
+  type CountsMessage,
+  committed,
   type ExpandedMessage,
   type InspectedMessage,
+  type ReasonedMessage,
+  type RenderCount,
   type TreeBatchMessage,
   UNWATCH,
   valueStored,
@@ -37,6 +43,63 @@ function Other() {
   const [value, set] = React.useState(0)
   setOther = set
   return h("i", null, value)
+}
+// Taken in an effect: an inspection's shadow render gets stub setters.
+let setReasoned = (_: number) => {}
+function Reasoned() {
+  const [value, set] = React.useState(0)
+  React.useEffect(() => {
+    setReasoned = set
+  })
+  return h("b", null, value)
+}
+const StyledChild = React.memo(function StyledChild(_: { style: object }) {
+  return null
+})
+let setStyling = (_: number) => {}
+function Styling() {
+  const [n, set] = React.useState(0)
+  React.useEffect(() => {
+    setStyling = set
+  })
+  return h("p", null, n, h(StyledChild, { style: { color: "red" } }))
+}
+let setEffecting = (_: number) => {}
+function Effecting() {
+  const [n, set] = React.useState(0)
+  React.useEffect(() => {
+    setEffecting = set
+  })
+  React.useEffect(() => {}, [n])
+  return h("dfn", null, n)
+}
+function Rekeyed() {
+  return h("kbd")
+}
+let setRekey = (_: string) => {}
+function Rekeying() {
+  const [k, set] = React.useState("a")
+  React.useEffect(() => {
+    setRekey = set
+  })
+  return h(Rekeyed, { key: k })
+}
+function Triggered() {
+  return h("abbr")
+}
+let setTriggering = (_: number) => {}
+function useCount() {
+  const [n, set] = React.useState(1)
+  React.useEffect(() => {
+    setTriggering = set
+  })
+  return n
+}
+// Hooks rows: State #1, Count #2 (the group), State #3, Effect #4.
+function Triggering() {
+  React.useState("x")
+  const n = useCount()
+  return h("q", null, n, h(Triggered))
 }
 function Deep(_: { data: unknown }) {
   return null
@@ -93,6 +156,11 @@ beforeAll(async () => {
       h(Greeting, { key: "g", name: "Ada" }),
       h(Clock, { key: "c" }),
       h(Other, { key: "o" }),
+      h(Reasoned, { key: "why" }),
+      h(Styling, { key: "styling" }),
+      h(Effecting, { key: "effecting" }),
+      h(Rekeying, { key: "rekeying" }),
+      h(Triggering, { key: "triggering" }),
       h(Deep, { key: "d", data: { a: { b: { c: 1 } } } }),
       h(Refs, { key: "r" }),
       h(Counted, { key: "k", label: "x" }),
@@ -499,4 +567,313 @@ test("rerender renders the inspected component once, nothing changed", async () 
   await rerender(idOf("Other"))
   await rerender(idOf("var"))
   expect(commits()).toBe(committed + 1)
+})
+
+test("an inspection carries why its node last rendered, while watched", async () => {
+  const reasoned = idOf("Reasoned")
+  inspect(reasoned)
+  await React.act(() => setReasoned(1))
+  await flushed()
+  expect(replies().at(-1)?.data?.render).toMatchObject({
+    kinds: ["state"],
+    hooks: [{ hook: [0], old: 0, new: 1 }],
+  })
+  expect(typeof replies().at(-1)?.data?.render?.time).toBe("number")
+})
+
+test("renders before watch, or before an unwatch, aren't kept", async () => {
+  const reasoned = idOf("Reasoned")
+  send(UNWATCH)
+  await React.act(() => setReasoned(10))
+  send(WATCH)
+  inspect(reasoned)
+  expect(replies().at(-1)?.data?.render).toBeUndefined()
+  await React.act(() => setReasoned(11))
+  send(UNWATCH)
+  send(WATCH)
+  inspect(reasoned)
+  expect(replies().at(-1)?.data?.render).toBeUndefined()
+})
+
+// A class keeps its state object and props through a forced render, so only
+// the newer record says to send again.
+test("a forced render re-sends the inspection with its reason", async () => {
+  const id = idOf("Clock")
+  inspect(id)
+  await React.act(() => clock.setState({ ticks: 30 }))
+  await flushed()
+  const before = replies().at(-1)?.data?.render
+  await React.act(async () =>
+    send({ source: "reactdx-relay", type: "rerender", id }),
+  )
+  await flushed()
+  const after = replies().at(-1)?.data?.render
+  expect(after?.kinds).toEqual(["force"])
+  expect(after?.seq).toBeGreaterThan(before?.seq ?? 0)
+})
+
+test("a prop change says when it's only a new reference", async () => {
+  inspect(idOf("StyledChild"))
+  await React.act(() => setStyling(1))
+  await flushed()
+  expect(replies().at(-1)?.data?.render?.props?.[0]).toMatchObject({
+    key: "style",
+    reference: "same-value",
+  })
+})
+
+test("an inspection carries the effects its render ran, by call indexes", async () => {
+  inspect(idOf("Effecting"))
+  await React.act(() => setEffecting(1))
+  await flushed()
+  expect(replies().at(-1)?.data?.render?.effects).toContainEqual({
+    hook: [2],
+    changed: [{ dep: 0, old: 0, new: 1 }],
+  })
+})
+
+test("an inspection says when its node remounted and why", async () => {
+  await React.act(() => setRekey("b"))
+  await flushed()
+  const adds = posted
+    .filter(
+      (m): m is TreeBatchMessage => (m as { type?: string }).type === "tree",
+    )
+    .flatMap((batch) => batch.ops)
+    .filter((op) => op.op === "add" && op.name === "Rekeyed")
+  inspect((adds.at(-1) as { id: number }).id)
+  expect(replies().at(-1)?.data?.render?.remount).toEqual({
+    cause: "key",
+    from: "a",
+    to: "b",
+  })
+})
+
+test("an inspection names what triggered its render, hooks labeled as in Hooks", async () => {
+  const triggering = idOf("Triggering")
+  inspect(idOf("Triggered"))
+  await React.act(() => setTriggering(2))
+  await flushed()
+  const expected = [
+    { id: triggering, hooks: [{ name: "State #3", old: 1, new: 2 }] },
+  ]
+  expect(replies().at(-1)?.data?.render?.updaters).toEqual(expected)
+  inspect(triggering)
+  expect(replies().at(-1)?.data?.render?.updaters).toEqual(expected)
+  // The commit's reply labels them the same, whatever is selected.
+  const seq = replies().at(-1)?.data?.render?.seq ?? 0
+  inspect(null)
+  posted.length = 0
+  send({ source: "reactdx-relay", type: "commit", seq })
+  const [reply] = posted as CommittedMessage[]
+  expect(reply?.updaters).toEqual(expected)
+  expect(reply?.renders).toContainEqual({ id: triggering, kinds: ["state"] })
+})
+
+test("an inspection lists the node's recorded renders, oldest first", async () => {
+  const reasoned = idOf("Reasoned")
+  inspect(reasoned)
+  const before = replies().at(-1)?.data?.history?.length ?? 0
+  for (const n of [21, 22, 23]) await React.act(() => setReasoned(n))
+  await flushed()
+  const { history = [], render } = replies().at(-1)?.data ?? {}
+  expect(history).toHaveLength(before + 3)
+  expect([...history].sort((a, b) => a - b)).toEqual(history)
+  expect(history.at(-1)).toBe(render?.seq)
+  inspect(idOf("Greeting"))
+  expect(replies().at(-1)?.data).not.toHaveProperty("history")
+})
+
+const reasonedReplies = () =>
+  posted.filter(
+    (m): m is ReasonedMessage => (m as { type?: string }).type === "reasoned",
+  )
+
+test("reason loads an older render; one out of the buffer loads as null", async () => {
+  const reasoned = idOf("Reasoned")
+  inspect(reasoned)
+  await React.act(() => setReasoned(0))
+  for (const n of [1, 2, 3]) await React.act(() => setReasoned(n))
+  await flushed()
+  const history = replies().at(-1)?.data?.history ?? []
+  const seq = history.at(-3) ?? 0
+  send({ source: "reactdx-relay", type: "reason", id: reasoned, seq })
+  expect(reasonedReplies().at(-1)).toMatchObject({
+    id: reasoned,
+    seq,
+    render: { seq, kinds: ["state"], hooks: [{ hook: [0], old: 0, new: 1 }] },
+  })
+  send({ source: "reactdx-relay", type: "reason", id: idOf("Other"), seq })
+  expect(reasonedReplies()).toHaveLength(1)
+  for (let n = 1; n <= 1001; n++) await React.act(() => setEffecting(100 + n))
+  send({ source: "reactdx-relay", type: "reason", id: reasoned, seq })
+  expect(reasonedReplies().at(-1)).toMatchObject({ seq, render: null })
+})
+
+const commitLists = () =>
+  posted
+    .filter(
+      (m): m is CommitsMessage => (m as { type?: string }).type === "commits",
+    )
+    .map((m) => m.commits)
+
+test("the flush posts the commits recorded since the last, once each", async () => {
+  const reasoned = idOf("Reasoned")
+  // Past the setup watch's own list.
+  posted.length = 0
+  await React.act(() => setReasoned(41))
+  await flushed()
+  await React.act(() => setReasoned(42))
+  await flushed()
+  const lists = commitLists()
+  expect(lists).toHaveLength(2)
+  const seqs = lists.flat().map((commit) => commit.seq)
+  expect([...seqs].sort((a, b) => a - b)).toEqual(seqs)
+  expect(new Set(seqs).size).toBe(seqs.length)
+  expect(lists[1]?.at(-1)).toMatchObject({ updaters: [reasoned], renders: 1 })
+  // A new watch starts the panel's list over: the buffer is sent again at once,
+  // after the tree (this test's two commits at least; the oldest may have
+  // dropped since).
+  posted.length = 0
+  send(WATCH)
+  const types = posted.map((m) => (m as { type?: string }).type)
+  expect(types.indexOf("commits")).toBeGreaterThan(types.indexOf("tree"))
+  expect(
+    commitLists()
+      .flat()
+      .map((commit) => commit.seq),
+  ).toEqual(expect.arrayContaining(seqs.slice(-2)))
+  // Then only what's new.
+  posted.length = 0
+  await React.act(() => setReasoned(43))
+  await flushed()
+  expect(commitLists().flat()).toHaveLength(1)
+})
+
+test("the buffer goes out in batches of at most 100, each with what the page holds", async () => {
+  // A fresh buffer: earlier tests filled this one past its limit.
+  send(UNWATCH)
+  send(WATCH)
+  for (let n = 1; n <= 101; n++) await React.act(() => setReasoned(500 + n))
+  posted.length = 0
+  send(WATCH)
+  const messages = posted.filter(
+    (m): m is CommitsMessage => (m as { type?: string }).type === "commits",
+  )
+  expect(messages.length).toBeGreaterThan(1)
+  for (const message of messages) {
+    expect(message.commits.length).toBeLessThanOrEqual(100)
+    expect(message.dropped).toBe(false)
+    expect(message.oldest).toBeLessThanOrEqual(message.commits[0]?.seq ?? 0)
+  }
+  const seqs = messages.flatMap((m) => m.commits.map((commit) => commit.seq))
+  expect([...seqs].sort((a, b) => a - b)).toEqual(seqs)
+  expect(new Set(seqs).size).toBe(seqs.length)
+  expect(seqs).toHaveLength(101)
+})
+
+test("each posted update names the state change that caused it", async () => {
+  await React.act(() => setReasoned(900))
+  await flushed()
+  posted.length = 0
+  await React.act(() => setReasoned(901))
+  await flushed()
+  expect(commitLists().flat().at(-1)?.change).toEqual({
+    hook: 0,
+    old: 900,
+    new: 901,
+  })
+})
+
+test("clear-updates empties the update list, then new updates come", async () => {
+  await React.act(() => setReasoned(950))
+  await flushed()
+  posted.length = 0
+  send({ source: "reactdx-relay", type: "clear-updates" })
+  const [cleared] = posted.filter(
+    (m): m is CommitsMessage => (m as { type?: string }).type === "commits",
+  )
+  expect(cleared?.commits).toEqual([])
+  expect(cleared?.dropped).toBe(false)
+  posted.length = 0
+  await React.act(() => setReasoned(951))
+  await flushed()
+  expect(commitLists().flat()).toHaveLength(1)
+})
+
+const countLists = () =>
+  posted
+    .filter(
+      (m): m is CountsMessage => (m as { type?: string }).type === "counts",
+    )
+    .map((m) => m.counts)
+
+test("render counts go out on the flush when they change, and all on watch", async () => {
+  const reasoned = idOf("Reasoned")
+  const of = (list: RenderCount[] | undefined) =>
+    list?.find((count) => count.id === reasoned)
+  posted.length = 0
+  await React.act(() => setReasoned(700))
+  await flushed()
+  const before = of(countLists().at(-1))?.renders ?? 0
+  expect(before).toBeGreaterThan(0)
+  posted.length = 0
+  await React.act(() => setReasoned(701))
+  await flushed()
+  expect(countLists()).toHaveLength(1)
+  expect(of(countLists()[0])?.renders).toBe(before + 1)
+  posted.length = 0
+  await flushed()
+  expect(countLists()).toEqual([])
+  send(WATCH)
+  const types = posted.map((m) => (m as { type?: string }).type)
+  expect(types.lastIndexOf("counts")).toBeGreaterThan(types.indexOf("commits"))
+  expect(of(countLists().flat())?.renders).toBe(before + 1)
+  posted.length = 0
+  send(UNWATCH)
+  send(WATCH)
+  expect(countLists()).toEqual([[]])
+})
+
+function Cell() {
+  return null
+}
+let setMany = (_: number) => {}
+function Many() {
+  const [n, set] = React.useState(0)
+  React.useEffect(() => {
+    setMany = set
+  })
+  return Array.from({ length: 2001 }, (_, i) => h(Cell, { key: i, n }))
+}
+
+test("commit sends a commit's renders in batches of 2,000, triggers first", async () => {
+  const { createRoot } = await import("react-dom/client")
+  const other = createRoot(document.createElement("div"))
+  await React.act(() => other.render(h(Many)))
+  try {
+    await React.act(() => setMany(1))
+    await flushed()
+    const last = commitLists().flat().at(-1)
+    const seq = last?.seq ?? 0
+    posted.length = 0
+    send({ source: "reactdx-relay", type: "commit", seq })
+    const replies = posted.filter(
+      (m): m is CommittedMessage =>
+        (m as { type?: string }).type === "committed",
+    )
+    expect(replies.map((m) => m.renders?.length)).toEqual([2000, 2])
+    expect(
+      new Set(replies.flatMap((m) => m.renders ?? []).map((r) => r.id)).size,
+    ).toBe(2002)
+    // Many's own update: it triggered, and only the first batch says so.
+    expect(replies[0]?.updaters?.map((u) => u.id)).toEqual(last?.updaters)
+    expect(last?.updaters).toHaveLength(1)
+    expect(replies[1]).not.toHaveProperty("updaters")
+    posted.length = 0
+    send({ source: "reactdx-relay", type: "commit", seq: 9999 })
+    expect(posted).toEqual([committed(9999, null)])
+  } finally {
+    await React.act(() => other.unmount())
+  }
 })

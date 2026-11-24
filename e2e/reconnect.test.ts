@@ -8,6 +8,7 @@ import {
   type PanelText,
   panelFor,
   parseCopies,
+  selectListed,
   total,
   until,
 } from "./panel-text.ts"
@@ -71,6 +72,76 @@ test("the panel reconnects after the background stops", { skip }, async () => {
       (await toolbar(name, browser, page)).title,
       "ReactDX: React 18.3.1",
     )
+  } finally {
+    await browser.close()
+  }
+})
+
+type Unwatched = Window & { unwatched?: boolean }
+
+test("a stopped background keeps the recorded updates; closing the panel clears them", {
+  skip,
+}, async () => {
+  const { browser, page, panel } = await panelFor(name, URL_18, "after")
+  const click = () =>
+    page.$eval("[data-testid=counter]", (el) => (el as HTMLElement).click())
+  const shows = async (read: () => Promise<string>, part: string) => {
+    const text = await until(read, (t) => t.includes(part))
+    assert.ok(text.includes(part), text)
+  }
+  // How many updates Counter's group holds: its clicks share one cause.
+  const grouped = async (check: (count: number) => boolean) => {
+    const deadline = Date.now() + 5000
+    const read = async () => {
+      const row = (await panel.commits()).find((text) =>
+        /^Counter · \d+ updates/.test(text),
+      )
+      return Number(row?.match(/(\d+) updates/)?.[1] ?? 0)
+    }
+    let count = await read()
+    while (!check(count) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      count = await read()
+    }
+    assert.ok(check(count), String(count))
+    return count
+  }
+  try {
+    await expectLive(page, panel)
+    await selectListed(panel, "Counter")
+    // The renders recorded are in the folded Renders section.
+    await panel.key("Renders", "ArrowRight")
+    await click()
+    await click()
+    await shows(panel.inspector, "3 renders recorded")
+    await panel.tab("Updates")
+    const before = await grouped((count) => count >= 2)
+    await panel.key("Updates", "Home")
+    await shows(panel, "only because a parent rendered")
+
+    await stopBackground(name, browser)
+    // An update after the reconnect joins the same list, none lost.
+    await click()
+    await grouped((count) => count === before + 1)
+    const picked = await until(panel, (t) =>
+      t.includes("only because a parent rendered"),
+    )
+    assert.ok(!picked.includes("Pick an update"), picked)
+    await panel.tab("Components")
+    await shows(panel.inspector, "4 renders recorded")
+
+    // Closing DevTools stops the agent (dropping what it recorded) at once,
+    // well inside the relay's 10 s grace for a stopped background.
+    await page.evaluate(() =>
+      addEventListener("message", ({ data }) => {
+        if (data?.source === "reactdx-relay" && data.type === "unwatch")
+          (window as Unwatched).unwatched = true
+      }),
+    )
+    await panel.close()
+    await page.waitForFunction(() => (window as Unwatched).unwatched, {
+      timeout: 3000,
+    })
   } finally {
     await browser.close()
   }

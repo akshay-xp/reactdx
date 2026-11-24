@@ -197,12 +197,25 @@ describe("fixture:19 tree page", {
         "Activity",
         "Item",
       ]
-      const names = (t: string) => JSON.stringify(parseCopies(t)[0]?.names)
-      const text = await until(
-        panel,
-        (t) => names(t) === JSON.stringify(expected),
-      )
-      assert.equal(names(text), JSON.stringify(expected), text)
+      const names = (t: string) => parseCopies(t)[0]?.names ?? []
+      // A stacked panel (Firefox's window) can have the last row out of view:
+      // the rows shown from the top, then the tail after End.
+      const top = (t: string) => {
+        const shown = names(t)
+        return (
+          shown.length >= expected.length - 2 &&
+          JSON.stringify(shown) ===
+            JSON.stringify(expected.slice(0, shown.length))
+        )
+      }
+      const text = await until(panel, top)
+      assert.ok(top(text), text)
+      await panel.end()
+      const tail = (t: string) =>
+        JSON.stringify(names(t).slice(-4)) ===
+        JSON.stringify(expected.slice(-4))
+      const end = await until(panel, tail)
+      assert.ok(tail(end), end)
     } finally {
       await browser.close()
     }

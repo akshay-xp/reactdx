@@ -35,6 +35,24 @@ async function benchPanel() {
       ),
     { timeout: 10_000 },
   )
+  // The 10,000 Cells fold into one group row (M6 #72): open it. Found and
+  // clicked in the panel: Cells still arriving rebuild the rows, so a handle
+  // to the row can go stale before a click lands.
+  await panel.waitForFunction(
+    () => {
+      const open = [...document.querySelectorAll("[data-testid=node]")].some(
+        (n) => n.textContent === 'Cell key="0"',
+      )
+      if (!open)
+        document
+          .querySelector<HTMLElement>(
+            '[data-testid=node][data-id^="-"][aria-expanded=false] [data-toggle]',
+          )
+          ?.click()
+      return open
+    },
+    { timeout: 10_000, polling: 100 },
+  )
   return { browser, page, panel }
 }
 
@@ -401,6 +419,73 @@ test("an unrelated commit sends no inspected message", { skip }, async () => {
           .querySelector("[data-testid=inspector]")
           ?.textContent?.includes("State: 1"),
       { timeout: 1000 },
+    )
+  } finally {
+    await browser.close()
+  }
+})
+
+type Bench = Window & { __bench: (mode: string, n: number) => number[] }
+
+// Recording (M6) runs inside React's commit hook while the panel watches:
+// flushSync's time includes it. Medians of five after a warm-up commit. Each
+// waits for the panel to settle (its first load, the warm-up's flush): on a
+// 2-core CI runner the panel's work competed with the page for the CPU, which
+// measured the panel's load, not the recording. One cell's budget is loose: the
+// tree mirror walks all 10,000 cloned siblings (+3 to 5 ms on CI, #76).
+test("watching keeps a one-cell commit under 2x, all cells under +25%", {
+  skip,
+}, async (t) => {
+  const { browser } = await launchWithExtension(name)
+  try {
+    const [page] = await browser.pages()
+    if (!page) throw new Error("no page")
+    await page.goto(BENCH)
+    await page.waitForFunction(
+      () => document.querySelectorAll("[data-testid=cell]").length === 10000,
+      { timeout: 10_000 },
+    )
+    let panel: Awaited<ReturnType<typeof openPanel>> | undefined
+    // The flush (100 ms) has reached the panel, and the panel has handled it:
+    // three 50 ms timers in a row fire on time. A fixed wait wasn't enough on
+    // CI for 10,000 counts. (requestIdleCallback never fires in the panel.)
+    const settle = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      await panel?.evaluate(async () => {
+        for (let quiet = 0; quiet < 3; ) {
+          const start = performance.now()
+          await new Promise((resolve) => setTimeout(resolve, 50))
+          quiet = performance.now() - start < 60 ? quiet + 1 : 0
+        }
+      })
+    }
+    const median = async (mode: "one" | "all") => {
+      await page.evaluate((mode) => (window as Bench).__bench(mode, 1), mode)
+      await settle()
+      const times = await page.evaluate(
+        (mode) => (window as Bench).__bench(mode, 5),
+        mode,
+      )
+      return [...times].sort((a, b) => a - b)[2] as number
+    }
+    const before = { one: await median("one"), all: await median("all") }
+    panel = await openPanel(browser)
+    await panel.waitForFunction(
+      () =>
+        document
+          .querySelector("[data-testid=group]")
+          ?.textContent?.startsWith("×10000"),
+      { timeout: 10_000 },
+    )
+    await settle()
+    const watched = { one: await median("one"), all: await median("all") }
+    t.diagnostic(
+      `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} ms`,
+    )
+    assert.ok(watched.one / before.one < 2, JSON.stringify({ before, watched }))
+    assert.ok(
+      watched.all / before.all < 1.25,
+      JSON.stringify({ before, watched }),
     )
   } finally {
     await browser.close()

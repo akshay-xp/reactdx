@@ -92,9 +92,10 @@ export default defineBackground(() => {
     )
   }
 
-  // Disconnecting the relay's port is what tells it to stop watching.
+  // Tells the relay to stop watching; it closes the port. A port that only
+  // drops is the background stopping, which the relay rides out.
   const unwatch = (tabId: number) => {
-    trees.get(tabId)?.disconnect()
+    trees.get(tabId)?.postMessage({ type: "unwatch" })
     trees.delete(tabId)
   }
 

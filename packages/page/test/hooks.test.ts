@@ -12,6 +12,8 @@ import { installHook } from "../src/hook.ts"
 import {
   type DispatcherRef,
   type HooksFiber,
+  hookLabel,
+  hookPath,
   inspectHooks,
 } from "../src/hooks.ts"
 import { lineOf } from "./marker.ts"
@@ -20,6 +22,7 @@ import { windowLike } from "./window.ts"
 const h = React.createElement
 const posted: unknown[] = []
 let root: Root
+let container: HTMLElement
 let mount: (element: React.ReactNode) => Promise<void>
 // Loaded after the hook, like react-dom/client: React registers as it loads.
 let ReactDOM: { useFormStatus?: () => unknown }
@@ -33,7 +36,7 @@ beforeAll(async () => {
   const { createRoot } = await import("react-dom/client")
   ReactDOM = await import("react-dom")
   startAgent(globalThis, (message) => posted.push(message))
-  const container = document.createElement("div")
+  container = document.createElement("div")
   document.body.append(container)
   root = createRoot(container)
   mount = async (element) => {
@@ -419,13 +422,32 @@ function useCounted() {
   return React.useState(4)
 }
 
-test("state hooks carry their hook list index, what overrideHookState takes", async () => {
-  await mount(h(Indexed))
-  // The component's fiber, from its element's, and the renderer's dispatcher.
-  const element = document.querySelector("[data-indexed]") as object
-  const key = Object.keys(element).find((k) => k.startsWith("__reactFiber$"))
-  const fiber = (element as Record<string, { return: unknown }>)[key as string]
-    ?.return as HooksFiber
+type ListFiber = HooksFiber & {
+  child: ListFiber | null
+  sibling: ListFiber | null
+}
+
+// The named component's fiber (depth-first from the container) and its raw hooks.
+function rawHooksOf(name: string) {
+  const key = Object.keys(container).find((k) =>
+    k.startsWith("__reactContainer$"),
+  )
+  const find = (fiber: ListFiber | null): ListFiber | undefined => {
+    for (let at = fiber; at; at = at.sibling) {
+      if ((at.type as { name?: string } | null)?.name === name) return at
+      const inner = find(at.child)
+      if (inner) return inner
+    }
+  }
+  // The container keeps the first HostRoot fiber; its FiberRoot has the current one.
+  const host = (
+    container as unknown as Record<
+      string,
+      { stateNode: { current: ListFiber } }
+    >
+  )[key as string]
+  const fiber = find(host?.stateNode.current ?? null)
+  if (!fiber) throw new Error(`no ${name}`)
   const hook = (
     globalThis as unknown as {
       __REACT_DEVTOOLS_GLOBAL_HOOK__: {
@@ -438,14 +460,85 @@ test("state hooks carry their hook list index, what overrideHookState takes", as
     fiber,
     (renderer as { currentDispatcherRef: DispatcherRef }).currentDispatcherRef,
   )
-  const indexes = read?.hooks.map((hook) => [hook.name, hook.index])
+  return { fiber, hooks: read?.hooks ?? [] }
+}
+
+const indexesOf = (hooks: { name: string; index?: number }[]) =>
+  hooks.map((hook) => [hook.name, hook.index])
+
+test("hooks carry their hook list index, what overrideHookState takes", async () => {
+  await mount(h(Indexed))
+  const { hooks } = rawHooksOf("Indexed")
   // A transition takes two entries; a custom hook's State gets its index too.
-  expect(indexes?.slice(0, 5)).toEqual([
-    ["Ref", undefined],
+  expect(indexesOf(hooks).slice(0, 5)).toEqual([
+    ["Ref", 0],
     ["State", 1],
-    ["Memo", undefined],
-    ["Transition", undefined],
+    ["Memo", 2],
+    ["Transition", 3],
     ["Reducer", 5],
   ])
-  expect(read?.hooks[5]?.hooks?.[0]?.index).toBe(6)
+  expect(hooks[5]?.hooks?.[0]?.index).toBe(6)
+})
+
+test("every list-backed built-in hook carries its index; context reads don't", async () => {
+  await mount(h(Theme.Provider, { value: "dark" }, h(Builtins)))
+  const { fiber, hooks } = rawHooksOf("Builtins")
+  expect(indexesOf(hooks)).toEqual([
+    ["State", 0],
+    ["Reducer", 1],
+    ["Ref", 2],
+    ["Memo", 3],
+    ["Callback", 4],
+    ["Effect", 5],
+    ["LayoutEffect", 6],
+    ["InsertionEffect", 7],
+    ["ImperativeHandle", 8],
+    ["DeferredValue", 9],
+    ["Transition", 10],
+    ["SyncExternalStore", 12],
+    ["Id", 14],
+    ["Context(Theme)", undefined],
+    ["DebugValue", undefined],
+  ])
+  let entries = 0
+  type Entry = { next: Entry | null }
+  for (let at = fiber.memoizedState as Entry | null; at; at = at.next) entries++
+  expect(entries).toBe(15)
+})
+
+test.skipIf(!react19)(
+  "React 19 hooks carry their hook list index",
+  async () => {
+    await mount(h(Theme.Provider, { value: "dark" }, h(Modern)))
+    expect(indexesOf(rawHooksOf("Modern").hooks)).toEqual([
+      ["Context(Theme)", undefined],
+      ["Use", undefined],
+      ["ActionState", 0],
+      ["Optimistic", 3],
+      ["FormStatus", undefined],
+      ["EffectEvent", 4],
+      ["State", 5],
+    ])
+  },
+)
+
+test("hookPath gives the call indexes of the hook at a hook list index", async () => {
+  await mount(h(Indexed))
+  const { hooks } = rawHooksOf("Indexed")
+  expect(hookPath(hooks, 5)).toEqual([4])
+  // Inside useCounted.
+  expect(hookPath(hooks, 6)).toEqual([5, 0])
+  // The transition's second entry starts no hook.
+  expect(hookPath(hooks, 4)).toBeUndefined()
+  expect(hookPath(hooks, 99)).toBeUndefined()
+})
+
+test("hookLabel names the hook at a hook list index as the Hooks section numbers it", async () => {
+  await mount(h(Indexed))
+  const { hooks } = rawHooksOf("Indexed")
+  expect(hookLabel(hooks, 1)).toBe("State #2")
+  // Rows count depth-first, the custom hook's group row (#6) included.
+  expect(hookLabel(hooks, 6)).toBe("State #7")
+  expect(hookLabel(hooks, 4)).toBeUndefined()
+  expect(hookLabel(hooks, 99)).toBeUndefined()
 })

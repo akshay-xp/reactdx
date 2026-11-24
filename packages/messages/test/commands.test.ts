@@ -305,3 +305,28 @@ test("force keeps a kind and a boolean for a valid id", () => {
   ])
     expect(parseTreeCommand({ ...force, ...bad })).toBeUndefined()
 })
+
+test("reason asks for one recorded render of a node", () => {
+  expect(parseTreeCommand({ type: "reason", id: 3, seq: 2, x: 1 })).toEqual({
+    type: "reason",
+    id: 3,
+    seq: 2,
+  })
+  expect(parseTreeCommand({ type: "reason", id: 3, seq: 0 })).toBeUndefined()
+  expect(parseTreeCommand({ type: "reason", seq: 2 })).toBeUndefined()
+})
+
+test("commit asks for the ids a commit rendered", () => {
+  expect(parseTreeCommand({ type: "commit", seq: 4, x: 1 })).toEqual({
+    type: "commit",
+    seq: 4,
+  })
+  expect(parseTreeCommand({ type: "commit", seq: 0 })).toBeUndefined()
+})
+
+test("clear-updates carries nothing: extra fields go", () => {
+  expect(parseTreeCommand({ type: "clear-updates", x: 1 })).toEqual({
+    type: "clear-updates",
+  })
+  expect(parseTreeCommand("clear-updates")).toBeUndefined()
+})

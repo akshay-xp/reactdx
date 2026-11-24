@@ -1,11 +1,19 @@
 import {
+  type CommitsMessage,
+  type CommittedMessage,
+  type CountsMessage,
+  commitsMessage,
+  committed,
+  countsMessage,
   type ExpandedMessage,
   expanded,
   type HookValue,
   type InspectedData,
   type InspectedMessage,
   inspected,
+  MAX_CHANGES,
   MAX_COPY,
+  MAX_HISTORY,
   MAX_OPS,
   MAX_OWNERS,
   MAX_TREE_STRING,
@@ -14,11 +22,15 @@ import {
   type PickedMessage,
   parseTreeCommand,
   picked,
+  type ReasonedMessage,
+  type RenderReason,
   type RootInfo,
+  reasoned,
   snapshotMessage,
   type TreeBatchMessage,
   type TreeOp,
   treeBatch,
+  type Updater,
   type Value,
   type ValueStoredMessage,
   type ValueTarget,
@@ -38,9 +50,12 @@ import {
   type DispatcherRef,
   type HooksFiber,
   hookAt,
+  hookLabel,
+  hookPath,
   inspectHooks,
   type RawHook,
 } from "./hooks.ts"
+import { contextsOf, createRecorder, type RenderRecord } from "./insight.ts"
 import { copyText, createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
 import { sourceOf } from "./source.ts"
@@ -48,36 +63,6 @@ import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
 const THROTTLE_MS = 100
-
-type ContextRead = {
-  context: { displayName?: unknown }
-  memoizedValue: unknown
-  next: ContextRead | null
-}
-
-// The contexts a fiber read in its last render, once each, in first-read order:
-// useContext, use(), a class's contextType and consumers all land in this list.
-function contextsOf(fiber: Fiber) {
-  const reads = new Map<unknown, unknown>()
-  const dependencies = (
-    fiber as unknown as {
-      dependencies: { firstContext: ContextRead | null } | null
-    }
-  ).dependencies
-  for (let at = dependencies?.firstContext ?? null; at; at = at.next)
-    if (!reads.has(at.context)) reads.set(at.context, at.memoizedValue)
-  return [...reads].map(([context, value]) => {
-    const name = (context as { displayName?: unknown }).displayName
-    return {
-      name:
-        typeof name === "string" && name
-          ? name.slice(0, MAX_TREE_STRING)
-          : "Context",
-      value,
-      context,
-    }
-  })
-}
 
 // The nearest provider of `context` above the fiber (ContextProvider, tag 10):
 // React 19's provider is the context itself, React 18's its Provider object.
@@ -104,6 +89,10 @@ export function startAgent(
       | PickedMessage
       | InspectedMessage
       | ExpandedMessage
+      | CommitsMessage
+      | CommittedMessage
+      | CountsMessage
+      | ReasonedMessage
       | ValueTextMessage
       | ValueStoredMessage,
   ) => void,
@@ -127,11 +116,14 @@ export function startAgent(
     post(snapshotMessage(roots))
   }
 
-  const tree = createTree()
+  const recorder = createRecorder()
+  const tree = createTree({ onForget: recorder.forget })
   // Production builds have minified names and aren't inspected.
   const inspectable = (rendererId: number) =>
     record.renderers.get(rendererId)?.bundleType === 1
   let seq = 1
+  // The last commit seq posted in `commits`.
+  let sentCommit = 0
   let watching = false
   // Diffed on every commit (the bail-out check only holds against the previous
   // commit), posted on the flush.
@@ -149,6 +141,39 @@ export function startAgent(
       if (inspectable(rendererId))
         for (const root of set) tree.full(root, info(root).id, ops)
     send(ops)
+    // The panel's commit list starts over with the tree: send the buffer
+    // again now (an idle page may not commit for a while), even if empty.
+    sentCommit = 0
+    postCommits(true)
+    postCounts(true)
+  }
+  // Render counts for the tree, in batches of MAX_OPS: the changed ones on the
+  // flush (if any), every one on a watch (at least one message).
+  const postCounts = (all: boolean) => {
+    const counts = recorder.takeCounts(all)
+    if (!counts.length && !all) return
+    for (let at = 0; at === 0 || at < counts.length; at += MAX_OPS)
+      post(countsMessage(counts.slice(at, at + MAX_OPS)))
+  }
+  // The commits since the last sent, in batches the relay accepts (`always`:
+  // at least one); each says what the page still holds.
+  const postCommits = (always = false) => {
+    const commits = recorder.summaries(sentCommit).map((commit) => {
+      const change = commit.updaters.length
+        ? firstChange(commit.seq)
+        : undefined
+      return change ? { ...commit, change } : commit
+    })
+    if (!commits.length && !always) return
+    for (let at = 0; at === 0 || at < commits.length; at += MAX_HISTORY)
+      post(
+        commitsMessage(
+          commits.slice(at, at + MAX_HISTORY),
+          recorder.oldest(),
+          recorder.dropped(),
+        ),
+      )
+    sentCommit = commits.at(-1)?.seq ?? sentCommit
   }
 
   let overlay: ReturnType<typeof createOverlay> | undefined
@@ -208,7 +233,13 @@ export function startAgent(
     | {
         id: number
         values: ReturnType<typeof createInspector>
-        sent?: { props: unknown; state: unknown; contexts: unknown[] }
+        sent?: {
+          props: unknown
+          state: unknown
+          contexts: unknown[]
+          // The render record sent, by commit seq.
+          render?: number
+        }
         hooks?: RawHook[]
       }
     | undefined
@@ -276,10 +307,12 @@ export function startAgent(
     const fiber = tree.fiber(id)
     if (!fiber || !selected) return null
     const contexts = contextsOf(fiber)
+    const latest = recorder.latest(id)
     selected.sent = {
       props: fiber.memoizedProps,
       state: fiber.memoizedState,
       contexts: contexts.map(({ value }) => value),
+      render: latest?.seq,
     }
     const { serialize } = selected.values
     const data: InspectedData = {
@@ -318,7 +351,127 @@ export function startAgent(
       selected.hooks = read.hooks
       if (read.error !== undefined) data.hooksError = read.error
     }
+    if (latest) {
+      data.render = reasonOf(id, latest, read ? read.hooks : [], serialize)
+      data.history = recorder.history(id)
+    }
     return data
+  }
+  // A render record as sent: values serialized with the inspection's, keys and
+  // lists within the validator's bounds, hooks by call indexes.
+  const reasonOf = (
+    id: number,
+    record: RenderRecord,
+    hooks: RawHook[],
+    serialize: (value: unknown) => unknown,
+  ): RenderReason => {
+    const both = (change: { old: unknown; new: unknown }) => ({
+      old: serialize(change.old) as Value,
+      new: serialize(change.new) as Value,
+    })
+    const keyed = (changes: RenderRecord["props"] = []) =>
+      changes.slice(0, MAX_CHANGES).map((change) => ({
+        key: change.key.slice(0, MAX_TREE_STRING),
+        ...both(change),
+        ...(change.reference && { reference: change.reference }),
+      }))
+    const reason: RenderReason = {
+      seq: record.seq,
+      time: record.time,
+      kinds: record.kinds,
+    }
+    if (record.props) reason.props = keyed(record.props)
+    if (record.state) reason.state = keyed(record.state)
+    if (record.hooks) {
+      const list = []
+      for (const change of record.hooks.slice(0, MAX_CHANGES)) {
+        const hook = hookPath(hooks, change.index)
+        if (hook) list.push({ hook, ...both(change) })
+      }
+      reason.hooks = list
+    }
+    if (record.remount)
+      reason.remount =
+        record.remount.cause === "key"
+          ? {
+              cause: "key",
+              from: record.remount.from?.slice(0, MAX_TREE_STRING) ?? null,
+              to: record.remount.to?.slice(0, MAX_TREE_STRING) ?? null,
+            }
+          : record.remount
+    if (record.effects) {
+      const list = []
+      for (const run of record.effects.slice(0, MAX_CHANGES)) {
+        const hook = hookPath(hooks, run.index)
+        if (!hook) continue
+        list.push({
+          hook,
+          ...(run.changed && {
+            changed: run.changed
+              .slice(0, MAX_CHANGES)
+              .map((change) => ({ dep: change.dep, ...both(change) })),
+          }),
+        })
+      }
+      reason.effects = list
+    }
+    if (record.contexts)
+      reason.contexts = record.contexts
+        .slice(0, MAX_CHANGES)
+        .map((change) => ({ context: change.read, ...both(change) }))
+    reason.updaters = triggers(record.seq, serialize, id, hooks)
+    return reason
+  }
+  // The components whose updates scheduled commit `seq`, with the state each
+  // changed, labelled as their Hooks sections are. `own`: the selected node's
+  // hooks, already read.
+  const triggers = (
+    seq: number,
+    serialize: (value: unknown) => unknown,
+    selectedId?: number,
+    own: RawHook[] = [],
+  ): Updater[] => {
+    const list: Updater[] = []
+    for (const updater of recorder.updatersOf(seq).slice(0, MAX_CHANGES)) {
+      const fiber = tree.fiber(updater.id)
+      if (!fiber) continue
+      // Another component's hooks are read only if it changed some.
+      const hooks =
+        updater.id === selectedId || !updater.hooks.length
+          ? own
+          : hooksOf(fiber)
+      const changes = []
+      for (const change of updater.hooks.slice(0, MAX_CHANGES)) {
+        const name = hookLabel(hooks, change.index)
+        if (name)
+          changes.push({
+            name,
+            old: serialize(change.old) as Value,
+            new: serialize(change.new) as Value,
+          })
+      }
+      list.push({ id: updater.id, hooks: changes })
+    }
+    return list
+  }
+  // The update's cause for the Updates list: its first updater's first
+  // changed hook by list index. Not labeled: that's a shadow render of the
+  // updater (its code runs again) on every update.
+  const firstChange = (seq: number) => {
+    const change = recorder.updatersOf(seq)[0]?.hooks[0]
+    if (!change) return
+    const { serialize } = createInspector()
+    return {
+      hook: change.index,
+      old: serialize(change.old) as Value,
+      new: serialize(change.new) as Value,
+    }
+  }
+  const hooksOf = (fiber: Fiber) => {
+    const ref = rendererOf(fiber)?.currentDispatcherRef
+    return (
+      (ref && inspectHooks(fiber as unknown as HooksFiber, ref)?.hooks) || []
+    )
   }
   const inspect = (id: number | null) => {
     selected?.values.release()
@@ -368,6 +521,7 @@ export function startAgent(
       fiber &&
       sent &&
       fiber.memoizedProps === sent.props &&
+      recorder.latest(id)?.seq === sent.render &&
       fiber.memoizedState === sent.state &&
       sameValues(
         contextsOf(fiber).map(({ value }) => value),
@@ -383,13 +537,24 @@ export function startAgent(
   record.listeners.add((rendererId, root) => {
     const entry = info(root)
     entry.commits++
-    if (watching && inspectable(rendererId)) tree.commit(root, entry.id, buffer)
+    if (watching && inspectable(rendererId))
+      // React clears memoizedUpdaters once this returns (dev builds keep them
+      // while a devtools hook was present at load).
+      recorder.commit(
+        entry.id,
+        new Set(
+          (root as { memoizedUpdaters?: Set<unknown> }).memoizedUpdaters ?? [],
+        ),
+        (visit) => tree.commit(root, entry.id, buffer, visit),
+      )
     if (pending) return
     pending = true
     setTimeout(() => {
       pending = false
       snapshot()
       if (buffer.length) send(buffer.splice(0))
+      postCommits()
+      postCounts(false)
       refresh()
     }, THROTTLE_MS)
   })
@@ -402,9 +567,49 @@ export function startAgent(
     else if (data.type === "clear-highlight") overlay?.hide()
     else if (data.type === "pick-start") startPicking()
     else if (data.type === "pick-stop") stopPicking()
-    else if (data.type === "inspect" || data.type === "expand") {
+    else if (
+      data.type === "inspect" ||
+      data.type === "expand" ||
+      data.type === "reason" ||
+      data.type === "commit"
+    ) {
       const command = parseTreeCommand(data)
       if (command?.type === "inspect") inspect(command.id)
+      if (command?.type === "commit") {
+        const { seq } = command
+        const renders = recorder.rendered(seq)
+        if (!renders) post(committed(seq, null))
+        // At least one batch: a commit that rendered nothing says so.
+        else
+          for (let at = 0; at === 0 || at < renders.length; at += MAX_OPS)
+            post(
+              committed(
+                seq,
+                renders.slice(at, at + MAX_OPS),
+                at === 0
+                  ? triggers(seq, createInspector().serialize)
+                  : undefined,
+              ),
+            )
+      }
+      if (command?.type === "reason" && command.id === selected?.id) {
+        const { id, seq } = command
+        const record = recorder.record(id, seq)
+        post(
+          reasoned(
+            id,
+            seq,
+            record
+              ? reasonOf(
+                  id,
+                  record,
+                  selected.hooks ?? [],
+                  selected.values.serialize,
+                )
+              : null,
+          ),
+        )
+      }
       if (command?.type === "expand") {
         const { objectId, offset } = command
         const value = selected?.values.expand(objectId, offset)
@@ -464,12 +669,16 @@ export function startAgent(
       setTimeout(refresh)
     } else if (data.type === "copy-value" || data.type === "store-value")
       useValue(parseTreeCommand(data))
-    else if (data.type === "unwatch") {
+    else if (data.type === "clear-updates") {
+      recorder.clearCommits()
+      postCommits(true)
+    } else if (data.type === "unwatch") {
       stopPicking()
       inspect(null)
       watching = false
       buffer.length = 0
       tree.clear()
+      recorder.clear()
     }
   })
   snapshot()

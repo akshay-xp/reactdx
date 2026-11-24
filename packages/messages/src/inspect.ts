@@ -106,7 +106,69 @@ export type InspectedData = {
   owners?: Owner[]
   source?: SourceRef
   boundaries?: Boundaries
+  render?: RenderReason
+  // The commits (seqs) of the node's recorded renders, oldest first (M6 #66).
+  history?: number[]
 }
+// Commits per `commits` message, and seqs per node's history.
+export const MAX_HISTORY = 100
+
+// Why the node last rendered, while the panel watched (M6; docs/messages.md,
+// Render reasons): the changes with both values, hooks by call indexes (as in
+// `hooks`) and contexts by read order (as in `contexts`).
+export const RENDER_KINDS = [
+  "mount",
+  "props",
+  "state",
+  "context",
+  "parent",
+  "force",
+] as const
+export type RenderKind = (typeof RENDER_KINDS)[number]
+// `reference` (props only, M6 #62): the new value is only a new reference, an
+// equal object or array, or a different function.
+export const REFERENCE_KINDS = ["same-value", "new-function"] as const
+const isReference = (
+  value: unknown,
+): value is (typeof REFERENCE_KINDS)[number] =>
+  REFERENCE_KINDS.includes(value as never)
+export type KeyChange = {
+  key: string
+  old: Value
+  new: Value
+  reference?: (typeof REFERENCE_KINDS)[number]
+}
+export type HookChange = { hook: number[]; old: Value; new: Value }
+export type ContextChange = { context: number; old: Value; new: Value }
+// An effect the render ran (M6 #63): `changed` the deps that differ, absent
+// for an effect with no deps array.
+export type EffectRun = {
+  hook: number[]
+  changed?: { dep: number; old: Value; new: Value }[]
+}
+export type RenderReason = {
+  seq: number
+  // When its commit happened (Date.now(), M6 #73).
+  time?: number
+  kinds: RenderKind[]
+  props?: KeyChange[]
+  state?: KeyChange[]
+  hooks?: HookChange[]
+  contexts?: ContextChange[]
+  effects?: EffectRun[]
+  remount?: Remount
+  // What triggered the render's commit (M6 #65): the components whose update
+  // scheduled it, with their changed state hooks labeled as in Hooks.
+  updaters?: Updater[]
+}
+export type UpdaterHook = { name: string; old: Value; new: Value }
+export type Updater = { id: number; hooks: UpdaterHook[] }
+// A mount in place of a same-type fiber deleted in that commit (M6 #64): its
+// key changed, or an ancestor (a tree id) remounted or changed type.
+export type Remount =
+  | { cause: "key"; from: string | null; to: string | null }
+  | { cause: "ancestor"; ancestor: number }
+export const MAX_CHANGES = 1000
 
 // The nearest Suspense boundary (`fallback`) and error boundary at or above the
 // node, by tree id, and whether the panel forced each (M5 #56).
@@ -130,6 +192,109 @@ export const inspected = (
   id: number,
   data: InspectedData | null,
 ): InspectedMessage => ({ source: "reactdx", type: "inspected", id, data })
+
+// Agent to panel, on the flush (M6 #67): the commits recorded since the last,
+// for the timeline. `renders` counts the components that rendered. `oldest`
+// is the oldest seq the page still holds; `dropped`, whether its limits
+// dropped any since the watch (M6 #71).
+export type CommitSummary = {
+  seq: number
+  time: number
+  rootId: number
+  updaters: number[]
+  renders: number
+  // Renders only because the parent rendered (M6 #74).
+  wasted: number
+  // The first updater's first changed hook (M6 #74): its list index (no
+  // label: that takes a shadow render of the updater, too much per update).
+  change?: SummaryChange
+}
+export type SummaryChange = { hook: number; old: Value; new: Value }
+export type CommitsMessage = {
+  source: "reactdx"
+  type: "commits"
+  commits: CommitSummary[]
+  oldest: number
+  dropped: boolean
+}
+export const commitsMessage = (
+  commits: CommitSummary[],
+  oldest: number,
+  dropped: boolean,
+): CommitsMessage => ({
+  source: "reactdx",
+  type: "commits",
+  commits,
+  oldest,
+  dropped,
+})
+
+export function parseCommits(data: unknown): CommitsMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, commits, oldest, dropped } = data as Record<
+    string,
+    unknown
+  >
+  if (source !== "reactdx" || type !== "commits") return
+  if (!isId(oldest) || typeof dropped !== "boolean") return
+  const list = parseList(commits, MAX_HISTORY, (item) => {
+    const { seq, time, rootId, updaters, renders, wasted, change } = item
+    if (!isId(seq) || !isId(rootId) || !isCount(renders)) return
+    if (!isCount(wasted) || wasted > renders) return
+    if (typeof time !== "number" || !(time >= 0)) return
+    if (
+      !Array.isArray(updaters) ||
+      updaters.length > MAX_CHANGES ||
+      !updaters.every(isId)
+    )
+      return
+    const summary: CommitSummary = {
+      seq,
+      time,
+      rootId,
+      updaters: [...updaters],
+      renders,
+      wasted,
+    }
+    if (change !== undefined) {
+      const parsed = parseSummaryChange(change, { left: MAX_VALUES })
+      if (!parsed) return
+      summary.change = parsed
+    }
+    return summary
+  })
+  if (list && increasing(list.map((commit) => commit.seq)))
+    return commitsMessage(list, oldest, dropped)
+}
+
+// Each after the one before: commit seqs as the page assigns them.
+const increasing = (seqs: number[]) =>
+  seqs.every((seq, i) => i === 0 || seq > (seqs[i - 1] as number))
+
+// Agent to panel: one recorded render the panel asked for (`reason`); null
+// once its commit left the page's buffer.
+export type ReasonedMessage = {
+  source: "reactdx"
+  type: "reasoned"
+  id: number
+  seq: number
+  render: RenderReason | null
+}
+export const reasoned = (
+  id: number,
+  seq: number,
+  render: RenderReason | null,
+): ReasonedMessage => ({ source: "reactdx", type: "reasoned", id, seq, render })
+
+export function parseReasoned(data: unknown): ReasonedMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, id, seq, render } = data as Record<string, unknown>
+  if (source !== "reactdx" || type !== "reasoned" || !isId(id) || !isId(seq))
+    return
+  if (render === null) return reasoned(id, seq, null)
+  const parsed = parseRender(render, { left: MAX_VALUES })
+  if (parsed?.seq === seq) return reasoned(id, seq, parsed)
+}
 
 // Agent to panel: one page of an object the panel asked to expand.
 export type ExpandedMessage = {
@@ -169,13 +334,7 @@ export function parseValueTarget(data: unknown): ValueTarget | undefined {
     if (isCount(key) || isText(key)) return { objectId, key }
     return
   }
-  if (
-    Array.isArray(hook) &&
-    hook.length > 0 &&
-    hook.length <= MAX_HOOK_NESTING &&
-    hook.every(isCount)
-  )
-    return { hook: [...hook] }
+  if (isHookPath(hook)) return { hook: [...hook] }
   if (isCount(context)) return { context }
 }
 
@@ -300,6 +459,12 @@ export function parseValueText(data: unknown): ValueTextMessage | undefined {
 const isCount = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) >= 0
 const isId = (value: unknown): value is number => isCount(value) && value >= 1
+// A hook's call indexes, from the top through custom hooks.
+const isHookPath = (value: unknown): value is number[] =>
+  Array.isArray(value) &&
+  value.length > 0 &&
+  value.length <= MAX_HOOK_NESTING &&
+  value.every(isCount)
 const isText = (value: unknown, max = MAX_VALUE_STRING): value is string =>
   typeof value === "string" && value.length <= max
 const isName = (value: unknown): value is string => isText(value, MAX_NAME)
@@ -511,6 +676,8 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     owners,
     source,
     boundaries,
+    render,
+    history,
   } = message.data as Record<string, unknown>
   const budget = { left: MAX_VALUES }
   const parsed: InspectedData = { props: null }
@@ -559,8 +726,172 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     if (!found) return
     parsed.boundaries = found
   }
+  if (render !== undefined) {
+    const reason = parseRender(render, budget)
+    if (!reason) return
+    parsed.render = reason
+  }
+  if (history !== undefined) {
+    if (
+      !Array.isArray(history) ||
+      history.length > MAX_HISTORY ||
+      !history.every(isId) ||
+      !increasing(history)
+    )
+      return
+    parsed.history = [...history]
+  }
   return inspected(message.id, parsed)
 }
+
+function parseRemount(data: unknown): Remount | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { cause, from, to, ancestor } = data as Record<string, unknown>
+  if (cause === "ancestor" && isId(ancestor)) return { cause, ancestor }
+  if (cause === "key" && isNameOrNull(from) && isNameOrNull(to))
+    return { cause, from, to }
+}
+
+function parseRender(
+  data: unknown,
+  budget: { left: number },
+): RenderReason | undefined {
+  if (typeof data !== "object" || data === null) return
+  const {
+    seq,
+    kinds,
+    props,
+    state,
+    hooks,
+    contexts,
+    effects,
+    remount,
+    updaters,
+    time,
+  } = data as Record<string, unknown>
+  if (!isId(seq) || !isKinds(kinds)) return
+  const reason: RenderReason = { seq, kinds: [...kinds] }
+  if (time !== undefined) {
+    if (typeof time !== "number" || !Number.isFinite(time) || time < 0) return
+    reason.time = time
+  }
+  // The old and new values of one change, or undefined if either is invalid.
+  const sides = (item: Record<string, unknown>) => {
+    const old = parseValue(item.old, 0, budget)
+    const next = parseValue(item.new, 0, budget)
+    return old === undefined || next === undefined
+      ? undefined
+      : { old, new: next }
+  }
+  const keyed = (list: unknown) =>
+    parseList(list, MAX_CHANGES, (item) => {
+      const both = sides(item)
+      const { reference } = item
+      if (!both || !isName(item.key)) return
+      if (reference === undefined) return { key: item.key, ...both }
+      if (isReference(reference)) return { key: item.key, ...both, reference }
+    })
+  if (props !== undefined) {
+    const list = keyed(props)
+    if (!list) return
+    reason.props = list
+  }
+  if (state !== undefined) {
+    const list = keyed(state)
+    if (!list) return
+    reason.state = list
+  }
+  if (hooks !== undefined) {
+    const list = parseList(hooks, MAX_CHANGES, (item) => {
+      const both = sides(item)
+      return both && isHookPath(item.hook)
+        ? { hook: [...item.hook], ...both }
+        : undefined
+    })
+    if (!list) return
+    reason.hooks = list
+  }
+  if (contexts !== undefined) {
+    const list = parseList(contexts, MAX_CHANGES, (item) => {
+      const both = sides(item)
+      return both && isCount(item.context)
+        ? { context: item.context, ...both }
+        : undefined
+    })
+    if (!list) return
+    reason.contexts = list
+  }
+  if (effects !== undefined) {
+    const list = parseList(effects, MAX_CHANGES, (item) => {
+      if (!isHookPath(item.hook)) return
+      const run: EffectRun = { hook: [...item.hook] }
+      if (item.changed === undefined) return run
+      const changed = parseList(item.changed, MAX_CHANGES, (dep) => {
+        const both = sides(dep)
+        return both && isCount(dep.dep) ? { dep: dep.dep, ...both } : undefined
+      })
+      return changed && { ...run, changed }
+    })
+    if (!list) return
+    reason.effects = list
+  }
+  if (remount !== undefined) {
+    const parsed = parseRemount(remount)
+    if (!parsed) return
+    reason.remount = parsed
+  }
+  if (updaters !== undefined) {
+    const list = parseUpdaters(updaters, budget)
+    if (!list) return
+    reason.updaters = list
+  }
+  return reason
+}
+
+// Both sides of a change, the values on `budget`.
+function parseSides(hook: Record<string, unknown>, budget: { left: number }) {
+  const old = parseValue(hook.old, 0, budget)
+  const next = parseValue(hook.new, 0, budget)
+  return old === undefined || next === undefined
+    ? undefined
+    : { old, new: next }
+}
+
+function parseSummaryChange(
+  data: unknown,
+  budget: { left: number },
+): SummaryChange | undefined {
+  if (typeof data !== "object" || data === null) return
+  const change = data as Record<string, unknown>
+  const sides = parseSides(change, budget)
+  return sides && isCount(change.hook)
+    ? { hook: change.hook, ...sides }
+    : undefined
+}
+
+export function parseUpdaters(
+  data: unknown,
+  budget: { left: number } = { left: MAX_VALUES },
+): Updater[] | undefined {
+  return parseList(data, MAX_CHANGES, (item) => {
+    const changes = parseList(item.hooks, MAX_CHANGES, (hook) => {
+      const sides = parseSides(hook, budget)
+      return sides && isName(hook.name)
+        ? { name: hook.name, ...sides }
+        : undefined
+    })
+    return changes && isId(item.id)
+      ? { id: item.id, hooks: changes }
+      : undefined
+  })
+}
+
+// Each kind once, at least one.
+export const isKinds = (kinds: unknown): kinds is RenderKind[] =>
+  Array.isArray(kinds) &&
+  kinds.length > 0 &&
+  new Set(kinds).size === kinds.length &&
+  kinds.every((kind) => RENDER_KINDS.includes(kind))
 
 function parseBoundaries(data: unknown): Boundaries | undefined {
   if (typeof data !== "object" || data === null) return
@@ -591,7 +922,7 @@ function parseCallSite(data: unknown): CallSite | undefined {
 }
 
 // Undefined unless `data` is an array of at most `max` objects `each` accepts.
-function parseList<T>(
+export function parseList<T>(
   data: unknown,
   max: number,
   each: (item: Record<string, unknown>) => T | undefined,

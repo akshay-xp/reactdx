@@ -23,6 +23,7 @@
     "fixture:prod": "pnpm -C fixtures/vite exec vite build --mode 19 --outDir dist-prod --logLevel warn && pnpm -C fixtures/vite exec vite preview --outDir dist-prod --port 5222 --strictPort",
     "test:e2e": "node e2e/run.ts",
     "bench:hook-cost": "pnpm --filter @reactdx/bench-hook-cost bench",
+    "bench:memory": "pnpm --filter @reactdx/bench-hook-cost memory",
     "rdt:update": "node e2e/rdt-update.ts",
     "icons": "node scripts/icons.ts"
   },

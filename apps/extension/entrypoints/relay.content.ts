@@ -2,10 +2,14 @@ import {
   GET_SNAPSHOT,
   type GetStateMessage,
   type InjectAgentMessage,
+  parseCommits,
+  parseCommitted,
+  parseCounts,
   parseExpanded,
   parseInspected,
   parsePageMessage,
   parsePicked,
+  parseReasoned,
   parseTreeBatch,
   parseTreeCommand,
   parseValueStored,
@@ -19,6 +23,10 @@ import {
   WATCH,
 } from "@reactdx/messages"
 import type { Browser } from "wxt/browser"
+
+// How long a watch outlives the background stopping, for the panel to
+// reconnect.
+const GRACE_MS = 10_000
 
 // Isolated world, top frame: forwards what the hook and agent report.
 // Silent until React connects, except to answer an open panel.
@@ -39,19 +47,34 @@ export default defineContentScript({
       stale,
     })
 
-    // While a panel watches, tree batches flow over this port. It closes when the
-    // last panel leaves, the background stops or the page enters bfcache; the
-    // panel subscribing again (or a state reply) starts a new watch and resync.
+    // While a panel watches, tree batches flow over this port. The background
+    // says when the last panel leaves (`unwatch`), and the page entering bfcache
+    // stops it too: the agent stops watching and drops what it recorded. A bare
+    // disconnect is the background stopping (idle): the panel reconnects at
+    // once, and its subscribe starts a new watch and resync with the agent's
+    // recording intact; if none comes within GRACE_MS, the agent stops.
     let tree: Browser.runtime.Port | undefined
+    let grace: ReturnType<typeof setTimeout> | undefined
     const stop = () => {
+      clearTimeout(grace)
       tree = undefined
       window.postMessage(UNWATCH, "*")
     }
     const watch = () => {
+      clearTimeout(grace)
       if (tree) return
-      tree = browser.runtime.connect({ name: "tree" })
-      tree.onDisconnect.addListener(stop)
-      tree.onMessage.addListener((message: unknown) => {
+      const port = browser.runtime.connect({ name: "tree" })
+      tree = port
+      port.onDisconnect.addListener(() => {
+        if (tree !== port) return
+        tree = undefined
+        grace = setTimeout(stop, GRACE_MS)
+      })
+      port.onMessage.addListener((message: unknown) => {
+        if ((message as { type?: unknown })?.type === "unwatch") {
+          port.disconnect()
+          return stop()
+        }
         // A resync is a new watch; every other command goes to the agent as is.
         const command = parseTreeCommand(message)
         if (command?.type === "resync") window.postMessage(WATCH, "*")
@@ -83,6 +106,10 @@ export default defineContentScript({
         parsePicked(event.data) ??
         parseInspected(event.data) ??
         parseExpanded(event.data) ??
+        parseReasoned(event.data) ??
+        parseCommits(event.data) ??
+        parseCommitted(event.data) ??
+        parseCounts(event.data) ??
         parseValueText(event.data) ??
         parseValueStored(event.data)
       if (forward) {
@@ -120,8 +147,9 @@ export default defineContentScript({
     // only after the restore, too late for pageshow's watch: close it ourselves.
     window.addEventListener("pagehide", (event) => {
       if (!event.persisted || !tree) return
-      tree.disconnect()
+      const port = tree
       stop()
+      port.disconnect()
     })
 
     browser.runtime.onMessage.addListener(

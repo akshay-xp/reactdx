@@ -2,25 +2,30 @@ import type {
   CallSite,
   Container,
   HookValue,
+  KeyChange,
+  Remount,
+  RenderKind,
+  RenderReason,
+  Updater,
   Value,
-  ValueKey,
-  ValueTarget,
 } from "@reactdx/messages"
 import {
   createEffect,
   createResource,
   createSignal,
+  createUniqueId,
   For,
   type JSX,
   Match,
   onCleanup,
-  onMount,
   Show,
   Switch,
 } from "solid-js"
+import { ago } from "./ago"
+import { answerOf, hintOf, type Part } from "./answer"
 import { Empty, EmptyAction } from "./Empty"
 import type { InspectorStore } from "./inspection"
-import { childPath, type PathRoot, pathKey, type RowPath } from "./paths"
+import { type PathRoot, pathKey } from "./paths"
 import { type MenuItem, RowMenu } from "./RowMenu"
 import { keyboardRows } from "./rows"
 import { matches, searchRanges } from "./search"
@@ -38,145 +43,23 @@ import {
   SearchField,
   SuspenseGlyph,
 } from "./Toolbar"
-import { BADGES, TRIANGLE } from "./TreeView"
+import { BADGES } from "./TreeView"
 import type { TreeStore } from "./tree"
-import { editText, isPlain, parseTyped } from "./typed"
-import { byName, isContainer, previewText, sortedEntries } from "./value"
-
-// Text color per kind of value, from the theme's syntax tokens.
-function tone(value: Value) {
-  if (typeof value === "string") return "text-syntax-string"
-  if (typeof value === "number") return "text-syntax-number"
-  if (value === null || typeof value === "boolean") return "text-accent"
-  switch (value.type) {
-    case "string":
-      return "text-syntax-string"
-    case "number":
-    case "bigint":
-      return "text-syntax-number"
-    case "undefined":
-    case "function":
-    case "symbol":
-    case "getter":
-    case "hole":
-    case "unreadable":
-      return "text-muted"
-    default:
-      return "text-fg"
-  }
-}
-
-// `key`: where the page finds it in its container (ValueTarget).
-type Entry = { name: string; value: Value; arrow?: boolean; key?: ValueKey }
-// `more`: a row's own items (Rename key, Delete), after the copies.
-type OnMenu = (
-  event: MouseEvent,
-  key: string,
-  target?: ValueTarget,
-  more?: MenuItem[],
-) => void
-
-// A container's loaded entries, and how many are still on the page.
-function entriesOf(value: Container): { entries: Entry[]; left: number } {
-  const named = (props: Record<string, Value> = {}) =>
-    sortedEntries(props).map(([name, item]) => ({
-      name,
-      value: item,
-      key: name,
-    }))
-  const indexed = (items: Value[]) =>
-    items.map((item, i) => ({ name: String(i), value: item, key: i }))
-  switch (value.type) {
-    case "object": {
-      const entries = named(value.props)
-      return { entries, left: value.size - entries.length }
-    }
-    case "array":
-    case "typed-array":
-      return {
-        entries: [
-          ...indexed(value.items),
-          ...named(value.type === "array" ? value.props : undefined),
-        ],
-        left: value.length - value.items.length,
-      }
-    case "map":
-      return {
-        entries: value.entries.map(([key, item], i) => ({
-          name: previewText(key),
-          value: item,
-          arrow: true,
-          key: i,
-        })),
-        left: value.size - value.entries.length,
-      }
-    case "set":
-      return {
-        entries: indexed(value.values),
-        left: value.size - value.values.length,
-      }
-  }
-}
-
-// A value's children the panel holds: an inline container (or what was loaded
-// for it since), or what the page sent for an opened ref. Never asks the page.
-function loadedOf(inspector: InspectorStore, value: Value) {
-  if (value === null || typeof value !== "object") return undefined
-  if (isContainer(value))
-    return (inspector.expansion(value.id) as Container | undefined) ?? value
-  return value.type === "ref" && "preview" in value
-    ? (inspector.expansion(value.id) as Container | undefined)
-    : undefined
-}
-
-// Whether any loaded descendant of a value shows under the query. `seen`
-// guards circular refs.
-function descendantShows(
-  inspector: InspectorStore,
-  value: Value,
-  query: string,
-  seen = new Set<number>(),
-): boolean {
-  const loaded = loadedOf(inspector, value)
-  if (!query || !loaded || seen.has(loaded.id)) return false
-  seen.add(loaded.id)
-  return entriesOf(loaded).entries.some((entry) =>
-    entryShows(inspector, entry, query, seen),
-  )
-}
-
-// Whether a row shows under the search query: its name or value text matches,
-// or a loaded descendant's does.
-function entryShows(
-  inspector: InspectorStore,
-  entry: Entry,
-  query: string,
-  seen = new Set<number>(),
-): boolean {
-  return (
-    matches(entry.name, query) ||
-    matches(previewText(entry.value), query) ||
-    descendantShows(inspector, entry.value, query, seen)
-  )
-}
-
-// Whether a hook row shows under the query: its label or value text, a
-// sub-hook's, or its value's loaded descendants match.
-function hookShows(
-  inspector: InspectorStore,
-  hook: HookValue,
-  labelOf: (hook: HookValue) => string,
-  query: string,
-): boolean {
-  const value = hook.value as Value | undefined
-  return (
-    matches(labelOf(hook), query) ||
-    (value !== undefined &&
-      (matches(previewText(value), query) ||
-        descendantShows(inspector, value, query))) ||
-    (hook.hooks ?? []).some((sub) => hookShows(inspector, sub, labelOf, query))
-  )
-}
+import { isPlain } from "./typed"
+import { byName, isContainer, previewText } from "./value"
+import {
+  ChangeRow,
+  Children,
+  type Entry,
+  entriesOf,
+  entryShows,
+  HookRows,
+  hookShows,
+  type OnMenu,
+  ROW,
+  Triangle,
+  ValueRow,
+} from "./values"
 
 // Paints the query's matches in `root` (the CSS Custom Highlight API: no DOM
 // change, so a value stays one text node), again whenever rows render.
@@ -209,16 +92,47 @@ export type Settings = {
 }
 
 const STORED_MS = 4000
-// A value, hook or context row: one of the keyboard rows (src/rows.ts).
-const ROW =
-  "group flex min-h-5 items-center whitespace-nowrap pr-2 focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1"
+
+// What each reason kind reads as, above its changes if it has any.
+export const KIND_TEXT: Record<RenderKind, string> = {
+  mount: "Mounted",
+  props: "Props changed",
+  state: "State changed",
+  context: "Context changed",
+  parent: "Parent rendered",
+  force: "Forced",
+}
+const WHY = "Renders"
+// The detail behind one-line summaries until opened.
+const FOLDED = [WHY, "Context", "Rendered by"]
+// A prop change that's only a new reference (M6 #62), which still re-renders a
+// memo child.
+const REFERENCE_BADGE = {
+  "same-value": {
+    text: "same value, new reference",
+    title: "A new object equal to the old one: memo sees a change",
+  },
+  "new-function": {
+    text: "new function",
+    title: "A function made in the parent's render: memo sees a change",
+  },
+} as const
 
 // The selected node's values (docs/panel.md, Inspector). Page data is text only.
 export function Inspector(props: {
   tree: TreeStore
   inspector: InspectorStore
+  // Into the Commits tab: the node's renders, the latest render (unpinned),
+  // and a commit by seq.
+  onRenders?: () => void
+  onLatest?: () => void
+  onCommit?: (seq: number) => void
   sources: Sources
   settings: Settings
+  // The clock "2s ago" is shown against (Date.now, ticking).
+  now?: () => number
+  // The sections that start folded (FOLDED).
+  folded?: string[]
 }) {
   // Keyed by value: a re-send's equal source keeps the last resolution shown
   // (no flash), and another source never shows the previous one's location (an
@@ -305,8 +219,11 @@ export function Inspector(props: {
     items.push(...more)
     setMenu({ x: event.clientX, y: event.clientY, items })
   }
-  // Collapsed sections, kept while the panel is open.
-  const [collapsed, setCollapsed] = createSignal(new Set<string>())
+  // Collapsed sections, kept while the panel is open: the detail starts folded
+  // behind its header's summary.
+  const [collapsed, setCollapsed] = createSignal(
+    new Set<string>(props.folded ?? FOLDED),
+  )
   const toggle = (name: string) => {
     const next = new Set(collapsed())
     if (!next.delete(name)) next.add(name)
@@ -326,6 +243,7 @@ export function Inspector(props: {
           open={!collapsed().has(name)}
           forced={query() !== ""}
           onToggle={() => toggle(name)}
+          summary={firstEntry(container())}
         >
           <Children
             inspector={props.inspector}
@@ -376,6 +294,46 @@ export function Inspector(props: {
     (props.inspector.data()?.owners ?? []).filter((owner) =>
       matches(owner.name, query()),
     )
+  // Where the node sits: its nearest two owners, outer first.
+  const nearestOwners = () =>
+    (props.inspector.data()?.owners ?? []).slice(0, 2).reverse()
+  // Renders' summary: the selected node's counts since the watch.
+  const rendersSummary = () => {
+    const id = props.tree.selected()
+    const count = id === undefined ? undefined : props.tree.countOf(id)
+    if (!count) return "none since DevTools opened"
+    const wasted = count.wasted ? ` · ${count.wasted} wasted` : ""
+    return `${count.renders} since DevTools opened${wasted}`
+  }
+  // The answer for the render shown (the latest, or the pinned commit's).
+  const answer = (): Part[] => {
+    const inspector = props.inspector
+    if (inspector.absent()) return ["Didn't render in this update."]
+    const render = inspector.render()
+    if (render === null) return ["This render is no longer recorded."]
+    // Stepped back, the render is loading: nothing yet.
+    if (!render && inspector.history().length) return []
+    const data = inspector.data()
+    const now = props.now?.() ?? Date.now()
+    return answerOf(render, {
+      ago: render?.time === undefined ? undefined : ago(now - render.time),
+      parent: data?.owners?.[0],
+      hookName: (path) => hookNameOf(data?.hooks ?? [], path, labelOf),
+      contextName: (read) => data?.contexts?.[read]?.name ?? "Context",
+      nodeName: (id) => props.tree.info(id)?.name,
+    })
+  }
+  const hint = () => {
+    const render = props.inspector.render()
+    const node = info()
+    const id = props.tree.selected()
+    if (!render || !node || id === undefined || props.inspector.absent()) return
+    return hintOf(render, {
+      name: node.name,
+      memo: node.kind === "memo",
+      count: props.tree.countOf(id),
+    })
+  }
   const anyShown = () => {
     const data = props.inspector.data()
     return (
@@ -427,6 +385,23 @@ export function Inspector(props: {
               </Show>
               <Show when={node().key !== null}>
                 <span class="truncate text-muted">{`key="${node().key}"`}</span>
+              </Show>
+              <Show when={props.inspector.data()?.owners?.length}>
+                <span data-testid="owners" class="truncate text-muted">
+                  in{" "}
+                  {(props.inspector.data()?.owners?.length ?? 0) > 2 && "… › "}
+                  <For each={nearestOwners()}>
+                    {(owner, i) => (
+                      <>
+                        {i() > 0 && " › "}
+                        <Parts
+                          parts={[{ node: owner.id, name: owner.name }]}
+                          tree={props.tree}
+                        />
+                      </>
+                    )}
+                  </For>
+                </span>
               </Show>
               <span class="ml-auto flex">
                 <For each={toggles()}>
@@ -519,6 +494,32 @@ export function Inspector(props: {
               <Show when={query() !== "" && !anyShown()}>
                 <p class="p-2 text-muted">No matches</p>
               </Show>
+              <Show when={query() === ""}>
+                <div class="flex flex-col gap-1 border-border border-b px-2 py-2">
+                  <p data-testid="answer">
+                    <Parts parts={answer()} tree={props.tree} />
+                  </p>
+                  <Show when={hint()}>
+                    {(parts) => (
+                      <p
+                        data-testid="hint"
+                        class="rounded bg-highlight/40 px-2 py-1"
+                      >
+                        <Parts parts={parts()} tree={props.tree} />{" "}
+                        <button
+                          type="button"
+                          class="text-accent hover:underline"
+                          onClick={() => {
+                            if (collapsed().has(WHY)) toggle(WHY)
+                          }}
+                        >
+                          See renders
+                        </button>
+                      </p>
+                    )}
+                  </Show>
+                </div>
+              </Show>
               {section("Props", "props", props.inspector.data()?.props)}
               {section("State", "state", props.inspector.data()?.state)}
               <Show when={hooksShow()}>
@@ -527,6 +528,13 @@ export function Inspector(props: {
                   open={!collapsed().has("Hooks")}
                   forced={query() !== ""}
                   onToggle={() => toggle("Hooks")}
+                  summary={[
+                    ...new Set(
+                      (props.inspector.data()?.hooks ?? []).map(
+                        (hook) => hook.name,
+                      ),
+                    ),
+                  ].join(", ")}
                 >
                   <Show when={props.inspector.data()?.hooksError}>
                     {(error) => (
@@ -548,12 +556,35 @@ export function Inspector(props: {
                   />
                 </Section>
               </Show>
+              {/* Reasons aren't keys or values: the search hides them. */}
+              <Show when={query() === ""}>
+                <Section
+                  name={WHY}
+                  open={!collapsed().has(WHY)}
+                  forced={false}
+                  onToggle={() => toggle(WHY)}
+                  summary={rendersSummary()}
+                >
+                  <Reasons
+                    inspector={props.inspector}
+                    tree={props.tree}
+                    labelOf={labelOf}
+                    onMenu={onMenu}
+                    onRenders={props.onRenders}
+                    onLatest={props.onLatest}
+                    onCommit={props.onCommit}
+                  />
+                </Section>
+              </Show>
               <Show when={contexts().some(contextShows)}>
                 <Section
                   name="Context"
                   open={!collapsed().has("Context")}
                   forced={query() !== ""}
                   onToggle={() => toggle("Context")}
+                  summary={contexts()
+                    .map((context) => context.name)
+                    .join(", ")}
                 >
                   <For each={contexts()}>
                     {(context) => (
@@ -588,6 +619,7 @@ export function Inspector(props: {
                   open={!collapsed().has("Rendered by")}
                   forced={query() !== ""}
                   onToggle={() => toggle("Rendered by")}
+                  summary={owners()[0]?.name}
                 >
                   <For each={owners()}>
                     {(owner) => (
@@ -659,6 +691,8 @@ export function Inspector(props: {
 // An empty inspector: centered, the picker's crosshair above what to do.
 function Section(props: {
   name: string
+  // What's inside, in a line, shown while it's closed.
+  summary?: string
   open: boolean
   // Shown open regardless (while searching), without changing `open`.
   forced: boolean
@@ -666,13 +700,17 @@ function Section(props: {
   children: JSX.Element
 }) {
   const open = () => props.open || props.forced
+  const summaryId = createUniqueId()
   return (
     <section data-testid="section" class="border-border border-b py-1">
-      {/* A row of the values tree (Keyboard), above its rows. */}
+      {/* A row of the values tree (Keyboard), above its rows: named by the
+          section, described by its summary. */}
       <button
         type="button"
         role="treeitem"
         aria-level={1}
+        aria-label={props.name}
+        aria-describedby={!open() && props.summary ? summaryId : undefined}
         aria-expanded={open()}
         data-path={`section:${props.name}`}
         class="flex w-full items-center gap-1 px-2 py-0.5 font-medium text-muted hover:text-fg focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1"
@@ -680,6 +718,12 @@ function Section(props: {
       >
         <Triangle open={open()} />
         {props.name}
+        <Show when={!open() && props.summary}>
+          {" "}
+          <span id={summaryId} class="truncate font-normal font-mono">
+            {props.summary}
+          </span>
+        </Show>
       </button>
       <Show when={open()}>
         <div class="pb-1 font-mono">{props.children}</div>
@@ -688,524 +732,353 @@ function Section(props: {
   )
 }
 
-// The tree's toggle triangle.
-function Triangle(props: { open: boolean }) {
-  return (
-    <span class="flex w-3 shrink-0 justify-center" aria-hidden="true">
-      <span style={TRIANGLE} classList={{ "rotate-90": props.open }} />
-    </span>
-  )
+// A container's first entry and its preview: a folded section's summary.
+function firstEntry(value: Container) {
+  const [first] = entriesOf(value).entries
+  return first && `${first.name}: ${previewText(first.value)}`
 }
 
-// A container's rows, with what was loaded for it since (more pages).
-function Children(props: {
-  inspector: InspectorStore
-  value: Container
-  path: RowPath
-  depth: number
-  query: string
-  // Its entries can be written: every container down to it is plain.
-  editable: boolean
-  onMenu: OnMenu
-}) {
-  const loaded = () =>
-    (props.inspector.expansion(props.value.id) as Container | undefined) ??
-    props.value
-  const list = () => entriesOf(loaded())
-  return (
-    <>
-      <For
-        each={list().entries.filter((entry) =>
-          entryShows(props.inspector, entry, props.query),
-        )}
-      >
-        {(entry) => (
-          <ValueRow
-            inspector={props.inspector}
-            entry={entry}
-            path={childPath(props.path, entry.key as ValueKey)}
-            editable={props.editable}
-            objectKey={loaded().type === "object"}
-            siblings={list().entries.map((other) => other.name)}
-            depth={props.depth}
-            query={props.query}
-            target={{ objectId: loaded().id, key: entry.key as ValueKey }}
-            onMenu={props.onMenu}
-          />
-        )}
-      </For>
-      <Show when={list().left > 0 && loaded().nextOffset !== undefined}>
-        <button
-          type="button"
-          class="text-accent hover:underline"
-          style={{ "padding-left": `${(props.depth + 2) * 12}px` }}
-          onClick={() => props.inspector.more(loaded())}
-        >
-          {`Show more (${list().left} left)`}
-        </button>
-      </Show>
-    </>
-  )
+// A changed hook as the Hooks section shows it, numbered by its row there
+// (depth-first, groups included): two State hooks read apart.
+function hookNameOf(
+  hooks: HookValue[],
+  path: number[],
+  labelOf: (hook: HookValue) => string,
+) {
+  let n = 0
+  let name = "Hook"
+  const walk = (list: HookValue[], at: number[]) =>
+    list.forEach((hook, i) => {
+      n++
+      const here = [...at, i]
+      if (here.join() === path.join()) name = `${labelOf(hook)} #${n}`
+      walk(hook.hooks ?? [], here)
+    })
+  walk(hooks, [])
+  return name
 }
 
-// Hooks in call order. A custom hook opens to the hooks it called; a hook with
-// nothing to show (an effect without deps) is just its name.
-function HookRows(props: {
-  inspector: InspectorStore
-  sources: Sources
-  settings: Settings
-  hooks: HookValue[]
-  // Call indexes from the top: the hook's row path root and the page's address
-  // for it (ValueTarget).
-  at: number[]
-  depth: number
-  query: string
-  labelOf: (hook: HookValue) => string
-  nameFound: (site: CallSite, name: string) => void
-  // A context hook's edit, by the context's read index (Inspector editContext).
-  editContext: (read: number) => (() => void) | undefined
-  onMenu: OnMenu
-}) {
+// A sentence's parts (answer.ts): names in code, components as links when the
+// tree has them.
+function Parts(props: { parts: Part[]; tree: TreeStore }) {
   return (
-    <For each={props.hooks}>
-      {(hook, index) => {
-        // Paths are by call index, so hooks hidden by the search stay in the list.
-        const at = () => [...props.at, index()]
-        const path = (): RowPath => ({ root: { hook: at() }, keys: [] })
-        const target = () =>
-          hook.value === undefined ? undefined : { hook: at() }
-        const open = () => props.inspector.isOpen(path())
-        // While searching, a custom hook opens to a matching sub-hook.
-        const shownOpen = () =>
-          open() ||
-          (props.query !== "" &&
-            (hook.hooks ?? []).some((sub) =>
-              hookShows(props.inspector, sub, props.labelOf, props.query),
-            ))
-        createResource(
-          () => props.settings.hookNames() && hook.site,
-          async (site) => {
-            const name = await props.sources.hookName(site)
-            if (name) props.nameFound(site, name)
-            return name
-          },
+    <For each={props.parts}>
+      {(part) =>
+        typeof part === "string" ? (
+          part
+        ) : "code" in part ? (
+          <code class="font-mono">{part.code}</code>
+        ) : part.node !== null && props.tree.info(part.node) ? (
+          <NodeLink id={part.node} tree={props.tree} />
+        ) : (
+          <code class="font-mono">{part.name}</code>
         )
-        const label = () => props.labelOf(hook)
-        return (
-          <Show
-            when={hookShows(props.inspector, hook, props.labelOf, props.query)}
-          >
-            <Switch>
-              <Match when={hook.hooks}>
-                {(hooks) => (
-                  <>
-                    <div
-                      data-testid="value"
-                      role="treeitem"
-                      tabIndex={-1}
-                      aria-level={props.depth + 2}
-                      aria-expanded={shownOpen()}
-                      data-path={pathKey(path())}
-                      class={ROW}
-                      style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
-                      onContextMenu={(event) =>
-                        props.onMenu(event, label(), target())
-                      }
-                    >
-                      <Toggle
-                        open={shownOpen()}
-                        onClick={() =>
-                          open()
-                            ? props.inspector.close(path())
-                            : props.inspector.open(path())
-                        }
-                      />
-                      <span class="min-w-0 truncate">
-                        <span data-search-text class="text-syntax-key">
-                          {hook.value === undefined ? label() : `${label()}:`}
-                        </span>
-                        <Show when={hook.value !== undefined}>
-                          {" "}
-                          <span
-                            data-search-text
-                            class={tone(hook.value as Value)}
-                          >
-                            {previewText(hook.value as Value)}
-                          </span>
-                        </Show>
-                      </span>
-                    </div>
-                    <Show when={shownOpen()}>
-                      <HookRows
-                        inspector={props.inspector}
-                        sources={props.sources}
-                        settings={props.settings}
-                        hooks={hooks()}
-                        at={at()}
-                        depth={props.depth + 1}
-                        query={props.query}
-                        labelOf={props.labelOf}
-                        nameFound={props.nameFound}
-                        editContext={props.editContext}
-                        onMenu={props.onMenu}
-                      />
-                    </Show>
-                  </>
-                )}
-              </Match>
-              <Match when={hook.value !== undefined}>
-                <ValueRow
-                  inspector={props.inspector}
-                  entry={{ name: label(), value: hook.value as Value }}
-                  editable={hook.name === "State" || hook.name === "Reducer"}
-                  editAt={
-                    hook.context === undefined
-                      ? undefined
-                      : props.editContext(hook.context)
-                  }
-                  path={path()}
-                  depth={props.depth}
-                  query={props.query}
-                  target={target()}
-                  onMenu={props.onMenu}
-                />
-              </Match>
-              <Match when={hook.value === undefined}>
-                <div
-                  data-testid="value"
-                  role="treeitem"
-                  tabIndex={-1}
-                  aria-level={props.depth + 2}
-                  data-path={pathKey(path())}
-                  data-search-text
-                  class={`${ROW} text-syntax-key`}
-                  style={{ "padding-left": `${(props.depth + 1) * 12 + 12}px` }}
-                  onContextMenu={(event) => props.onMenu(event, label())}
-                >
-                  {label()}
-                </div>
-              </Match>
-            </Switch>
-          </Show>
-        )
-      }}
+      }
     </For>
   )
 }
 
-// A value's text being edited: focused on mount; Enter applies, Escape cancels,
-// leaving cancels.
-function ValueInput(props: {
-  text: string
-  // The input's accessible name and test id: a value's or a key's editor.
-  label: string
-  testid: string
-  // Why the last Enter was refused, shown until the next.
-  error?: string
-  onApply: (text: string) => void
-  onCancel: () => void
-  onBlur: () => void
-}) {
-  let input!: HTMLInputElement
-  onMount(() => input.focus())
-  return (
-    <>
-      <input
-        ref={input}
-        data-testid={props.testid}
-        // No form history: Firefox would make it an autocomplete combobox.
-        autocomplete="off"
-        aria-label={props.label}
-        aria-invalid={Boolean(props.error)}
-        value={props.text}
-        class="min-w-0 flex-1 rounded-sm bg-surface px-1 font-mono text-fg outline-none ring-1 ring-accent"
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault()
-            props.onApply(input.value)
-          } else if (event.key === "Escape") {
-            // DevTools opens its drawer on Escape.
-            event.preventDefault()
-            event.stopPropagation()
-            props.onCancel()
-          }
-        }}
-        onBlur={() => props.onBlur()}
-      />
-      <Show when={props.error}>
-        <span role="alert" class="ml-2 shrink-0 text-error">
-          {props.error}
-        </span>
-      </Show>
-    </>
-  )
-}
-
-// Opens or closes a value or custom hook in place (the tree's triangle).
-function Toggle(props: { open: boolean; onClick: () => void }) {
-  return (
-    <span class="flex w-3 shrink-0 justify-center">
-      <button
-        type="button"
-        data-testid="value-toggle"
-        aria-label={props.open ? "Collapse" : "Expand"}
-        aria-expanded={props.open}
-        class="flex h-3 w-3 items-center justify-center text-muted"
-        onClick={() => props.onClick()}
-      >
-        <span style={TRIANGLE} classList={{ "rotate-90": props.open }} />
-      </button>
-    </span>
-  )
-}
-
-function ValueRow(props: {
+// Why the node last rendered: a row per reason, its changes under it.
+function Reasons(props: {
   inspector: InspectorStore
-  entry: Entry
-  path: RowPath
-  depth: number
-  query: string
-  // Where the page finds the value; none: only the key can be copied.
-  target?: ValueTarget
-  // The page can write it (a top-level prop, a state hook).
-  editable?: boolean
-  // Edited in another row instead (a context hook, in its Context row).
-  editAt?: () => void
-  // Its container is a plain object (its key can be renamed), and the names
-  // there (a rename can't take one).
-  objectKey?: boolean
-  siblings?: string[]
-  // A muted word after the value, its title saying why.
-  badge?: { text: string; title: string }
+  tree: TreeStore
+  labelOf: (hook: HookValue) => string
   onMenu: OnMenu
+  onRenders?: () => void
+  onLatest?: () => void
+  onCommit?: (seq: number) => void
 }) {
-  const value = () => props.entry.value
-  let row!: HTMLDivElement
-  // Any editable value but a boolean (which flips) is typed; what the panel holds
-  // only part of opens empty, to be replaced (editText).
-  const canEdit = () => (props.editable && !isFlag()) || Boolean(props.editAt)
-  // A boolean flips (its checkbox, or Space on the row); the page's re-send
-  // shows the result, so the checkbox never runs ahead of it.
-  const isFlag = () => props.editable && typeof value() === "boolean"
-  const flip = () => props.inspector.edit(props.path, !value())
-  const [editing, setEditing] = createSignal(false)
-  const [invalid, setInvalid] = createSignal(false)
-  const edit = () => {
-    if (props.editAt) return props.editAt()
-    if (!canEdit()) return
-    setInvalid(false)
-    setEditing(true)
+  const hookName = (path: number[]) =>
+    hookNameOf(props.inspector.data()?.hooks ?? [], path, props.labelOf)
+  type Section = "props" | "state" | "hooks" | "contexts"
+  type KeyChangeLike = {
+    old: Value
+    new: Value
+    reference?: KeyChange["reference"]
   }
-  const done = () => {
-    setEditing(false)
-    setRenaming(false)
-    row.focus()
-  }
-  // A key under a plain container can be deleted, and under an object renamed
-  // to a name its siblings don't have.
-  const [renaming, setRenaming] = createSignal(false)
-  const [badName, setBadName] = createSignal(false)
-  const rename = (name: string) => {
-    if (name === props.entry.name) return done()
-    if (!name.trim() || props.siblings?.includes(name)) return setBadName(true)
-    props.inspector.rename(props.path, name)
-    done()
-  }
-  const keyItems = () =>
-    props.editable && props.path.keys.length > 0
-      ? [
-          ...(props.objectKey
-            ? [
-                {
-                  label: "Rename key",
-                  run: () => {
-                    setBadName(false)
-                    setRenaming(true)
-                  },
-                },
-              ]
-            : []),
-          { label: "Delete", run: () => props.inspector.remove(props.path) },
-        ]
-      : []
-  // A plain container gets a key (`newKey`, else the first free `newKey<n>`)
-  // or an item at its end; the page's re-send shows it, to edit and rename.
-  const addItems = () => {
-    const container = target()
-    if (!props.editable || !container || !isPlain(container)) return []
-    if (container.type === "array")
+  const change = (
+    section: Section,
+    name: string,
+    { old, new: next, reference }: KeyChangeLike,
+  ) => ({
+    name,
+    old,
+    new: next,
+    root: { render: section },
+    badge: reference && REFERENCE_BADGE[reference],
+  })
+  const changesOf = (render: RenderReason, kind: RenderKind) => {
+    if (kind === "props")
+      return (render.props ?? []).map((c) => change("props", c.key, c))
+    if (kind === "state")
       return [
-        {
-          label: "Add item",
-          run: () =>
-            props.inspector.edit(childPath(props.path, container.length), {
-              type: "undefined",
-            }),
-        },
+        ...(render.state ?? []).map((c) => change("state", c.key, c)),
+        ...(render.hooks ?? []).map((c) =>
+          change("hooks", hookName(c.hook), c),
+        ),
       ]
-    const taken = new Set(entriesOf(container).entries.map((e) => e.name))
-    let name = "newKey"
-    for (let n = 2; taken.has(name); n++) name = `newKey${n}`
-    return [
-      {
-        label: "Add key",
-        run: () => props.inspector.edit(childPath(props.path, name), ""),
-      },
-    ]
+    if (kind === "context")
+      return (render.contexts ?? []).map((c) =>
+        change(
+          "contexts",
+          props.inspector.data()?.contexts?.[c.context]?.name ?? "Context",
+          c,
+        ),
+      )
+    return []
   }
-  // JSON plus markers (parseTyped); text that reads as nothing is a string
-  // over a string, and refused over anything else.
-  const apply = (text: string) => {
-    const next =
-      parseTyped(text) ?? (typeof value() === "string" ? text : undefined)
-    if (next === undefined) return setInvalid(true)
-    props.inspector.edit(props.path, next)
-    done()
-  }
-  // A value the page sent as a ref (past its depth limit) loads when opened.
-  const ref = () => {
-    const v = value()
-    return v !== null &&
-      typeof v === "object" &&
-      v.type === "ref" &&
-      "preview" in v
-      ? v.id
-      : undefined
-  }
-  // What opening shows: the value itself, or what the page sent for the ref.
-  const target = () => {
-    const v = value()
-    if (isContainer(v)) return v
-    const id = ref()
-    return id === undefined
-      ? undefined
-      : (props.inspector.expansion(id) as Container | undefined)
-  }
-  const openable = () => isContainer(value()) || ref() !== undefined
-  const open = () => props.inspector.isOpen(props.path)
-  // While searching, open to a match inside, without changing what's open.
-  const shownOpen = () =>
-    open() || descendantShows(props.inspector, value(), props.query)
-  const toggle = () =>
-    open()
-      ? props.inspector.close(props.path)
-      : props.inspector.open(props.path, ref())
   return (
     <>
-      <div
-        ref={row}
-        data-testid="value"
-        role="treeitem"
-        tabIndex={-1}
-        aria-level={props.depth + 2}
-        aria-expanded={openable() ? shownOpen() : undefined}
-        data-path={pathKey(props.path)}
-        class={ROW}
-        style={{ "padding-left": `${(props.depth + 1) * 12}px` }}
-        onContextMenu={(event) =>
-          props.onMenu(event, props.entry.name, props.target, [
-            ...addItems(),
-            ...keyItems(),
-          ])
-        }
-        // A click on the value edits it (Enter or F2 on the row too).
-        onClick={(event) => {
-          if ((event.target as Element).closest("[data-value]")) edit()
-        }}
-        onKeyDown={(event) => {
-          if (event.target !== row) return
-          if (event.key === "Enter" || event.key === "F2") {
-            event.preventDefault()
-            edit()
-          } else if (event.key === " " && isFlag()) {
-            event.preventDefault()
-            flip()
-          }
-        }}
-      >
-        <Show when={openable()} fallback={<span class="w-3 shrink-0" />}>
-          <Toggle open={shownOpen()} onClick={toggle} />
-        </Show>
-        <Show when={isFlag()}>
-          <input
-            type="checkbox"
+      <Show when={props.inspector.pinned() !== undefined}>
+        <ReasonRow name="pinned" testid="pinned">
+          An earlier update
+          <button
+            type="button"
             tabIndex={-1}
-            aria-label={props.entry.name}
-            checked={value() as boolean}
-            class="mr-1 accent-accent"
-            onChange={(event) => {
-              event.currentTarget.checked = value() as boolean
-              flip()
-            }}
-          />
-        </Show>
-        <Show when={renaming()}>
-          <ValueInput
-            text={props.entry.name}
-            label={`Rename ${props.entry.name}`}
-            testid="key-input"
-            error={badName() ? "Not a valid name" : undefined}
-            onApply={rename}
-            onCancel={done}
-            onBlur={() => setRenaming(false)}
-          />
-        </Show>
-        {/* Inline, not flex items: flex drops the spaces between them. */}
-        <span class="min-w-0 truncate" classList={{ hidden: renaming() }}>
-          <span data-search-text class="text-syntax-key">
-            {props.entry.arrow ? props.entry.name : `${props.entry.name}:`}
-          </span>
-          {props.entry.arrow ? " => " : " "}
-          <Show when={!editing()}>
-            <span
-              data-search-text
-              data-value
-              class={tone(value())}
-              classList={{ "editable-value": canEdit() }}
+            class="ml-2 text-accent hover:underline"
+            onClick={() => props.onLatest?.()}
+          >
+            Show latest
+          </button>
+        </ReasonRow>
+      </Show>
+      <Show when={props.inspector.history().length}>
+        {(count) => (
+          <ReasonRow name="history" testid="history">
+            <button
+              type="button"
+              tabIndex={-1}
+              class="text-accent hover:underline"
+              onClick={() => props.onRenders?.()}
             >
-              {previewText(value())}
-            </span>
-          </Show>
-          <Show when={props.badge}>
-            {(badge) => (
-              <>
-                {" "}
-                <span
-                  data-testid="badge"
-                  class="text-muted"
-                  title={badge().title}
-                >
-                  {badge().text}
-                </span>
-              </>
-            )}
-          </Show>
-        </span>
-        <Show when={editing()}>
-          <ValueInput
-            text={editText(value())}
-            label={`Edit ${props.entry.name}`}
-            testid="value-input"
-            error={invalid() ? "Not a valid value" : undefined}
-            onApply={apply}
-            onCancel={done}
-            onBlur={() => setEditing(false)}
-          />
-        </Show>
-      </div>
-      <Show when={shownOpen() && target()}>
-        {(container) => (
-          <Children
-            inspector={props.inspector}
-            value={container()}
-            path={props.path}
-            depth={props.depth + 1}
-            query={props.query}
-            editable={Boolean(props.editable) && isPlain(container())}
-            onMenu={props.onMenu}
-          />
+              {count()} {count() === 1 ? "render" : "renders"} recorded
+            </button>
+          </ReasonRow>
+        )}
+      </Show>
+      <Show
+        when={!props.inspector.absent() && props.inspector.render()}
+        fallback={
+          <Switch>
+            <Match when={props.inspector.absent()}>
+              <p class="pl-6 text-muted">Didn't render in this update.</p>
+            </Match>
+            <Match when={props.inspector.render() === null}>
+              <p class="pl-6 text-muted">This render is no longer recorded.</p>
+            </Match>
+            {/* Stepped back, the render is loading: nothing yet. */}
+            <Match when={!props.inspector.history().length}>
+              <p class="pl-6 text-muted">
+                No renders recorded since DevTools opened.
+              </p>
+            </Match>
+          </Switch>
+        }
+      >
+        {(render) => (
+          <>
+            <For each={render().kinds}>
+              {(kind) => (
+                <>
+                  <ReasonRow name={kind}>
+                    {kind === "mount" && render().remount ? (
+                      <Remounted
+                        remount={render().remount as Remount}
+                        tree={props.tree}
+                      />
+                    ) : (
+                      KIND_TEXT[kind]
+                    )}
+                  </ReasonRow>
+                  <For each={changesOf(render(), kind)}>
+                    {(change) => (
+                      <ChangeRow
+                        inspector={props.inspector}
+                        name={change.name}
+                        old={change.old}
+                        new={change.new}
+                        path={{ root: change.root, keys: [change.name] }}
+                        badge={change.badge}
+                        depth={1}
+                        onMenu={props.onMenu}
+                      />
+                    )}
+                  </For>
+                </>
+              )}
+            </For>
+            <Show when={render().effects?.length}>
+              <ReasonRow name="effects">Effects ran</ReasonRow>
+              <For each={render().effects}>
+                {(run) => {
+                  const name = hookName(run.hook)
+                  return (
+                    <>
+                      <div
+                        role="treeitem"
+                        aria-level={3}
+                        tabIndex={-1}
+                        data-testid="effect"
+                        data-path={`effect:${run.hook.join()}`}
+                        class={ROW}
+                        style={{ "padding-left": "36px" }}
+                      >
+                        {run.changed
+                          ? `${name}: deps [${run.changed.map((c) => c.dep).join(", ")}] changed`
+                          : `${name}: no deps`}
+                      </div>
+                      <For each={run.changed}>
+                        {(change) => (
+                          <ChangeRow
+                            inspector={props.inspector}
+                            name={`[${change.dep}]`}
+                            old={change.old}
+                            new={change.new}
+                            path={{
+                              root: { render: "effects" },
+                              keys: [name, change.dep],
+                            }}
+                            depth={2}
+                            onMenu={props.onMenu}
+                          />
+                        )}
+                      </For>
+                    </>
+                  )
+                }}
+              </For>
+            </Show>
+            <Show when={render().updaters}>
+              {(updaters) => (
+                <Triggered
+                  updaters={updaters()}
+                  tree={props.tree}
+                  onMore={() => props.onCommit?.(render().seq)}
+                />
+              )}
+            </Show>
+          </>
         )}
       </Show>
     </>
+  )
+}
+
+// What remounted a node: its key, or an ancestor (selected by its name).
+function Remounted(props: { remount: Remount; tree: TreeStore }) {
+  const ancestor = () =>
+    props.remount.cause === "ancestor" ? props.remount.ancestor : undefined
+  const name = () => {
+    const id = ancestor()
+    return id === undefined ? undefined : props.tree.info(id)?.name
+  }
+  const keyText = () => {
+    const { from, to } = props.remount as Extract<Remount, { cause: "key" }>
+    return `Remounted: key changed (${from ?? "none"} → ${to ?? "none"})`
+  }
+  return (
+    <Switch>
+      <Match when={props.remount.cause === "key"}>{keyText()}</Match>
+      <Match when={name() === undefined}>
+        Remounted: an ancestor remounted
+      </Match>
+      <Match when={ancestor()}>
+        {(id) => (
+          <>
+            Remounted: ancestor <NodeLink id={id()} tree={props.tree} />{" "}
+            remounted
+          </>
+        )}
+      </Match>
+    </Switch>
+  )
+}
+
+// A node's name that highlights it on hover and selects it on click (or
+// `onReveal`, from another tab).
+export function NodeLink(props: {
+  id: number
+  tree: TreeStore
+  onReveal?: (id: number) => void
+}) {
+  return (
+    <button
+      type="button"
+      data-testid="owner"
+      class="text-accent hover:underline"
+      onPointerEnter={() => props.tree.hover(props.id)}
+      onPointerLeave={() => props.tree.hover(undefined)}
+      onClick={() => {
+        props.tree.hover(undefined)
+        if (props.onReveal) props.onReveal(props.id)
+        else props.tree.reveal(props.id)
+      }}
+    >
+      {props.tree.info(props.id)?.name}
+    </button>
+  )
+}
+
+// The first component whose update scheduled the render's commit, with the
+// state it changed; the rest are in the commit (`onMore`). None (a root
+// render) is unknown.
+function Triggered(props: {
+  updaters: Updater[]
+  tree: TreeStore
+  onMore: () => void
+}) {
+  const known = () =>
+    props.updaters.filter((updater) => props.tree.info(updater.id))
+  return (
+    <ReasonRow name="trigger" testid="trigger">
+      <Show when={known()[0]} fallback="Triggered by: unknown">
+        {(first) => (
+          <>
+            Triggered by <NodeLink id={first().id} tree={props.tree} />
+            <Show when={first().hooks.length}>
+              {` (${first()
+                .hooks.map(
+                  (hook) =>
+                    `${hook.name}: ${previewText(hook.old)} → ${previewText(hook.new)}`,
+                )
+                .join(", ")})`}
+            </Show>
+            <Show when={known().length > 1}>
+              {" "}
+              <button
+                type="button"
+                tabIndex={-1}
+                class="text-accent hover:underline"
+                onClick={() => props.onMore()}
+              >
+                +{known().length - 1} more
+              </button>
+            </Show>
+          </>
+        )}
+      </Show>
+    </ReasonRow>
+  )
+}
+
+// A reason's own row (a kind, Effects ran, or Triggered by), above its changes.
+function ReasonRow(props: {
+  name: string
+  testid?: string
+  children: JSX.Element
+}) {
+  return (
+    <div
+      role="treeitem"
+      aria-level={2}
+      tabIndex={-1}
+      data-testid={props.testid ?? "reason"}
+      data-path={`reason:${props.name}`}
+      class={ROW}
+      style={{ "padding-left": "24px" }}
+    >
+      {/* One inline run: a flex row drops the spaces between its items. */}
+      <span>{props.children}</span>
+    </div>
   )
 }

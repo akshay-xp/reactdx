@@ -1,7 +1,12 @@
-import { type TreeKind, type TreeOp, treeBatch } from "@reactdx/messages"
+import {
+  countsMessage,
+  type TreeKind,
+  type TreeOp,
+  treeBatch,
+} from "@reactdx/messages"
 import { createEffect, createMemo, createRoot, on } from "solid-js"
-import { expect, test } from "vitest"
-import { createTreeStore } from "../src/tree"
+import { expect, test, vi } from "vitest"
+import { createTreeStore, type TreeStore } from "../src/tree"
 
 const add = (
   id: number,
@@ -332,4 +337,135 @@ test("reveal selects a node and expands its ancestors", () => {
   expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "2 B", "1 C"])
   tree.reveal(99)
   expect(tree.selected()).toBe(5)
+})
+
+const countsOf = (tree: TreeStore) =>
+  tree.rows(1).map(({ id, name }) => {
+    const { renders = 0, wasted = 0 } = tree.countOf(id) ?? {}
+    return `${name} ${renders}/${wasted}`
+  })
+
+test("render counts land on their rows until the tree resets", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.receiveCounts(countsMessage([{ id: 3, renders: 4, wasted: 1 }]))
+  expect(countsOf(tree)).toEqual(["App 0/0", "A 4/1", "B 0/0", "C 0/0"])
+  tree.receiveCounts(countsMessage([{ id: 3, renders: 5, wasted: 1 }]))
+  expect(countsOf(tree)).toContain("A 5/1")
+  tree.apply(resync)
+  expect(countsOf(tree)).toContain("A 0/0")
+  tree.receiveCounts(countsMessage([{ id: 3, renders: 5, wasted: 1 }]))
+  tree.clear()
+  tree.apply(resync)
+  expect(countsOf(tree)).toContain("A 0/0")
+})
+
+test("the rows in the newest counts are recent for a second", () => {
+  vi.useFakeTimers()
+  try {
+    const tree = createTreeStore()
+    tree.apply(resync)
+    const recent = () =>
+      tree
+        .rows(1)
+        .filter((row) => tree.isRecent(row.id))
+        .map((row) => row.name)
+    tree.receiveCounts(countsMessage([{ id: 3, renders: 2, wasted: 0 }]))
+    expect(recent()).toEqual(["A"])
+    vi.advanceTimersByTime(500)
+    tree.receiveCounts(countsMessage([{ id: 6, renders: 2, wasted: 0 }]))
+    expect(recent()).toEqual(["C"])
+    vi.advanceTimersByTime(999)
+    expect(recent()).toEqual(["C"])
+    vi.advanceTimersByTime(1)
+    expect(recent()).toEqual([])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// App > 5 keyed Rows (ids 2 to 6), then 4 Items (ids 7 to 10).
+const listed = treeBatch(1, [
+  { op: "reset" },
+  add(1, 0, "App"),
+  ...[0, 1, 2, 3, 4].map((i) => ({ ...add(2 + i, 1, "Row", i), key: `r${i}` })),
+  ...[0, 1, 2, 3].map((i) => add(7 + i, 1, "Item", 5 + i)),
+])
+
+test("five or more same-named siblings in a row become one group row", () => {
+  const tree = createTreeStore()
+  tree.apply(listed)
+  tree.receiveCounts(
+    countsMessage([2, 3, 4, 5, 6].map((id) => ({ id, renders: 3, wasted: 2 }))),
+  )
+  const rows = tree.rows(1)
+  expect(names(rows)).toEqual([
+    "0 App",
+    "1 Row",
+    "1 Item",
+    "1 Item",
+    "1 Item",
+    "1 Item",
+  ])
+  expect(rows[1]).toMatchObject({
+    id: -2,
+    key: null,
+    expandable: true,
+    expanded: false,
+    group: { size: 5 },
+  })
+  expect(tree.countOf(-2)?.wasted).toBe(10)
+  expect(tree.isRecent(-2)).toBe(true)
+  expect(rows[2]?.group).toBeUndefined()
+})
+
+test("a group opens to its members, by toggle, reveal, keys and search", () => {
+  const tree = createTreeStore()
+  tree.apply(listed)
+  const rowNames = () => names(tree.rows(1)).slice(0, 7)
+  tree.toggle(-2)
+  expect(rowNames()).toEqual([
+    "0 App",
+    "1 Row",
+    "2 Row",
+    "2 Row",
+    "2 Row",
+    "2 Row",
+    "2 Row",
+  ])
+  expect(tree.rows(1)[1]?.expanded).toBe(true)
+  tree.toggle(-2)
+  expect(rowNames()[2]).toBe("1 Item")
+  tree.reveal(4)
+  expect(tree.selected()).toBe(4)
+  expect(tree.rows(1)[1]?.expanded).toBe(true)
+  tree.key(1, "ArrowLeft")
+  expect(tree.selected()).toBe(-2)
+  // A group row stays selected across batches while its first member lives.
+  tree.apply(treeBatch(2, [{ op: "rename", id: 7, name: "Item" }]))
+  expect(tree.selected()).toBe(-2)
+  tree.key(1, "ArrowLeft")
+  expect(tree.rows(1)[1]?.expanded).toBe(false)
+  tree.key(1, "ArrowRight")
+  expect(tree.rows(1)[1]?.expanded).toBe(true)
+  tree.toggle(-2)
+  tree.setQuery("Row")
+  expect(tree.selected()).toBe(2)
+  expect(tree.rows(1)[1]?.expanded).toBe(true)
+})
+
+test("a component's counts are read by id", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.receiveCounts(countsMessage([{ id: 3, renders: 4, wasted: 1 }]))
+  expect(tree.countOf(3)).toEqual({ id: 3, renders: 4, wasted: 1 })
+  expect(tree.countOf(5)).toBeUndefined()
+})
+
+test("a node's parent is the node above it, none at a root", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  expect(tree.parentOf(3)).toBe(2)
+  expect(tree.parentOf(1)).toBeUndefined()
+  expect(tree.parentOf(99)).toBeUndefined()
 })

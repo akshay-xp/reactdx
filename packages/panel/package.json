@@ -6,6 +6,7 @@
     ".": "./src/Panel.tsx",
     "./tree": "./src/tree.ts",
     "./inspection": "./src/inspection.ts",
+    "./timeline": "./src/timeline.ts",
     "./source": "./src/source.ts",
     "./editor": "./src/editor.ts",
     "./names": "./src/names.ts",

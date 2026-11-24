@@ -64,7 +64,12 @@ const view = (frame: Frame) =>
     const start = (
       row.querySelector("[data-toggle]") as HTMLElement
     ).getBoundingClientRect()
-    const end = (row.lastElementChild as HTMLElement).getBoundingClientRect()
+    // The row's content: not its render count, at the tree's right edge.
+    const end = (
+      [...row.children]
+        .filter((child) => !child.matches("[data-testid=renders]"))
+        .at(-1) as HTMLElement
+    ).getBoundingClientRect()
     return {
       // A row clear of the bottom edge, where an overlay scrollbar sits (macOS
       // draws the horizontal one over the content).

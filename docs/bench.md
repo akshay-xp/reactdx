@@ -1,6 +1,6 @@
 # Hook-cost benchmark (`bench/hook-cost/`)
 
-Per-commit cost of a page-side hook on a 10,000-component tree. Moved from `spikes/hook-cost` at `12bf178` (M0 #3); the M8 performance baseline. Playwright Chromium only.
+Per-commit cost of a page-side hook on a 10,000-component tree, and page memory (below). Moved from `spikes/hook-cost` at `12bf178` (M0 #3); the M8 performance baseline. Playwright Chromium only.
 
 ## Command (from the repo root)
 
@@ -56,6 +56,54 @@ React   Case                   Mode   median ms     p95 ms
 ```
 
 Matches M0 #3 (`docs/m0-findings.md`) within about 0.5 ms on medians: bippy + traversal adds 0.3 ms to a one-component commit, the bare hook costs nothing measurable, RDT adds about 18 ms to every commit whether DevTools is open or not.
+
+## Page memory (`pnpm bench:memory`, `memory.ts`; M6 #71, 2026-11-24)
+
+Builds the Chrome extension, then per React version and case, in a fresh headed context (`withBench`, `browser.ts`, shared with `run.ts`): the bench page, 10 warm-up commits of all cells, the page renderer's heap (`Runtime.getHeapUsage` after two `HeapProfiler.collectGarbage`), 50 more commits of all cells, the heap again. The page's heap only: RDT's frontend store and ReactDX's panel live in DevTools. About 5 minutes.
+
+| Case                    | Setup                                                                                                   |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| no devtools             | none                                                                                                    |
+| RDT, DevTools closed    | RDT                                                                                                     |
+| RDT, DevTools open      | RDT, `--auto-open-devtools-for-tabs`                                                                    |
+| RDT, Profiler recording | same, then `startProfiling(true, false)` on each renderer interface (the record button with "why" on)   |
+| ReactDX, panel closed   | the built extension (`apps/extension/.output/chrome-mv3`)                                               |
+| ReactDX, panel open     | same, then the relay's `watch` posted on the page, as an open panel does: the tree and the recorder run |
+
+```
+React   Case                        loaded MB     after MB    growth MB
+18.3.1  no devtools                      17.1         17.1          0.0
+18.3.1  RDT, DevTools closed             22.4         22.8          0.4
+18.3.1  RDT, DevTools open               21.9         21.0         -1.0
+18.3.1  RDT, Profiler recording          46.5        163.3        116.7   (60 commits profiled)
+18.3.1  ReactDX, panel closed            17.4         17.4          0.0
+18.3.1  ReactDX, panel open              25.5         25.8          0.3   (4 commits recorded)
+19.3.1  no devtools                      19.6         19.8          0.2
+19.3.1  RDT, DevTools closed             25.1         25.5          0.4
+19.3.1  RDT, DevTools open               24.8         23.6         -1.2
+19.3.1  RDT, Profiler recording          49.4        165.9        116.5   (60 commits profiled)
+19.3.1  ReactDX, panel closed            20.0         20.3          0.2
+19.3.1  ReactDX, panel open              28.2         28.6          0.4   (4 commits recorded)
+```
+
+- Defaults against defaults: RDT with DevTools open (not profiling) costs about 4 to 5 MB of page heap; ReactDX with the panel open (recording) about 8 MB, reached during the warm-up and flat after (the record budget). RDT's Profiler grows about 2.3 MB per commit of 10,000 components, unbounded (an earlier 200-commit run reached 517 MB).
+- "4 commits recorded" is the budget at work: a commit of 10,001 renders leaves room for one, so the panel is sent the newest only.
+
+## Recording memory (M6 #71, 2026-11-24)
+
+A scratch vitest file (not kept; jsdom, `NODE_OPTIONS=--expose-gc`, `--pool=forks`): 10,000 `Cell`s with a state hook and an effect on `tick`, 200 commits that render all of them, each walked by `tree.commit` like the agent's, heap after `gc()` with the recorder alive.
+
+```
+React  Recording                               Heap     Buffered records
+19     none (tree only)                        102 MB   0
+19     before #71 (100 commits, no record cap) 1113 MB  1,000,100
+19     #71 (20,000 records, 1,000 commits)     119 MB   10,001 (1 commit) + 10,001 latest
+18     none (tree only)                        101 MB   0
+18     before #71                              1112 MB  1,000,100
+18     #71                                     111 MB   10,001 + 10,001 latest
+```
+
+Recording now costs 10 to 17 MB over the tree alone, from about 1 GB. A record costs about 1 KB here (props, a state hook and an effect with deps); about 350 to 420 bytes with plain props.
 
 ## Key files
 

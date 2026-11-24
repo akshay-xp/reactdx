@@ -1,6 +1,11 @@
-import { type TreeKind, type TreeOp, treeBatch } from "@reactdx/messages"
+import {
+  countsMessage,
+  type TreeKind,
+  type TreeOp,
+  treeBatch,
+} from "@reactdx/messages"
 import { fireEvent, render } from "@solidjs/testing-library"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { TreeView } from "../src/TreeView"
 import { createTreeStore } from "../src/tree"
 
@@ -184,4 +189,63 @@ test("a tree renders the rows in its pane's view: 400 px is 20 rows plus oversca
     if (clientHeight)
       Object.defineProperty(HTMLElement.prototype, "clientHeight", clientHeight)
   }
+})
+
+test("a row shows its render count past one, and a mark while just rendered", () => {
+  vi.useFakeTimers()
+  try {
+    const { tree, nodes } = view([add(1, 0, "App"), add(2, 1, "A")])
+    tree.receiveCounts(
+      countsMessage([
+        { id: 1, renders: 4, wasted: 0 },
+        { id: 2, renders: 1, wasted: 0 },
+      ]),
+    )
+    const [app, a] = nodes()
+    expect(app?.querySelector("[data-testid=renders]")?.textContent).toBe("4")
+    expect(a?.querySelector("[data-testid=renders]")).toBeNull()
+    expect(app?.hasAttribute("data-recent")).toBe(true)
+    vi.advanceTimersByTime(1000)
+    expect(nodes()[0]?.hasAttribute("data-recent")).toBe(false)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+// The page sends counts on every flush: rebuilding the rows for them replaced
+// every row element, which a 10,000-row tree can't afford.
+test("counts and their fade update the rows in place", () => {
+  vi.useFakeTimers()
+  try {
+    const { tree, nodes } = view([add(1, 0, "App"), add(2, 1, "A")])
+    const before = nodes()
+    tree.receiveCounts(countsMessage([{ id: 2, renders: 2, wasted: 0 }]))
+    vi.advanceTimersByTime(1000)
+    expect(
+      nodes()[1]?.querySelector("[data-testid=renders]")?.textContent,
+    ).toBe("2")
+    expect(nodes().every((node, i) => node === before[i])).toBe(true)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test("a group row shows its size and wasted renders, and opens to its members", () => {
+  const rowsOps = [0, 1, 2, 3, 4].map((i) =>
+    add(2 + i, 1, "Row", i, "function", `r${i}`),
+  )
+  const { tree, nodes } = view([add(1, 0, "App"), ...rowsOps])
+  tree.receiveCounts(
+    countsMessage([2, 3, 4, 5, 6].map((id) => ({ id, renders: 3, wasted: 2 }))),
+  )
+  const group = nodes()[1] as HTMLElement
+  expect(group.querySelector("[data-testid=name]")?.textContent).toBe("Row")
+  expect(group.querySelector("[data-testid=group]")?.textContent).toBe(
+    "×5 · 10 wasted",
+  )
+  expect(group.querySelector("[data-testid=key]")).toBeNull()
+  fireEvent.pointerOver(group)
+  expect(tree.hovered()).toBeUndefined()
+  fireEvent.click(group.querySelector("[data-toggle]") as Element)
+  expect(nodes()).toHaveLength(7)
 })

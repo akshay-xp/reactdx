@@ -126,9 +126,12 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
               '} default Theme: "dark"',
             ]
           : [...HOOKS, 'Context Theme: "dark"']
-      const text = await selectListed(panel, "Hooks", (t) =>
+      // Context's section comes with the hooks; it starts folded.
+      await selectListed(panel, "Hooks", (t) => t.includes("Context(Theme)"))
+      await panel.key("Context", "ArrowRight")
+      const text = await until(panel.inspector, (t) =>
         expected.every((hook) => t.includes(hook)),
-      ).catch((error: Error) => error.message)
+      )
       for (const hook of expected)
         assert.ok(text.includes(hook), `${hook} in ${text}`)
     } finally {

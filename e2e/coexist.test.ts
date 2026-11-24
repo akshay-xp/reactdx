@@ -21,6 +21,7 @@ type RdtHook = {
 declare global {
   interface Window {
     __commits?: number
+    __updaters?: number
   }
 }
 
@@ -99,8 +100,12 @@ async function commitsAfterClick(page: Page) {
     const record = (window as unknown as Record<symbol, HookRecord>)[
       Symbol.for("reactdx")
     ]
-    record?.listeners.add(() => {
+    record?.listeners.add((_, root) => {
       window.__commits = (window.__commits ?? 0) + 1
+      // What M6's "Triggered by" reads: React clears it once the hook returns.
+      const { size = 0 } =
+        (root as { memoizedUpdaters?: Set<unknown> }).memoizedUpdaters ?? {}
+      window.__updaters = Math.max(window.__updaters ?? 0, size)
     })
   })
   // A DOM click, not page.click: Puppeteer's click first waits for an IntersectionObserver
@@ -110,6 +115,8 @@ async function commitsAfterClick(page: Page) {
   await page.waitForFunction(() => (window.__commits ?? 0) > 0, {
     timeout: 5000,
   })
+  const updaters = await page.evaluate(() => window.__updaters ?? 0)
+  assert.ok(updaters >= 1, `memoizedUpdaters held ${updaters} fibers`)
 }
 
 for (const [script, port, renderers] of [

@@ -1,11 +1,16 @@
 import {
   type EditRoot,
   type EditValue,
+  isKinds,
   MAX_VALUE_STRING,
   parseEditPath,
   parseEditRoot,
   parseEditValue,
+  parseList,
+  parseUpdaters,
   parseValueTarget,
+  type RenderKind,
+  type Updater,
   type ValueKey,
   type ValueTarget,
 } from "./inspect.ts"
@@ -292,6 +297,91 @@ export type ForceMessage = {
   on: boolean
 }
 
+// Panel to background: load one recorded render of the inspected node (its
+// commit `seq`, from the inspection's `history`; M6 #66).
+export type ReasonMessage = {
+  type: "reason"
+  tabId: number
+  id: number
+  seq: number
+}
+
+// Panel to background: the ids the commit `seq` rendered (M6 #67).
+export type CommitMessage = { type: "commit"; tabId: number; seq: number }
+// Panel to background: empty the page's recorded updates (M6 #74).
+export type ClearUpdatesMessage = { type: "clear-updates"; tabId: number }
+
+// What one component rendered for in a commit.
+export type CommitRender = { id: number; kinds: RenderKind[] }
+
+// Agent to panel: one batch of a commit's renders, at most MAX_OPS, the first
+// with the components whose updates triggered it; null once the commit left
+// the page's buffer.
+export type CommittedMessage = {
+  source: "reactdx"
+  type: "committed"
+  seq: number
+  renders: CommitRender[] | null
+  updaters?: Updater[]
+}
+export const committed = (
+  seq: number,
+  renders: CommitRender[] | null,
+  updaters?: Updater[],
+): CommittedMessage => ({
+  source: "reactdx",
+  type: "committed",
+  seq,
+  renders,
+  ...(updaters && { updaters }),
+})
+
+export function parseCommitted(data: unknown): CommittedMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, seq, renders, updaters } = data as Record<
+    string,
+    unknown
+  >
+  if (source !== "reactdx" || type !== "committed" || !isId(seq)) return
+  if (renders === null) return committed(seq, null)
+  const list = parseList(renders, MAX_OPS, (item) =>
+    isId(item.id) && isKinds(item.kinds)
+      ? { id: item.id, kinds: [...item.kinds] }
+      : undefined,
+  )
+  if (!list) return
+  if (updaters === undefined) return committed(seq, list)
+  const triggers = parseUpdaters(updaters)
+  if (triggers) return committed(seq, list, triggers)
+}
+
+// Agent to panel, on the flush (M6 #72): renders and wasted renders (only
+// because the parent rendered) per component since the watch, for the ones
+// that changed (a watch: all), at most MAX_OPS per message.
+export type RenderCount = { id: number; renders: number; wasted: number }
+export type CountsMessage = {
+  source: "reactdx"
+  type: "counts"
+  counts: RenderCount[]
+}
+export const countsMessage = (counts: RenderCount[]): CountsMessage => ({
+  source: "reactdx",
+  type: "counts",
+  counts,
+})
+
+export function parseCounts(data: unknown): CountsMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, counts } = data as Record<string, unknown>
+  if (source !== "reactdx" || type !== "counts") return
+  const list = parseList(counts, MAX_OPS, ({ id, renders, wasted }) =>
+    isId(id) && isId(renders) && isCount(wasted) && wasted <= renders
+      ? { id, renders, wasted }
+      : undefined,
+  )
+  if (list) return countsMessage(list)
+}
+
 // Panel to background: render the inspected node again, nothing changed.
 export type RerenderMessage = { type: "rerender"; tabId: number; id: number }
 
@@ -340,6 +430,9 @@ export type TreeCommand =
     }
   | { type: "delete-path"; id: number; root: EditRoot; path: ValueKey[] }
   | { type: "rerender"; id: number }
+  | { type: "reason"; id: number; seq: number }
+  | { type: "commit"; seq: number }
+  | { type: "clear-updates" }
   | { type: "force"; id: number; kind: "fallback" | "error"; on: boolean }
   | {
       type: "rename-path"
@@ -355,6 +448,7 @@ const BARE_COMMANDS = new Set<unknown>([
   "clear-highlight",
   "pick-start",
   "pick-stop",
+  "clear-updates",
 ])
 
 export function parseTreeCommand(data: unknown): TreeCommand | undefined {
@@ -371,11 +465,14 @@ export function parseTreeCommand(data: unknown): TreeCommand | undefined {
     to,
     kind,
     on,
+    seq,
   } = data as Record<string, unknown>
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
   if (type === "inspect" && (id === null || isId(id))) return { type, id }
   if (type === "rerender" && isId(id)) return { type, id }
+  if (type === "reason" && isId(id) && isId(seq)) return { type, id, seq }
+  if (type === "commit" && isId(seq)) return { type, seq }
   if (
     type === "force" &&
     isId(id) &&

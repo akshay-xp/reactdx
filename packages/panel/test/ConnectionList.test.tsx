@@ -1,9 +1,17 @@
-import { type RendererView, treeBatch } from "@reactdx/messages"
-import { fireEvent, render } from "@solidjs/testing-library"
+import {
+  commitsMessage,
+  committed,
+  countsMessage,
+  inspected,
+  type RendererView,
+  treeBatch,
+} from "@reactdx/messages"
+import { fireEvent, render, screen, within } from "@solidjs/testing-library"
 import { expect, test } from "vitest"
 import { ConnectionList } from "../src/ConnectionList"
 import { createInspectorStore } from "../src/inspection"
 import type { Sources } from "../src/source"
+import { createTimelineStore } from "../src/timeline"
 import { createTreeStore } from "../src/tree"
 
 const inspection = () =>
@@ -103,8 +111,8 @@ test("each React copy with its roots and commit counts", () => {
   expect(
     roots.map((el) => [el.textContent, el.getAttribute("data-commits")]),
   ).toEqual([
-    ["Root 13 commits", "3"],
-    ["Root 20 commits", "0"],
+    ["Root 13 updates", "3"],
+    ["Root 20 updates", "0"],
   ])
 })
 
@@ -230,4 +238,255 @@ test("the inspector sits beside the trees, below them when narrow", () => {
   expect(
     view([copy(1, "19.3.1", 0)]).querySelector("[data-testid=inspector]"),
   ).toBeNull()
+})
+
+test("Components and Updates are tabs; the hidden one keeps its state", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      {
+        op: "add",
+        id: 1,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "App",
+        key: null,
+        index: 0,
+      },
+    ]),
+  )
+  tree.select(1)
+  const inspector = inspection()
+  render(() => (
+    <ConnectionList
+      tree={tree}
+      inspector={inspector}
+      timeline={createTimelineStore(() => {}, inspector)}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "19.3.1", 1, [{ id: 1, commits: 1 }])]}
+    />
+  ))
+  const components = screen.getByRole("tab", { name: "Components" })
+  const commits = screen.getByRole("tab", { name: "Updates" })
+  const panel = (tab: HTMLElement) =>
+    document.getElementById(tab.getAttribute("aria-controls") ?? "")
+  expect(components.getAttribute("aria-selected")).toBe("true")
+  expect(panel(components)?.hidden).toBe(false)
+  expect(panel(commits)?.hidden).toBe(true)
+  expect(panel(components)?.querySelector("[data-testid=tree]")).not.toBeNull()
+  expect(
+    panel(components)?.querySelector("[data-testid=inspector]"),
+  ).not.toBeNull()
+  fireEvent.click(commits)
+  expect(commits.getAttribute("aria-selected")).toBe("true")
+  expect(panel(commits)?.hidden).toBe(false)
+  expect(panel(components)?.hidden).toBe(true)
+  expect(tree.selected()).toBe(1)
+  fireEvent.keyDown(commits, { key: "ArrowLeft" })
+  expect(components.getAttribute("aria-selected")).toBe("true")
+  expect(document.activeElement).toBe(components)
+})
+
+test("links move between a commit and its components", () => {
+  const tree = createTreeStore()
+  const add = (id: number, name: string) => ({
+    op: "add" as const,
+    id,
+    parentId: id === 1 ? 0 : 1,
+    rootId: 1,
+    kind: "function" as const,
+    name,
+    key: null,
+    index: 0,
+  })
+  tree.apply(treeBatch(1, [{ op: "reset" }, add(1, "App"), add(2, "Counter")]))
+  const inspector = inspection()
+  const timeline = createTimelineStore(() => {}, inspector)
+  render(() => (
+    <ConnectionList
+      tree={tree}
+      inspector={inspector}
+      timeline={timeline}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "19.3.1", 1, [{ id: 1, commits: 2 }])]}
+    />
+  ))
+  const tab = (name: string) => screen.getByRole("tab", { name })
+  const selectedTab = () =>
+    screen
+      .getAllByRole("tab")
+      .find((t) => t.getAttribute("aria-selected") === "true")
+      ?.getAttribute("aria-label")
+  timeline.receiveCommits(
+    commitsMessage(
+      [
+        { seq: 4, time: 0, rootId: 1, updaters: [2, 1], renders: 2, wasted: 0 },
+        { seq: 7, time: 0, rootId: 1, updaters: [2], renders: 1, wasted: 0 },
+      ],
+      1,
+      false,
+    ),
+  )
+  tree.select(2)
+  inspector.inspect(2)
+  inspector.receive(
+    inspected(2, {
+      props: { type: "object", className: "Object", id: 1, size: 0, props: {} },
+      render: {
+        seq: 4,
+        kinds: ["state"],
+        updaters: [
+          { id: 2, hooks: [] },
+          { id: 1, hooks: [] },
+        ],
+      },
+      history: [4],
+    }),
+  )
+
+  // The full reasons are folded under Renders.
+  fireEvent.click(screen.getByRole("treeitem", { name: /^Renders/ }))
+  // The tab says how many updates there are.
+  expect(tab("Updates").textContent).toBe("Updates2")
+  fireEvent.click(screen.getByRole("button", { name: "+1 more" }))
+  expect(selectedTab()).toBe("Updates")
+  expect(timeline.picked()).toBe(4)
+
+  fireEvent.click(tab("Components"))
+  fireEvent.click(screen.getByRole("button", { name: "1 render recorded" }))
+  expect(selectedTab()).toBe("Updates")
+  expect(screen.getByRole("button", { name: "Only Counter" }).ariaPressed).toBe(
+    "true",
+  )
+
+  timeline.receiveCommitted(committed(4, [{ id: 2, kinds: ["state"] }], []))
+  tree.select(1)
+  const detail = screen.getByTestId("commit-detail")
+  fireEvent.click(within(detail).getByRole("button", { name: "Counter" }))
+  expect(selectedTab()).toBe("Components")
+  expect(tree.selected()).toBe(2)
+
+  fireEvent.click(screen.getByRole("button", { name: "Show latest" }))
+  expect(timeline.picked()).toBeUndefined()
+  expect(inspector.pinned()).toBeUndefined()
+})
+
+test("a legend under the trees says what the numbers count", () => {
+  const { container } = render(() => (
+    <ConnectionList
+      tree={createTreeStore()}
+      inspector={inspection()}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "18.3.1", 1, [{ id: 1, commits: 3 }])]}
+    />
+  ))
+  const legend = screen.getByText("Numbers: renders since DevTools opened")
+  const trees = container.querySelector("[data-testid=trees]") as Element
+  expect(
+    trees.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy()
+})
+
+test("a new update keeps the Components tab as it was: nothing remounts", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      {
+        op: "add",
+        id: 1,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "App",
+        key: null,
+        index: 0,
+      },
+    ]),
+  )
+  const inspector = inspection()
+  const timeline = createTimelineStore(() => {}, inspector)
+  render(() => (
+    <ConnectionList
+      tree={tree}
+      inspector={inspector}
+      timeline={timeline}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "19.3.1", 1, [{ id: 1, commits: 2 }])]}
+    />
+  ))
+  tree.select(1)
+  inspector.inspect(1)
+  inspector.receive(
+    inspected(1, {
+      props: { type: "object", className: "Object", id: 1, size: 0, props: {} },
+    }),
+  )
+  const renders = () => screen.getByRole("treeitem", { name: "Renders" })
+  fireEvent.click(renders())
+  expect(renders().getAttribute("aria-expanded")).toBe("true")
+  timeline.receiveCommits(
+    commitsMessage(
+      [{ seq: 1, time: 0, rootId: 1, updaters: [], renders: 1, wasted: 0 }],
+      1,
+      false,
+    ),
+  )
+  expect(screen.getByRole("tab", { name: "Updates" }).textContent).toBe(
+    "Updates1",
+  )
+  expect(renders().getAttribute("aria-expanded")).toBe("true")
+})
+
+// Reading the tab list built every tab's content again, TreeView included:
+// each update walked the whole tree once per copy (10 times on bench.html).
+test("an update walks the tree once: no throwaway copies of the tabs", () => {
+  const tree = createTreeStore()
+  const add = (id: number, parentId: number, name: string, index = 0) =>
+    ({
+      op: "add",
+      id,
+      parentId,
+      rootId: 1,
+      kind: "function",
+      name,
+      key: null,
+      index,
+    }) as const
+  tree.apply(treeBatch(1, [{ op: "reset" }, add(1, 0, "App")]))
+  const inspector = inspection()
+  const timeline = createTimelineStore(() => {}, inspector)
+  const rows = tree.rows
+  let walks = 0
+  tree.rows = (rootId) => {
+    walks++
+    return rows(rootId)
+  }
+  render(() => (
+    <ConnectionList
+      tree={tree}
+      inspector={inspector}
+      timeline={timeline}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "19.3.1", 1, [{ id: 1, commits: 1 }])]}
+    />
+  ))
+  walks = 0
+  tree.apply(treeBatch(2, [add(2, 1, "Extra")]))
+  timeline.receiveCommits(
+    commitsMessage(
+      [{ seq: 1, time: 0, rootId: 1, updaters: [], renders: 1, wasted: 0 }],
+      1,
+      false,
+    ),
+  )
+  tree.receiveCounts(countsMessage([{ id: 2, renders: 1, wasted: 0 }]))
+  expect(walks).toBe(1)
 })

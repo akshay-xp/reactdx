@@ -85,15 +85,20 @@ function nameOf(fiber: Fiber, kind: TreeKind): string {
 const bounded = (value: string) => value.slice(0, MAX_TREE_STRING)
 
 // Ids are stable for a fiber's life: React swaps a fiber with its alternate on
-// every update, so both carry the id.
-export function createTree() {
+// every update, so both carry the id. `onForget` hears each id an unmount drops.
+export function createTree({
+  onForget,
+}: {
+  onForget?: (id: number) => void
+} = {}) {
   const ids = new WeakMap<Fiber, number>()
   let nextId = 1
   const idOf = (fiber: Fiber) => {
-    const id =
-      ids.get(fiber) ??
-      (fiber.alternate && ids.get(fiber.alternate)) ??
-      nextId++
+    const known = ids.get(fiber)
+    // Both fibers of a pair are set together: a hit needs no writes (a parent
+    // of 10,000 cells looks each up on every commit).
+    if (known !== undefined) return known
+    const id = (fiber.alternate && ids.get(fiber.alternate)) ?? nextId++
     ids.set(fiber, id)
     if (fiber.alternate) ids.set(fiber.alternate, id)
     return id
@@ -108,13 +113,31 @@ export function createTree() {
   const label = (fiber: Fiber) =>
     bounded(nameOf(fiber, kindOf(fiber) as TreeKind))
 
-  // Skipped fibers (fragments, text, modes...) pass their children up.
-  const visible = (fiber: Fiber, out: Fiber[] = []) => {
+  // A bailed-out fiber keeps its child fibers: nothing below it changed.
+  const bailedOut = (fiber: Fiber) =>
+    fiber.alternate !== null && fiber.child === fiber.alternate.child
+
+  // Skipped fibers (fragments, text, modes...) pass their children up. Kids
+  // under a skipped fiber that bailed out go in `stale` too: React didn't
+  // clone them, so they're last commit's fibers (no alternate, old flags).
+  const visible = (
+    fiber: Fiber,
+    out: Fiber[] = [],
+    stale?: Set<Fiber>,
+    under = false,
+  ) => {
     for (let child = fiber.child; child; child = child.sibling)
-      if (kindOf(child)) out.push(child)
-      else if (!isHidden(child)) visible(child, out)
+      if (kindOf(child)) {
+        out.push(child)
+        if (under) stale?.add(child)
+      } else if (!isHidden(child))
+        visible(child, out, stale, under || bailedOut(child))
     return out
   }
+
+  const noop = () => {}
+  // Set only while commit runs, so full() visits nothing.
+  let visit: (fiber: Fiber, id: number) => void = noop
 
   const addSubtree = (
     fiber: Fiber,
@@ -128,6 +151,7 @@ export function createTree() {
     const name = label(fiber)
     names.set(id, name)
     fibers.set(id, fiber)
+    visit(fiber, id)
     ops.push({
       op: "add",
       id,
@@ -161,6 +185,7 @@ export function createTree() {
     children.delete(id)
     names.delete(id)
     fibers.delete(id)
+    onForget?.(id)
   }
 
   // Brings a known node's stored children in line with this commit.
@@ -172,35 +197,42 @@ export function createTree() {
     ops: TreeOp[],
   ) => {
     const prev = children.get(key)
-    // A bailed-out subtree keeps its child fibers, so nothing below it changed.
-    if (prev && fiber.alternate && fiber.child === fiber.alternate.child) return
-    const kids = visible(fiber)
+    if (prev && bailedOut(fiber)) return
+    const stale = new Set<Fiber>()
+    const kids = visible(fiber, [], stale)
     const next = kids.map(idOf)
-    const kept = new Set(next)
-    for (const id of prev ?? [])
-      if (!kept.has(id)) {
+    // The same children in the same order (a parent of 10,000 cells, one of
+    // them updated): no removes, adds or reorder to work out.
+    const same =
+      prev?.length === next.length && next.every((id, i) => id === prev[i])
+    const kept = same ? undefined : new Set(next)
+    for (const id of same ? [] : (prev ?? []))
+      if (!kept?.has(id)) {
         ops.push({ op: "remove", id })
         forget(id)
       }
-    const known = new Set(prev)
+    const known = same ? undefined : new Set(prev)
     // What the panel holds after the removes and adds, in its order.
-    const applied = (prev ?? []).filter((id) => kept.has(id))
+    const applied = same ? next : (prev ?? []).filter((id) => kept?.has(id))
     kids.forEach((kid, index) => {
       const id = next[index] as number
-      if (known.has(id)) {
+      if (same || known?.has(id)) {
         fibers.set(id, kid)
         const name = label(kid)
         if (name !== names.get(id)) {
           names.set(id, name)
           ops.push({ op: "rename", id, name })
         }
+        // A stale kid's subtree is unchanged, like a bailed-out one's.
+        if (stale.has(kid)) return
+        visit(kid, id)
         update(kid, id, id, rootId, ops)
       } else {
         addSubtree(kid, parentId, rootId, index, ops)
         applied.splice(index, 0, id)
       }
     })
-    if (applied.some((id, index) => id !== next[index]))
+    if (!same && applied.some((id, index) => id !== next[index]))
       ops.push({ op: "reorder", rootId, parentId, children: next })
     children.set(key, next)
   }
@@ -260,9 +292,16 @@ export function createTree() {
       collect(fiber)
       return { name: names.get(id) as string, elements }
     },
-    commit(root: FiberRoot, rootId: number, ops: TreeOp[]) {
+    commit(
+      root: FiberRoot,
+      rootId: number,
+      ops: TreeOp[],
+      onVisit: (fiber: Fiber, id: number) => void = noop,
+    ) {
       const host = root.current as unknown as Fiber
+      visit = onVisit
       update(host, idOf(host), 0, rootId, ops)
+      visit = noop
     },
   }
 }

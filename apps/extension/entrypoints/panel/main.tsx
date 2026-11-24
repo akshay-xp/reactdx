@@ -1,10 +1,14 @@
 import type {
   ClearHighlightMessage,
+  CommitsMessage,
+  CommittedMessage,
+  CountsMessage,
   ExpandedMessage,
   HighlightMessage,
   InspectedMessage,
   PickedMessage,
   PickMessage,
+  ReasonedMessage,
   RendererView,
   ResyncMessage,
   SubscribeMessage,
@@ -20,6 +24,7 @@ import { createHookNamer } from "@reactdx/panel/names"
 import { createSettings } from "@reactdx/panel/settings"
 import { createSourceResolver, type Sources } from "@reactdx/panel/source"
 import { applyTheme, defaultTheme, type Theme } from "@reactdx/panel/themes"
+import { createTimelineStore } from "@reactdx/panel/timeline"
 import { createTreeStore } from "@reactdx/panel/tree"
 import { createEffect, createSignal, on } from "solid-js"
 import { render } from "solid-js/web"
@@ -39,6 +44,10 @@ const tabId = browser.devtools.inspectedWindow.tabId
 const inspector = createInspectorStore(
   (command) => port.postMessage({ ...command, tabId }),
   (text) => editor.copy(text),
+)
+const timeline = createTimelineStore(
+  (command) => port.postMessage({ ...command, tabId }),
+  inspector,
 )
 // Requests go only to the inspected page's own server (docs/panel.md, Sources).
 const editor = {
@@ -102,6 +111,10 @@ function connect() {
         | PickedMessage
         | InspectedMessage
         | ExpandedMessage
+        | ReasonedMessage
+        | CommitsMessage
+        | CommittedMessage
+        | CountsMessage
         | ValueTextMessage
         | ValueStoredMessage,
     ) => {
@@ -111,11 +124,17 @@ function connect() {
       } else if (message.type === "picked") tree.picked(message.id)
       else if (message.type === "inspected") inspector.receive(message)
       else if (message.type === "expanded") inspector.receiveExpanded(message)
+      else if (message.type === "reasoned") inspector.receiveReasoned(message)
+      else if (message.type === "commits") timeline.receiveCommits(message)
+      else if (message.type === "counts") tree.receiveCounts(message)
+      else if (message.type === "committed") timeline.receiveCommitted(message)
       else if (message.type === "value-text")
         inspector.receiveValueText(message)
       else if (message.type === "value-stored")
         inspector.receiveValueStored(message)
       else {
+        // A new watch: the page sends its commits again after the tree.
+        if (message.ops[0]?.op === "reset") timeline.reset()
         if (tree.apply(message))
           next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)
         // A new watch (reconnect, reload) starts the agent without a selection.
@@ -139,12 +158,18 @@ browser.devtools.network.onNavigated.addListener(() => {
   setRenderers([])
   setStale(false)
   tree.clear()
+  timeline.clear()
   subscribe(port)
 })
 
 render(() => {
   createEffect(
-    on(tree.selected, (id) => inspector.inspect(id), { defer: true }),
+    // A group row (a negative id) has nothing to inspect.
+    on(
+      tree.selected,
+      (id) => inspector.inspect(id !== undefined && id > 0 ? id : undefined),
+      { defer: true },
+    ),
   )
   // The hovered row is highlighted on the page, until the pointer leaves the tree.
   createEffect(
@@ -178,6 +203,7 @@ render(() => {
       renderers={renderers()}
       tree={tree}
       inspector={inspector}
+      timeline={timeline}
       sources={sources}
       settings={settings}
       stale={stale()}

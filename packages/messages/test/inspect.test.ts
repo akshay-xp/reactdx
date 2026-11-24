@@ -1,10 +1,18 @@
 import { expect, test } from "vitest"
 import {
+  commitsMessage,
+  committed,
+  countsMessage,
   expanded,
   inspected,
+  parseCommits,
+  parseCommitted,
+  parseCounts,
   parseExpanded,
   parseInspected,
+  parseReasoned,
   parseValue,
+  reasoned,
   type Value,
 } from "../src/index"
 
@@ -361,4 +369,322 @@ test("inspected boundaries: the nearest of each kind, by id, and whether forced"
     expect(
       parseInspected(inspected(3, { props: 1, boundaries: bad } as never)),
     ).toBeUndefined()
+})
+
+test("an inspection carries its node's latest render reasons", () => {
+  const render = {
+    seq: 4,
+    kinds: ["props", "state", "context"],
+    props: [{ key: "count", old: 1, new: 2 }],
+    state: [{ key: "ticks", old: 0, new: object({ a: 1 }) }],
+    hooks: [{ hook: [1, 0], old: 0, new: 1 }],
+    contexts: [{ context: 0, old: "dark", new: "light" }],
+  }
+  const parse = (value: unknown) =>
+    parseInspected(inspected(3, { props: 1, render: value } as never))?.data
+  expect(parse(render)).toEqual({ props: 1, render })
+  expect(parse({ seq: 1, kinds: ["mount"], extra: 1 })).toEqual({
+    props: 1,
+    render: { seq: 1, kinds: ["mount"] },
+  })
+  expect(
+    parse({
+      seq: 1,
+      kinds: ["props"],
+      props: [{ key: "a", old: 1, new: 2, extra: 3 }],
+    }),
+  ).toEqual({
+    props: 1,
+    render: { seq: 1, kinds: ["props"], props: [{ key: "a", old: 1, new: 2 }] },
+  })
+  const change = { key: "a", old: 1, new: 2 }
+  for (const bad of [
+    { seq: 1, kinds: ["hacked"] },
+    { seq: 1, kinds: [] },
+    { seq: 1, kinds: ["mount", "mount"] },
+    { seq: 0, kinds: ["mount"] },
+    { seq: 1, kinds: ["props"], props: Array(1001).fill(change) },
+    { seq: 1, kinds: ["props"], props: [{ ...change, key: "k".repeat(257) }] },
+    {
+      seq: 1,
+      kinds: ["props"],
+      props: [{ key: "a", old: { type: "x" }, new: 1 }],
+    },
+    { seq: 1, kinds: ["state"], hooks: [{ hook: [-1], old: 0, new: 1 }] },
+    {
+      seq: 1,
+      kinds: ["context"],
+      contexts: [{ context: 1.5, old: 0, new: 1 }],
+    },
+    "mount",
+  ])
+    expect(
+      parseInspected(inspected(3, { props: 1, render: bad } as never)),
+    ).toBeUndefined()
+})
+
+test("a prop change can say it's only a new reference; nothing else passes there", () => {
+  const parse = (reference: unknown) =>
+    parseInspected(
+      inspected(3, {
+        props: 1,
+        render: {
+          seq: 1,
+          kinds: ["props"],
+          props: [{ key: "style", old: 1, new: 2, reference }],
+        },
+      } as never),
+    )?.data?.render?.props
+  for (const reference of ["same-value", "new-function"])
+    expect(parse(reference)).toEqual([
+      { key: "style", old: 1, new: 2, reference },
+    ])
+  expect(parse("x")).toBeUndefined()
+  expect(parse(1)).toBeUndefined()
+})
+
+test("a render's effects: by call indexes, with their changed deps", () => {
+  const parse = (effects: unknown) =>
+    parseInspected(
+      inspected(3, {
+        props: 1,
+        render: { seq: 1, kinds: ["parent"], effects },
+      } as never),
+    )?.data?.render
+  const effects = [
+    { hook: [2], changed: [{ dep: 1, old: 1, new: 2 }] },
+    { hook: [4] },
+  ]
+  expect(parse(effects)?.effects).toEqual(effects)
+  expect(
+    parse([
+      { hook: [2], extra: 1, changed: [{ dep: 0, old: 1, new: 2, x: 1 }] },
+    ])?.effects,
+  ).toEqual([{ hook: [2], changed: [{ dep: 0, old: 1, new: 2 }] }])
+  for (const bad of [
+    [{ hook: [] }],
+    [{ hook: [2], changed: [{ dep: -1, old: 1, new: 2 }] }],
+    [{ hook: [2], changed: "x" }],
+    Array(1001).fill({ hook: [2] }),
+  ])
+    expect(parse(bad)).toBeUndefined()
+})
+
+test("a render's remount is a key change or an ancestor, exactly", () => {
+  const parse = (remount: unknown) =>
+    parseInspected(
+      inspected(3, {
+        props: 1,
+        render: { seq: 1, kinds: ["mount"], remount },
+      } as never),
+    )?.data?.render
+  for (const remount of [
+    { cause: "key", from: "a", to: "b" },
+    { cause: "key", from: null, to: "b" },
+    { cause: "ancestor", ancestor: 4 },
+  ])
+    expect(parse(remount)?.remount).toEqual(remount)
+  expect(parse({ cause: "ancestor", ancestor: 4, from: "a" })?.remount).toEqual(
+    { cause: "ancestor", ancestor: 4 },
+  )
+  for (const bad of [
+    { cause: "x", from: "a", to: "b" },
+    { cause: "ancestor", ancestor: 0 },
+    { cause: "key", from: 1, to: "b" },
+    { cause: "key", from: "a", to: "k".repeat(257) },
+    { cause: "key", to: "b", ancestor: 4 },
+    "key",
+  ])
+    expect(parse(bad)).toBeUndefined()
+})
+
+test("a render's updaters are ids with their labeled hook changes", () => {
+  const parse = (updaters: unknown) =>
+    parseInspected(
+      inspected(3, {
+        props: 1,
+        render: { seq: 1, kinds: ["parent"], updaters },
+      } as never),
+    )?.data?.render
+  for (const updaters of [
+    [{ id: 3, hooks: [{ name: "State #1", old: 3, new: 4 }] }],
+    [],
+    [{ id: 3, hooks: [] }],
+  ])
+    expect(parse(updaters)?.updaters).toEqual(updaters)
+  expect(
+    parse([
+      { id: 3, x: 1, hooks: [{ name: "State #1", old: 3, new: 4, y: 2 }] },
+    ])?.updaters,
+  ).toEqual([{ id: 3, hooks: [{ name: "State #1", old: 3, new: 4 }] }])
+  const hook = { name: "State #1", old: 3, new: 4 }
+  for (const bad of [
+    [{ id: 0, hooks: [] }],
+    [{ id: 3, hooks: [{ ...hook, name: "s".repeat(257) }] }],
+    Array(1001).fill({ id: 3, hooks: [] }),
+    [{ id: 3, hooks: Array(1001).fill(hook) }],
+    [{ id: 3 }],
+    { id: 3, hooks: [] },
+    [{ id: 3, hooks: [{ ...hook, old: Symbol() }] }],
+  ])
+    expect(parse(bad)).toBeUndefined()
+})
+
+test("an inspection's history is at most 100 increasing commit ids", () => {
+  const parse = (history: unknown) =>
+    parseInspected(inspected(3, { props: 1, history } as never))?.data
+  for (const history of [[1, 4, 9], []])
+    expect(parse(history)).toEqual({ props: 1, history })
+  const long = Array.from({ length: 101 }, (_, i) => i + 1)
+  expect(parse(long.slice(0, 100))?.history).toHaveLength(100)
+  for (const bad of [[4, 1], [1, 1], [0], long, "1"])
+    expect(parse(bad)).toBeUndefined()
+})
+
+test("a reasoned reply carries one render, or null once it's released", () => {
+  const render = { seq: 2, kinds: ["state" as const] }
+  expect(parseReasoned(reasoned(3, 2, render))).toEqual(reasoned(3, 2, render))
+  expect(parseReasoned(reasoned(3, 2, null))).toEqual(reasoned(3, 2, null))
+  const message = reasoned(3, 2, render) as Record<string, unknown>
+  for (const bad of [
+    { ...message, render: { seq: 2, kinds: ["DROPPED"] } },
+    { ...message, seq: "2" },
+    { ...message, render: undefined },
+    { ...message, render: { ...render, seq: 4 } },
+    { ...message, id: 0 },
+  ])
+    expect(parseReasoned(bad)).toBeUndefined()
+})
+
+test("commit summaries are at most 100 increasing commits, each bounded", () => {
+  const summary = {
+    seq: 3,
+    time: 12.5,
+    rootId: 1,
+    updaters: [4],
+    renders: 2,
+    wasted: 0,
+  }
+  const list = (commits: unknown[]) =>
+    commitsMessage(commits as never, 1, false)
+  expect(parseCommits(list([summary]))).toEqual(list([summary]))
+  expect(parseCommits(list([{ ...summary, extra: 1 }]))).toEqual(
+    list([summary]),
+  )
+  const many = Array.from({ length: 101 }, (_, i) => ({
+    ...summary,
+    seq: i + 1,
+  }))
+  expect(parseCommits(list(many.slice(0, 100)))).toBeDefined()
+  for (const bad of [
+    many,
+    [summary, { ...summary, seq: 3 }],
+    [{ ...summary, seq: 0 }],
+    [{ ...summary, time: -1 }],
+    [{ ...summary, time: Number.NaN }],
+    [{ ...summary, rootId: "1" }],
+    [{ ...summary, updaters: Array(1001).fill(4) }],
+    [{ ...summary, updaters: [0] }],
+    [{ ...summary, renders: 1.5 }],
+  ])
+    expect(parseCommits(list(bad))).toBeUndefined()
+})
+
+test("commits say the oldest seq the page holds and whether any dropped", () => {
+  const message = commitsMessage([], 3, true)
+  expect(message).toMatchObject({ oldest: 3, dropped: true })
+  expect(parseCommits({ ...message, extra: 1 })).toEqual(message)
+  for (const bad of [
+    { ...message, oldest: 0 },
+    { ...message, oldest: 1.5 },
+    { ...message, dropped: "yes" },
+    { ...message, dropped: undefined },
+  ])
+    expect(parseCommits(bad)).toBeUndefined()
+})
+
+test("committed carries each render's kinds and the triggers, or null once released", () => {
+  const triggers = [{ id: 1, hooks: [{ name: "State #1", old: 1, new: 2 }] }]
+  const full = committed(5, [{ id: 1, kinds: ["state"] }], triggers)
+  expect(parseCommitted(full)).toEqual(full)
+  const batch = committed(5, [{ id: 2, kinds: ["parent"] }])
+  expect(parseCommitted(batch)).toEqual(batch)
+  expect(batch).not.toHaveProperty("updaters")
+  expect(parseCommitted(committed(5, null))).toEqual(committed(5, null))
+  const message = full as Record<string, unknown>
+  for (const bad of [
+    { ...message, renders: [{ id: 1, kinds: ["nope"] }] },
+    { ...message, renders: [{ id: 1, kinds: [] }] },
+    { ...message, renders: Array(2001).fill({ id: 1, kinds: ["state"] }) },
+    { ...message, renders: [{ id: 0, kinds: ["state"] }] },
+    { ...message, renders: undefined },
+    { ...message, seq: "5" },
+    { ...message, updaters: Array(1001).fill({ id: 1, hooks: [] }) },
+    { ...message, updaters: [{ id: 1, hooks: [{ name: 1, old: 1, new: 2 }] }] },
+  ])
+    expect(parseCommitted(bad)).toBeUndefined()
+})
+
+test("render counts are at most 2,000, each a positive id with wasted at most renders", () => {
+  const count = { id: 3, renders: 4, wasted: 3 }
+  expect(parseCounts(countsMessage([count]))).toEqual(countsMessage([count]))
+  expect(parseCounts(countsMessage([]))).toEqual(countsMessage([]))
+  expect(parseCounts(countsMessage([{ ...count, extra: 1 } as never]))).toEqual(
+    countsMessage([count]),
+  )
+  for (const bad of [
+    Array(2001).fill(count),
+    [{ ...count, id: 0 }],
+    [{ ...count, renders: 0, wasted: 0 }],
+    [{ ...count, renders: 1.5 }],
+    [{ ...count, wasted: 5 }],
+    [{ ...count, wasted: -1 }],
+  ])
+    expect(parseCounts(countsMessage(bad as never))).toBeUndefined()
+  expect(
+    parseCounts({ source: "reactdx", type: "counts", counts: {} }),
+  ).toBeUndefined()
+})
+
+test("a render says when it happened: a finite time, or none", () => {
+  const render = { seq: 2, kinds: ["state" as const], time: 12.5 }
+  expect(parseReasoned(reasoned(3, 2, render))).toEqual(reasoned(3, 2, render))
+  expect(
+    parseInspected(inspected(3, { props: 1, render }))?.data?.render?.time,
+  ).toBe(12.5)
+  const { time: _, ...timeless } = render
+  expect(parseReasoned(reasoned(3, 2, timeless))).toEqual(
+    reasoned(3, 2, timeless),
+  )
+  for (const time of [-1, Number.NaN, Number.POSITIVE_INFINITY, "1"])
+    expect(
+      parseReasoned(reasoned(3, 2, { ...render, time } as never)),
+    ).toBeUndefined()
+})
+
+test("a summary says how many renders were wasted and what changed", () => {
+  const summary = {
+    seq: 3,
+    time: 1,
+    rootId: 1,
+    updaters: [4],
+    renders: 2,
+    wasted: 1,
+    change: { hook: 0, old: 1, new: 2 },
+  }
+  const list = (commits: unknown[]) =>
+    commitsMessage(commits as never, 1, false)
+  expect(parseCommits(list([summary]))).toEqual(list([summary]))
+  const { change: _, ...plain } = summary
+  expect(parseCommits(list([plain]))).toEqual(list([plain]))
+  for (const bad of [
+    { ...summary, wasted: 3 },
+    { ...summary, wasted: -1 },
+  ])
+    expect(parseCommits(list([bad]))).toBeUndefined()
+  const { wasted: __, ...noWasted } = plain
+  expect(parseCommits(list([noWasted]))).toBeUndefined()
+  expect(
+    parseCommits(list([{ ...summary, change: { hook: -1, old: 1, new: 2 } }])),
+  ).toBeUndefined()
 })
