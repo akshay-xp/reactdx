@@ -390,3 +390,55 @@ test("a legend under the trees says what the numbers count", () => {
     trees.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy()
 })
+
+test("a new update keeps the Components tab as it was: nothing remounts", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      {
+        op: "add",
+        id: 1,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "App",
+        key: null,
+        index: 0,
+      },
+    ]),
+  )
+  const inspector = inspection()
+  const timeline = createTimelineStore(() => {}, inspector)
+  render(() => (
+    <ConnectionList
+      tree={tree}
+      inspector={inspector}
+      timeline={timeline}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "19.3.1", 1, [{ id: 1, commits: 2 }])]}
+    />
+  ))
+  tree.select(1)
+  inspector.inspect(1)
+  inspector.receive(
+    inspected(1, {
+      props: { type: "object", className: "Object", id: 1, size: 0, props: {} },
+    }),
+  )
+  const renders = () => screen.getByRole("treeitem", { name: "Renders" })
+  fireEvent.click(renders())
+  expect(renders().getAttribute("aria-expanded")).toBe("true")
+  timeline.receiveCommits(
+    commitsMessage(
+      [{ seq: 1, time: 0, rootId: 1, updaters: [], renders: 1, wasted: 0 }],
+      1,
+      false,
+    ),
+  )
+  expect(screen.getByRole("tab", { name: "Updates" }).textContent).toBe(
+    "Updates1",
+  )
+  expect(renders().getAttribute("aria-expanded")).toBe("true")
+})

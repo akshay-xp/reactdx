@@ -149,7 +149,7 @@ export function ConnectionList(props: {
                 { name: "Components", content: split() },
                 {
                   name: "Updates",
-                  count: timeline().commits().length,
+                  count: () => timeline().commits().length,
                   content: (
                     <Commits
                       timeline={timeline()}
@@ -175,8 +175,9 @@ export function ConnectionList(props: {
 // Tabs inside the panel, each content kept mounted (hidden when another is
 // selected) so it keeps its scroll and state. Left/Right move between tabs.
 function Tabs(props: {
-  // `count`: a number after the name (the tab is named by `name` alone).
-  tabs: { name: string; count?: number; content: JSX.Element }[]
+  // `count`: a number after the name (the tab is named by `name` alone). A
+  // function, so a new count doesn't rebuild the tabs (and remount them).
+  tabs: { name: string; count?: () => number; content: JSX.Element }[]
   selected: number
   onSelect: (index: number) => void
 }) {
@@ -216,10 +217,12 @@ function Tabs(props: {
               }}
             >
               {tab.name}
-              <Show when={tab.count !== undefined}>
-                <span class="ml-1 rounded bg-surface px-1 text-muted">
-                  {tab.count}
-                </span>
+              <Show when={tab.count}>
+                {(count) => (
+                  <span class="ml-1 rounded bg-surface px-1 text-muted">
+                    {count()()}
+                  </span>
+                )}
               </Show>
             </button>
           )}
