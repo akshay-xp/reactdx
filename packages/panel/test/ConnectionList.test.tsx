@@ -1,4 +1,5 @@
 import {
+  commitsMessage,
   committed,
   inspected,
   type RendererView,
@@ -318,10 +319,16 @@ test("links move between a commit and its components", () => {
     screen
       .getAllByRole("tab")
       .find((t) => t.getAttribute("aria-selected") === "true")?.textContent
-  timeline.receiveCommits([
-    { seq: 4, time: 0, rootId: 1, updaters: [2, 1], renders: 2 },
-    { seq: 7, time: 0, rootId: 1, updaters: [2], renders: 1 },
-  ])
+  timeline.receiveCommits(
+    commitsMessage(
+      [
+        { seq: 4, time: 0, rootId: 1, updaters: [2, 1], renders: 2 },
+        { seq: 7, time: 0, rootId: 1, updaters: [2], renders: 1 },
+      ],
+      1,
+      false,
+    ),
+  )
   tree.select(2)
   inspector.inspect(2)
   inspector.receive(

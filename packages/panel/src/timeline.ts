@@ -1,6 +1,7 @@
 import type {
   CommitRender,
   CommitSummary,
+  CommitsMessage,
   CommittedMessage,
   Updater,
 } from "@reactdx/messages"
@@ -13,13 +14,11 @@ export type TimelineStore = ReturnType<typeof createTimelineStore>
 
 export type CommitDetail = { renders: CommitRender[]; updaters: Updater[] }
 
-// The page keeps its last 100 commits; the list shows as many.
-const MAX_COMMITS = 100
-
 // The recent commits (docs/panel.md, Commits), the one picked and what it
 // rendered and why: undefined while loading, null once the page released it.
 // A pick pins the inspector to that commit. Filtered, the list holds only the
-// commits in the selected node's history.
+// commits in the selected node's history. The page bounds the list: each
+// message says the oldest commit it still holds.
 export function createTimelineStore(
   send: (command: TimelineCommand) => void,
   inspector: { pin(seq: number | undefined): void },
@@ -28,9 +27,7 @@ export function createTimelineStore(
   const [picked, setPicked] = createSignal<number>()
   const [detail, setDetail] = createSignal<CommitDetail | null>()
   const [filtered, setFiltered] = createSignal(false)
-  // A re-watch: the page sends its buffer again, which may no longer hold the
-  // picked commit.
-  let resyncing = false
+  const [dropped, setDropped] = createSignal(false)
 
   const shown = (history: number[]) => {
     const list = filtered()
@@ -57,14 +54,19 @@ export function createTimelineStore(
     detail,
     filtered,
     setFiltered,
+    // Whether the page's limits dropped older commits.
+    dropped,
     pick,
     live,
-    receiveCommits(list: CommitSummary[]) {
-      setCommits([...commits(), ...list].slice(-MAX_COMMITS))
+    receiveCommits(message: CommitsMessage) {
+      const { oldest } = message
+      setCommits([
+        ...commits().filter((commit) => commit.seq >= oldest),
+        ...message.commits,
+      ])
+      setDropped(message.dropped)
       const at = picked()
-      if (resyncing && at !== undefined && !list.some((c) => c.seq === at))
-        live()
-      resyncing = false
+      if (at !== undefined && at < oldest) live()
     },
     receiveCommitted(message: CommittedMessage) {
       if (message.seq !== picked()) return
@@ -100,11 +102,12 @@ export function createTimelineStore(
     // buffer again; the pick stays if it's still there.
     reset() {
       setCommits([])
-      resyncing = true
+      setDropped(false)
     },
     // A new document: nothing carries over.
     clear() {
       setCommits([])
+      setDropped(false)
       live()
     },
   }

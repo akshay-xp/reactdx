@@ -1,5 +1,6 @@
 import {
   type CommitSummary,
+  commitsMessage,
   committed,
   inspected,
   treeBatch,
@@ -70,11 +71,17 @@ test("rows read newest first: seq, how long ago, how many, what triggered", () =
   expect(container.textContent).toContain(
     "No commits recorded since DevTools opened.",
   )
-  timeline.receiveCommits([
-    summary(1, 2 * 3600_000, 1, [9]),
-    summary(2, 90_000, 1, [2]),
-    summary(3, 2000, 3, [2, 3, 1]),
-  ])
+  timeline.receiveCommits(
+    commitsMessage(
+      [
+        summary(1, 2 * 3600_000, 1, [9]),
+        summary(2, 90_000, 1, [2]),
+        summary(3, 2000, 3, [2, 3, 1]),
+      ],
+      1,
+      false,
+    ),
+  )
   expect(rows()).toEqual([
     "#3 · 2s ago · 3 components · Counter +2",
     "#2 · 1m ago · 1 component · Counter",
@@ -84,7 +91,9 @@ test("rows read newest first: seq, how long ago, how many, what triggered", () =
 
 test("a click or a key picks a commit; Escape stays in the panel", () => {
   const { timeline, sent } = setup()
-  timeline.receiveCommits([summary(1, 0, 1), summary(2, 0, 1)])
+  timeline.receiveCommits(
+    commitsMessage([summary(1, 0, 1), summary(2, 0, 1)], 1, false),
+  )
   const list = screen.getByRole("listbox", { name: "Commits" })
   fireEvent.click(screen.getByText(/^#1 /))
   expect(sent).toEqual([{ type: "commit", seq: 1 }])
@@ -107,11 +116,13 @@ test("a click or a key picks a commit; Escape stays in the panel", () => {
 
 test("Only <selected> limits the list to the selected node's renders", () => {
   const { tree, inspector, timeline, rows } = setup()
-  timeline.receiveCommits([
-    summary(1, 0, 1),
-    summary(2, 0, 1),
-    summary(3, 0, 1),
-  ])
+  timeline.receiveCommits(
+    commitsMessage(
+      [summary(1, 0, 1), summary(2, 0, 1), summary(3, 0, 1)],
+      1,
+      false,
+    ),
+  )
   const only = () => screen.getByRole("button", { name: /^Only/ })
   expect(only().hasAttribute("disabled")).toBe(true)
   tree.select(2)
@@ -134,7 +145,9 @@ test("the detail says what triggered the picked commit and what rendered why", (
   const { timeline, revealed, container } = setup()
   const detail = () =>
     container.querySelector("[data-testid=commit-detail]")?.textContent
-  timeline.receiveCommits([summary(1, 0, 3, [2, 3]), summary(2, 0, 1)])
+  timeline.receiveCommits(
+    commitsMessage([summary(1, 0, 3, [2, 3]), summary(2, 0, 1)], 1, false),
+  )
   expect(detail()).toBe("Pick a commit to see what rendered and why.")
   timeline.pick(1)
   expect(detail()).toBe("")
