@@ -448,3 +448,11 @@ test("a group opens to its members, by toggle, reveal, keys and search", () => {
   expect(tree.selected()).toBe(2)
   expect(tree.rows(1)[1]?.expanded).toBe(true)
 })
+
+test("a component's counts are read by id", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.receiveCounts(countsMessage([{ id: 3, renders: 4, wasted: 1 }]))
+  expect(tree.countOf(3)).toEqual({ id: 3, renders: 4, wasted: 1 })
+  expect(tree.countOf(5)).toBeUndefined()
+})

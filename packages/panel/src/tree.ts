@@ -295,6 +295,11 @@ export function createTreeStore() {
       fade = setTimeout(() => setRecent(new Set<number>()), RECENT_MS)
       setVersion(version() + 1)
     },
+    // A node's render counts (undefined: none since the watch).
+    countOf(id: number) {
+      version()
+      return counts.get(id)
+    },
     // A node's name, kind and key, for the inspector's header.
     info(id: number) {
       version()
