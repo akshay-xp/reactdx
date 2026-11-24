@@ -1,6 +1,7 @@
 import {
   commitsMessage,
   committed,
+  countsMessage,
   inspected,
   type RendererView,
   treeBatch,
@@ -441,4 +442,51 @@ test("a new update keeps the Components tab as it was: nothing remounts", () => 
     "Updates1",
   )
   expect(renders().getAttribute("aria-expanded")).toBe("true")
+})
+
+// Reading the tab list built every tab's content again, TreeView included:
+// each update walked the whole tree once per copy (10 times on bench.html).
+test("an update walks the tree once: no throwaway copies of the tabs", () => {
+  const tree = createTreeStore()
+  const add = (id: number, parentId: number, name: string, index = 0) =>
+    ({
+      op: "add",
+      id,
+      parentId,
+      rootId: 1,
+      kind: "function",
+      name,
+      key: null,
+      index,
+    }) as const
+  tree.apply(treeBatch(1, [{ op: "reset" }, add(1, 0, "App")]))
+  const inspector = inspection()
+  const timeline = createTimelineStore(() => {}, inspector)
+  const rows = tree.rows
+  let walks = 0
+  tree.rows = (rootId) => {
+    walks++
+    return rows(rootId)
+  }
+  render(() => (
+    <ConnectionList
+      tree={tree}
+      inspector={inspector}
+      timeline={timeline}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "19.3.1", 1, [{ id: 1, commits: 1 }])]}
+    />
+  ))
+  walks = 0
+  tree.apply(treeBatch(2, [add(2, 1, "Extra")]))
+  timeline.receiveCommits(
+    commitsMessage(
+      [{ seq: 1, time: 0, rootId: 1, updaters: [], renders: 1, wasted: 0 }],
+      1,
+      false,
+    ),
+  )
+  tree.receiveCounts(countsMessage([{ id: 2, renders: 1, wasted: 0 }]))
+  expect(walks).toBe(1)
 })

@@ -1,5 +1,6 @@
 import type { RendererView } from "@reactdx/messages"
 import {
+  createMemo,
   createSignal,
   For,
   type JSX,
@@ -183,7 +184,9 @@ function Tabs(props: {
 }) {
   const selected = () => props.selected
   const setSelected = (index: number) => props.onSelect(index)
-  const id = (i: number) => `tab-${props.tabs[i]?.name.toLowerCase()}`
+  // Read once: each read of props.tabs builds every tab's content again.
+  const list = createMemo(() => props.tabs)
+  const id = (i: number) => `tab-${list()[i]?.name.toLowerCase()}`
   const tabs: HTMLButtonElement[] = []
   return (
     <>
@@ -192,7 +195,7 @@ function Tabs(props: {
         aria-label="Views"
         class="flex shrink-0 border-border border-b px-1"
       >
-        <For each={props.tabs}>
+        <For each={list()}>
           {(tab, i) => (
             <button
               ref={(el) => {
@@ -211,7 +214,7 @@ function Tabs(props: {
                 const by = { ArrowLeft: -1, ArrowRight: 1 }[event.key]
                 if (by === undefined) return
                 event.preventDefault()
-                const to = (i() + by + props.tabs.length) % props.tabs.length
+                const to = (i() + by + list().length) % list().length
                 setSelected(to)
                 tabs[to]?.focus()
               }}
@@ -228,7 +231,7 @@ function Tabs(props: {
           )}
         </For>
       </div>
-      <For each={props.tabs}>
+      <For each={list()}>
         {(tab, i) => (
           <div
             role="tabpanel"
