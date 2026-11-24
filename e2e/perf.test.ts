@@ -428,7 +428,10 @@ test("an unrelated commit sends no inspected message", { skip }, async () => {
 type Bench = Window & { __bench: (mode: string, n: number) => number[] }
 
 // Recording (M6) runs inside React's commit hook while the panel watches:
-// flushSync's time includes it. Medians of five after a warm-up commit.
+// flushSync's time includes it. Medians of five after a warm-up commit. Each
+// waits for the panel to settle (its first load, the warm-up's flush): on a
+// 2-core CI runner the panel's work competed with the page for the CPU, which
+// measured the panel's load, not the recording.
 test("watching adds under 1 ms to a one-cell commit, under 25% to all cells", {
   skip,
 }, async (t) => {
@@ -441,8 +444,10 @@ test("watching adds under 1 ms to a one-cell commit, under 25% to all cells", {
       () => document.querySelectorAll("[data-testid=cell]").length === 10000,
       { timeout: 10_000 },
     )
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 500))
     const median = async (mode: "one" | "all") => {
       await page.evaluate((mode) => (window as Bench).__bench(mode, 1), mode)
+      await settle()
       const times = await page.evaluate(
         (mode) => (window as Bench).__bench(mode, 5),
         mode,
@@ -453,11 +458,12 @@ test("watching adds under 1 ms to a one-cell commit, under 25% to all cells", {
     const panel = await openPanel(browser)
     await panel.waitForFunction(
       () =>
-        [...document.querySelectorAll("[data-testid=node]")].some(
-          (n) => n.textContent === "Bench",
-        ),
+        document
+          .querySelector("[data-testid=group]")
+          ?.textContent?.startsWith("×10000"),
       { timeout: 10_000 },
     )
+    await settle()
     const watched = { one: await median("one"), all: await median("all") }
     t.diagnostic(
       `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} ms`,
