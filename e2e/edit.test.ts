@@ -72,7 +72,10 @@ for (const { fixture, port } of fixtures)
     )
     try {
       await page.waitForSelector("[data-testid=hooks]")
-      await selectListed(panel, "Hooks", (t) => t.includes('Theme: "dark"'))
+      // Context's section comes with the hooks; it starts folded.
+      await selectListed(panel, "Hooks", (t) => t.includes("Context(Theme)"))
+      await panel.key("Context", "ArrowRight")
+      await until(panel.inspector, (t) => t.includes('Theme: "dark"'))
       await panel.edit('Theme: "dark"', '"light"')
       const shown = await until(
         panel.inspector,

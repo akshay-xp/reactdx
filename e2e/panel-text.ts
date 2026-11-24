@@ -150,19 +150,19 @@ export async function openPanelText(
       await frame.page().keyboard.press("Enter")
     }
     const key = async (text: string, key: Key) => {
-      await frame.evaluate(
-        (text) =>
-          (
-            [
-              ...document.querySelectorAll("[role=treeitem], [role=listbox]"),
-            ].find(
-              (el) =>
-                el.getAttribute("aria-label") === text ||
-                el.textContent?.includes(text),
-            ) as HTMLElement | undefined
-          )?.focus(),
-        text,
-      )
+      // An exact name first (a section header named by its aria-label), then
+      // any row whose text includes it.
+      await frame.evaluate((text) => {
+        const all = [
+          ...document.querySelectorAll<HTMLElement>(
+            "[role=treeitem], [role=listbox]",
+          ),
+        ]
+        ;(
+          all.find((el) => el.getAttribute("aria-label") === text) ??
+          all.find((el) => el.textContent?.includes(text))
+        )?.focus()
+      }, text)
       await frame.page().keyboard.press(key)
     }
     const tab = async (name: string) => {
@@ -440,8 +440,17 @@ export async function openPanelText(
   }
   // The row's accessible takes focus, then a trusted key from the parent.
   const key = async (text: string, key: Key) => {
+    // An exact name first (a section header), then any row that includes it.
+    const rows = `[${role("OUTLINEITEM")}, ${role("LISTBOX")}].includes(node.role)`
+    const exact = await onAccessible(
+      `${rows} && node.name === ${json(text)}`,
+      `return "found"`,
+      false,
+    )
     await onAccessible(
-      `[${role("OUTLINEITEM")}, ${role("LISTBOX")}].includes(node.role) && node.name?.includes(${json(text)})`,
+      exact
+        ? `${rows} && node.name === ${json(text)}`
+        : `${rows} && node.name?.includes(${json(text)})`,
       `node.takeFocus()
       const tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor)
       tip.beginInputTransactionForTests(window)

@@ -24,7 +24,7 @@ if (fixtures.length) {
 }
 
 for (const { fixture, port } of fixtures)
-  test(`${fixture}: Why did this render names each reason`, async () => {
+  test(`${fixture}: the inspector says why each component rendered`, async () => {
     const { browser, page, panel } = await panelFor(
       name,
       `http://localhost:${port}/insight.html`,
@@ -40,9 +40,13 @@ for (const { fixture, port } of fixtures)
       await page.waitForSelector("[data-testid=insight]")
       // The page's first commit comes before the agent watches: nothing yet.
       await selectListed(panel, "Shown", (t) =>
-        t.includes("No renders recorded since DevTools opened."),
+        t.includes("No renders since DevTools opened."),
       )
+      // The full reasons are folded under Renders; it stays open from here.
+      await panel.key("Renders", "ArrowRight")
+      await shows("No renders recorded since DevTools opened.")
       await page.click("[data-testid=bump]")
+      await shows("because props count changed (1 → 2).")
       await shows("Props changed", "count: 1 → 2")
       // A memo child given an inline object and callback: new references.
       await selectListed(panel, "Styled", (t) =>
@@ -51,6 +55,10 @@ for (const { fixture, port } of fixtures)
       await shows(
         'style: {color: "red"} → {color: "red"} same value, new reference',
         "new function",
+      )
+      await shows(
+        "because props style, onPick and data changed.",
+        "style is a new object with the same value each render.",
       )
       const styled = await panel.inspector()
       assert.ok(!/\{count: 2\} (same value|new function)/.test(styled), styled)
@@ -62,11 +70,19 @@ for (const { fixture, port } of fixtures)
       for (let i = 0; i < 3; i++) await page.click("[data-testid=step]")
       await shows("4 renders recorded", "State #1: 2 → 3")
       await selectListed(panel, "Plain", (t) => t.includes("Parent rendered"))
+      await shows(
+        "because its parent Insight rendered. None of its props changed.",
+      )
       await panel.press("Force re-render")
-      await shows("Forced")
+      await shows("Forced to render", "Forced")
+      // The parent's name selects it.
+      await panel.press("Insight")
+      await until(panel.inspector, (t) => t.startsWith("Insight "))
+      assert.ok((await panel.inspector()).startsWith("Insight "))
 
       await selectListed(panel, "Stateful")
       await page.click("[data-testid=state]")
+      await shows("because State #1 changed (0 → 1).")
       await shows("State changed", "State #1: 0 → 1")
 
       await selectListed(panel, "Counter")
@@ -75,6 +91,7 @@ for (const { fixture, port } of fixtures)
 
       await selectListed(panel, "Reader")
       await page.click("[data-testid=theme]")
+      await shows("because Theme changed.")
       await shows("Context changed", 'Theme: "dark" → "light"')
 
       await selectListed(panel, "Effects")
@@ -88,10 +105,12 @@ for (const { fixture, port } of fixtures)
       await selectListed(panel, "Item", (t) =>
         t.includes("Remounted: key changed (a → b)"),
       )
+      await shows("ago: key changed (a → b).")
       await page.click("[data-testid=wrap]")
       await selectListed(panel, "Inner", (t) =>
         t.includes("Remounted: ancestor section remounted"),
       )
+      await shows("ago: section remounted.")
       await panel.press("section")
       await until(panel.inspector, (t) => t.startsWith("section "))
       assert.ok((await panel.inspector()).startsWith("section "))
@@ -132,6 +151,7 @@ for (const { fixture, port } of fixtures)
     try {
       await page.waitForSelector("[data-testid=insight]")
       await selectListed(panel, "Counter")
+      await panel.key("Renders", "ArrowRight")
       await page.click("[data-testid=count]")
       await page.click("[data-testid=count]")
       await inspectorShows("2 renders recorded")
@@ -212,6 +232,10 @@ for (const { fixture, port } of fixtures)
       const products = await page.$$("[data-testid=product]")
       await products[6]?.click()
       await shows('Product key="6"', panel.inspector)
+      await shows(
+        "3 of its 4 renders were like this. Wrap Product in memo() to skip them.",
+        panel.inspector,
+      )
       await shows('Product key="6" 4')
     } finally {
       await browser.close()
