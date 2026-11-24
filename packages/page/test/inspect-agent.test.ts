@@ -747,6 +747,28 @@ test("the flush posts the commits recorded since the last, once each", async () 
   expect(commitLists().flat()).toHaveLength(1)
 })
 
+test("the buffer goes out in batches of at most 100, each with what the page holds", async () => {
+  // A fresh buffer: earlier tests filled this one past its limit.
+  send(UNWATCH)
+  send(WATCH)
+  for (let n = 1; n <= 101; n++) await React.act(() => setReasoned(500 + n))
+  posted.length = 0
+  send(WATCH)
+  const messages = posted.filter(
+    (m): m is CommitsMessage => (m as { type?: string }).type === "commits",
+  )
+  expect(messages.length).toBeGreaterThan(1)
+  for (const message of messages) {
+    expect(message.commits.length).toBeLessThanOrEqual(100)
+    expect(message.dropped).toBe(false)
+    expect(message.oldest).toBeLessThanOrEqual(message.commits[0]?.seq ?? 0)
+  }
+  const seqs = messages.flatMap((m) => m.commits.map((commit) => commit.seq))
+  expect([...seqs].sort((a, b) => a - b)).toEqual(seqs)
+  expect(new Set(seqs).size).toBe(seqs.length)
+  expect(seqs).toHaveLength(101)
+})
+
 function Cell() {
   return null
 }

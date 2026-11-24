@@ -11,6 +11,7 @@ import {
   inspected,
   MAX_CHANGES,
   MAX_COPY,
+  MAX_HISTORY,
   MAX_OPS,
   MAX_OWNERS,
   MAX_TREE_STRING,
@@ -139,9 +140,23 @@ export function startAgent(
     send(ops)
     // The panel's commit list starts over with the tree: send the buffer
     // again now (an idle page may not commit for a while), even if empty.
-    const commits = recorder.summaries(0)
-    post(commitsMessage(commits, recorder.oldest(), recorder.dropped()))
-    sentCommit = commits.at(-1)?.seq ?? 0
+    sentCommit = 0
+    postCommits(true)
+  }
+  // The commits since the last sent, in batches the relay accepts (`always`:
+  // at least one); each says what the page still holds.
+  const postCommits = (always = false) => {
+    const commits = recorder.summaries(sentCommit)
+    if (!commits.length && !always) return
+    for (let at = 0; at === 0 || at < commits.length; at += MAX_HISTORY)
+      post(
+        commitsMessage(
+          commits.slice(at, at + MAX_HISTORY),
+          recorder.oldest(),
+          recorder.dropped(),
+        ),
+      )
+    sentCommit = commits.at(-1)?.seq ?? sentCommit
   }
 
   let overlay: ReturnType<typeof createOverlay> | undefined
@@ -504,11 +519,7 @@ export function startAgent(
       pending = false
       snapshot()
       if (buffer.length) send(buffer.splice(0))
-      const commits = recorder.summaries(sentCommit)
-      if (commits.length) {
-        sentCommit = commits.at(-1)?.seq ?? sentCommit
-        post(commitsMessage(commits, recorder.oldest(), recorder.dropped()))
-      }
+      postCommits()
       refresh()
     }, THROTTLE_MS)
   })
