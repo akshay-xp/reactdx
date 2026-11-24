@@ -1,6 +1,11 @@
-import { type TreeKind, type TreeOp, treeBatch } from "@reactdx/messages"
+import {
+  countsMessage,
+  type TreeKind,
+  type TreeOp,
+  treeBatch,
+} from "@reactdx/messages"
 import { fireEvent, render } from "@solidjs/testing-library"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { TreeView } from "../src/TreeView"
 import { createTreeStore } from "../src/tree"
 
@@ -183,5 +188,26 @@ test("a tree renders the rows in its pane's view: 400 px is 20 rows plus oversca
   } finally {
     if (clientHeight)
       Object.defineProperty(HTMLElement.prototype, "clientHeight", clientHeight)
+  }
+})
+
+test("a row shows its render count past one, and a mark while just rendered", () => {
+  vi.useFakeTimers()
+  try {
+    const { tree, nodes } = view([add(1, 0, "App"), add(2, 1, "A")])
+    tree.receiveCounts(
+      countsMessage([
+        { id: 1, renders: 4, wasted: 0 },
+        { id: 2, renders: 1, wasted: 0 },
+      ]),
+    )
+    const [app, a] = nodes()
+    expect(app?.querySelector("[data-testid=renders]")?.textContent).toBe("4")
+    expect(a?.querySelector("[data-testid=renders]")).toBeNull()
+    expect(app?.hasAttribute("data-recent")).toBe(true)
+    vi.advanceTimersByTime(1000)
+    expect(nodes()[0]?.hasAttribute("data-recent")).toBe(false)
+  } finally {
+    vi.useRealTimers()
   }
 })

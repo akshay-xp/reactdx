@@ -92,7 +92,10 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
       requestAnimationFrame(() => {
         const row = box.querySelector(`[data-id="${id}"]`)
         const start = row?.querySelector("[data-toggle]")
-        const end = row?.lastElementChild
+        // The count sits at the tree's right edge: not the row's content.
+        const end = [...(row?.children ?? [])]
+          .filter((child) => !child.matches("[data-testid=renders]"))
+          .at(-1)
         if (!pane || !start || !end) return
         const left = pane.getBoundingClientRect().left
         const from = start.getBoundingClientRect().left - left
@@ -148,8 +151,13 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                 aria-selected={selected(row.id)}
                 aria-expanded={row.expandable ? row.expanded : undefined}
                 class="flex items-center gap-1 whitespace-nowrap font-mono"
-                classList={{ "bg-selected": selected(row.id) }}
+                classList={{
+                  "bg-selected": selected(row.id),
+                  // Just rendered: under the selection's own background.
+                  "bg-highlight/40": row.recent && !selected(row.id),
+                }}
                 data-id={row.id}
+                data-recent={row.recent || undefined}
                 data-match={row.match || undefined}
                 style={{
                   height: `${ROW_HEIGHT}px`,
@@ -185,6 +193,14 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                   {" "}
                   <span data-testid="key" class={`truncate ${muted(row.id)}`}>
                     {`key="${row.key}"`}
+                  </span>
+                </Show>
+                <Show when={row.renders > 1}>
+                  <span
+                    data-testid="renders"
+                    class={`ml-auto pr-2 pl-3 tabular-nums ${muted(row.id)}`}
+                  >
+                    {row.renders}
                   </span>
                 </Show>
               </div>
