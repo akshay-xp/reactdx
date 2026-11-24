@@ -158,7 +158,12 @@ export function startAgent(
   // The commits since the last sent, in batches the relay accepts (`always`:
   // at least one); each says what the page still holds.
   const postCommits = (always = false) => {
-    const commits = recorder.summaries(sentCommit)
+    const commits = recorder.summaries(sentCommit).map((commit) => {
+      const change = commit.updaters.length
+        ? firstChange(commit.seq)
+        : undefined
+      return change ? { ...commit, change } : commit
+    })
     if (!commits.length && !always) return
     for (let at = 0; at === 0 || at < commits.length; at += MAX_HISTORY)
       post(
@@ -448,6 +453,19 @@ export function startAgent(
       list.push({ id: updater.id, hooks: changes })
     }
     return list
+  }
+  // The update's cause for the Updates list: its first updater's first
+  // changed hook by list index. Not labeled: that's a shadow render of the
+  // updater (its code runs again) on every update.
+  const firstChange = (seq: number) => {
+    const change = recorder.updatersOf(seq)[0]?.hooks[0]
+    if (!change) return
+    const { serialize } = createInspector()
+    return {
+      hook: change.index,
+      old: serialize(change.old) as Value,
+      new: serialize(change.new) as Value,
+    }
   }
   const hooksOf = (fiber: Fiber) => {
     const ref = rendererOf(fiber)?.currentDispatcherRef

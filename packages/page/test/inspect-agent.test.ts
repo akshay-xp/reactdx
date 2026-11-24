@@ -772,6 +772,19 @@ test("the buffer goes out in batches of at most 100, each with what the page hol
   expect(seqs).toHaveLength(101)
 })
 
+test("each posted update names the state change that caused it", async () => {
+  await React.act(() => setReasoned(900))
+  await flushed()
+  posted.length = 0
+  await React.act(() => setReasoned(901))
+  await flushed()
+  expect(commitLists().flat().at(-1)?.change).toEqual({
+    hook: 0,
+    old: 900,
+    new: 901,
+  })
+})
+
 const countLists = () =>
   posted
     .filter(
