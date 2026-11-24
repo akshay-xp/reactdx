@@ -1,10 +1,12 @@
+import type { CommitSummary } from "@reactdx/messages"
 import { For, Match, Show, Switch } from "solid-js"
 import { ago } from "./ago"
 import { KIND_TEXT, NodeLink } from "./Inspector"
 import type { InspectorStore } from "./inspection"
-import type { CommitDetail, TimelineStore } from "./timeline"
+import type { CommitDetail, TimelineStore, UpdateRow } from "./timeline"
 import type { TreeStore } from "./tree"
 import { previewText } from "./value"
+import { Triangle } from "./values"
 
 // The recorded commits, newest first (docs/panel.md, Commits). One tab stop:
 // the list holds focus and names the picked row through aria-activedescendant;
@@ -18,31 +20,50 @@ export function Commits(props: {
   onReveal: (id: number) => void
 }) {
   const history = () => props.inspector.history()
-  const optionId = (seq: number) => `commit-${seq}`
+  const optionId = (seq: number) => `update-${seq}`
   const selectedName = () => {
     const id = props.tree.selected()
     return id === undefined ? undefined : props.tree.info(id)?.name
   }
-  const row = (commit: {
-    seq: number
-    time: number
-    renders: number
-    updaters: number[]
-  }) => {
-    const names = commit.updaters.flatMap((id) => {
-      const name = props.tree.info(id)?.name
-      return name ? [name] : []
-    })
-    const parts = [
-      `#${commit.seq}`,
-      `${ago(props.now() - commit.time)} ago`,
-      `${commit.renders} ${commit.renders === 1 ? "component" : "components"}`,
-    ]
-    if (names.length)
-      parts.push(
-        names.length > 1 ? `${names[0]} +${names.length - 1}` : `${names[0]}`,
-      )
-    return parts.join(" · ")
+  const when = (commit: CommitSummary) =>
+    `${ago(props.now() - commit.time)} ago`
+  const changeText = (commit: CommitSummary) =>
+    commit.change
+      ? `${previewText(commit.change.old)} → ${previewText(commit.change.new)}`
+      : undefined
+  // Who caused it: the first updater the tree knows, and how many more.
+  const cause = (commit: CommitSummary) => {
+    if (!commit.updaters.length) return "Root render"
+    const [first] = commit.updaters
+    const name =
+      (first !== undefined && props.tree.info(first)?.name) ?? "Unmounted"
+    const more =
+      commit.updaters.length > 1 ? ` +${commit.updaters.length - 1}` : ""
+    const change = changeText(commit)
+    return `${name}${change ? `: ${change}` : ""}${more}`
+  }
+  const cost = (commit: CommitSummary) =>
+    [
+      `${commit.renders} ${commit.renders === 1 ? "render" : "renders"}`,
+      ...(commit.wasted ? [`${commit.wasted} wasted`] : []),
+      when(commit),
+    ].join(" · ")
+  // A row's two lines: what happened, then what it cost.
+  const lines = (row: UpdateRow): [string, string] => {
+    if (row.kind === "group") {
+      const [newest] = row.commits as [CommitSummary]
+      const name = cause({ ...newest, change: undefined })
+      return [
+        `${name} · ${row.commits.length} updates`,
+        [...(row.wasted ? [`${row.wasted} wasted`] : []), when(newest)].join(
+          " · ",
+        ),
+      ]
+    }
+    const first = row.member
+      ? (changeText(row.commit) ?? cause(row.commit))
+      : cause(row.commit)
+    return [first, cost(row.commit)]
   }
   return (
     // Side by side like Components; stacked when narrower than sm (640 px).
@@ -71,7 +92,7 @@ export function Commits(props: {
         >
           <div
             role="listbox"
-            aria-label="Commits"
+            aria-label="Updates"
             tabIndex={0}
             aria-activedescendant={
               props.timeline.picked() === undefined
@@ -81,9 +102,16 @@ export function Commits(props: {
             class="min-h-0 flex-1 overflow-auto font-mono focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1"
             // Clicks are handled once here, like the keys.
             onClick={(event) => {
-              const option = (event.target as Element).closest("[role=option]")
-              const seq = (option as HTMLElement | null)?.dataset.seq
+              const option = (event.target as Element).closest<HTMLElement>(
+                "[role=option]",
+              )
+              const { seq, group } = option?.dataset ?? {}
               if (seq !== undefined) props.timeline.pick(Number(seq))
+              else if (group !== undefined)
+                props.timeline.setGroup(
+                  Number(group),
+                  option?.dataset.open !== "true",
+                )
             }}
             onKeyDown={(event) => {
               if (!props.timeline.key(event.key, history())) return
@@ -97,19 +125,48 @@ export function Commits(props: {
                   ?.scrollIntoView({ block: "nearest" })
             }}
           >
-            <For each={props.timeline.shown(history())}>
-              {(commit) => (
-                <div
-                  role="option"
-                  id={optionId(commit.seq)}
-                  tabIndex={-1}
-                  data-seq={commit.seq}
-                  aria-selected={props.timeline.picked() === commit.seq}
-                  class="cursor-pointer truncate px-2 leading-5 hover:bg-surface aria-selected:bg-selected"
-                >
-                  {row(commit)}
-                </div>
-              )}
+            <For each={props.timeline.rows(history())}>
+              {(row) => {
+                const [what, cost] = lines(row)
+                return row.kind === "group" ? (
+                  <div
+                    role="option"
+                    id={`group-${row.id}`}
+                    tabIndex={-1}
+                    data-group={row.id}
+                    aria-selected={false}
+                    // A listbox option has no aria-expanded: the triangle
+                    // shows it, the text says how many.
+                    data-open={row.open}
+                    class="cursor-pointer px-2 py-0.5 hover:bg-surface"
+                  >
+                    <span data-testid="line" class="flex items-center gap-1">
+                      <Triangle open={row.open} />
+                      <span class="truncate">{what}</span>
+                    </span>
+                    <span data-testid="line" class="block truncate text-muted">
+                      {cost}
+                    </span>
+                  </div>
+                ) : (
+                  <div
+                    role="option"
+                    id={optionId(row.commit.seq)}
+                    tabIndex={-1}
+                    data-seq={row.commit.seq}
+                    aria-selected={props.timeline.picked() === row.commit.seq}
+                    class="cursor-pointer py-0.5 pr-2 hover:bg-surface aria-selected:bg-selected"
+                    classList={{ "pl-6": row.member, "pl-2": !row.member }}
+                  >
+                    <span data-testid="line" class="block truncate">
+                      {what}
+                    </span>
+                    <span data-testid="line" class="block truncate text-muted">
+                      {cost}
+                    </span>
+                  </div>
+                )
+              }}
             </For>
           </div>
           <Show when={props.timeline.dropped()}>

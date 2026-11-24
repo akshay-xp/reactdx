@@ -67,23 +67,28 @@ function setup() {
       onReveal={(id) => revealed.push(id)}
     />
   ))
+  // Each row's lines, joined by " / ".
   const rows = () =>
-    [...view.container.querySelectorAll("[role=option]")].map(
-      (row) => row.textContent,
+    [...view.container.querySelectorAll("[role=option]")].map((row) =>
+      [...row.querySelectorAll("[data-testid=line]")]
+        .map((line) => line.textContent)
+        .join(" / "),
     )
-  return { tree, inspector, timeline, sent, revealed, rows, ...view }
+  const seqs = () =>
+    [...view.container.querySelectorAll("[role=option]")].map(
+      (row) => (row as HTMLElement).dataset.seq,
+    )
+  return { tree, inspector, timeline, sent, revealed, rows, seqs, ...view }
 }
 
-test("rows read newest first: seq, how long ago, how many, what triggered", () => {
+test("rows lead with the cause, then what it cost and when; a burst folds into one", () => {
   const { timeline, rows, container } = setup()
-  expect(container.textContent).toContain(
-    "No commits recorded since DevTools opened.",
-  )
+  const change = (old: number) => ({ hook: 0, old, new: old + 1 })
   timeline.receiveCommits(
     commitsMessage(
       [
-        summary(1, 2 * 3600_000, 1, [9]),
-        summary(2, 90_000, 1, [2]),
+        summary(1, 2 * 3600_000, 1),
+        { ...summary(2, 90_000, 3, [2], 2), change: change(2) },
         summary(3, 2000, 3, [2, 3, 1]),
       ],
       1,
@@ -91,10 +96,36 @@ test("rows read newest first: seq, how long ago, how many, what triggered", () =
     ),
   )
   expect(rows()).toEqual([
-    "#3 · 2s ago · 3 components · Counter +2",
-    "#2 · 1m ago · 1 component · Counter",
-    "#1 · 2h ago · 1 component",
+    "Counter +2 / 3 renders · 2s ago",
+    "Counter: 2 → 3 / 3 renders · 2 wasted · 1m ago",
+    "Root render / 1 render · 2h ago",
   ])
+  timeline.receiveCommits(
+    commitsMessage(
+      [4, 5, 6].map((seq) => ({
+        ...summary(seq, 2000, 3, [3], 2),
+        change: change(seq),
+      })),
+      1,
+      false,
+    ),
+  )
+  expect(rows()[0]).toBe("Shown · 3 updates / 6 wasted · 2s ago")
+  timeline.pick(5)
+  expect(rows().slice(0, 4)).toEqual([
+    "Shown · 3 updates / 6 wasted · 2s ago",
+    "6 → 7 / 3 renders · 2 wasted · 2s ago",
+    "5 → 6 / 3 renders · 2 wasted · 2s ago",
+    "4 → 5 / 3 renders · 2 wasted · 2s ago",
+  ])
+  for (const row of rows()) expect(row).not.toMatch(/commit|#/i)
+  expect(
+    container.querySelector("[role=listbox]")?.getAttribute("aria-label"),
+  ).toBe("Updates")
+  const group = container.querySelector("#group-4") as HTMLElement
+  expect(group.dataset.open).toBe("true")
+  fireEvent.click(group)
+  expect(rows()).toHaveLength(4)
 })
 
 test("a click or a key picks a commit; Escape stays in the panel", () => {
@@ -102,13 +133,13 @@ test("a click or a key picks a commit; Escape stays in the panel", () => {
   timeline.receiveCommits(
     commitsMessage([summary(1, 0, 1), summary(2, 0, 1)], 1, false),
   )
-  const list = screen.getByRole("listbox", { name: "Commits" })
-  fireEvent.click(screen.getByText(/^#1 /))
+  const list = screen.getByRole("listbox", { name: "Updates" })
+  const option = (seq: number) =>
+    document.getElementById(`update-${seq}`) as HTMLElement
+  fireEvent.click(option(1))
   expect(sent).toEqual([{ type: "commit", seq: 1 }])
-  expect(list.getAttribute("aria-activedescendant")).toBe("commit-1")
-  expect(screen.getByText(/^#1 /).closest("[role=option]")?.ariaSelected).toBe(
-    "true",
-  )
+  expect(list.getAttribute("aria-activedescendant")).toBe("update-1")
+  expect(option(1).ariaSelected).toBe("true")
   fireEvent.keyDown(list, { key: "Home" })
   expect(timeline.picked()).toBe(2)
   let escaped = false
@@ -135,7 +166,7 @@ test("the list ends with a note once the page's limit dropped older commits", ()
 })
 
 test("Only <selected> limits the list to the selected node's renders", () => {
-  const { tree, inspector, timeline, rows } = setup()
+  const { tree, inspector, timeline, seqs } = setup()
   timeline.receiveCommits(
     commitsMessage(
       [summary(1, 0, 1), summary(2, 0, 1), summary(3, 0, 1)],
@@ -158,7 +189,7 @@ test("Only <selected> limits the list to the selected node's renders", () => {
   expect(only().textContent).toBe("Only Counter")
   fireEvent.click(only())
   expect(only().getAttribute("aria-pressed")).toBe("true")
-  expect(rows().map((row) => row?.split(" ")[0])).toEqual(["#3", "#1"])
+  expect(seqs()).toEqual(["3", "1"])
 })
 
 test("the detail says what triggered the picked commit and what rendered why", () => {

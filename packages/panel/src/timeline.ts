@@ -19,7 +19,7 @@ export type CommitDetail = { renders: CommitRender[]; updaters: Updater[] }
 // A row of the Updates list: one update, or a run of updates with the same
 // cause (`id` its oldest member's seq), its members following while open.
 export type UpdateRow =
-  | { kind: "update"; commit: CommitSummary }
+  | { kind: "update"; commit: CommitSummary; member?: true }
   | {
       kind: "group"
       id: number
@@ -86,7 +86,9 @@ export function createTimelineStore(
         wasted: run.reduce((sum, commit) => sum + commit.wasted, 0),
         open,
       })
-      if (open) for (const commit of run) out.push({ kind: "update", commit })
+      if (open)
+        for (const commit of run)
+          out.push({ kind: "update", commit, member: true })
     }
     return out
   }
