@@ -203,6 +203,10 @@ export type CommitSummary = {
   rootId: number
   updaters: number[]
   renders: number
+  // Renders only because the parent rendered (M6 #74).
+  wasted: number
+  // The first updater's first changed hook, labeled as in Hooks (M6 #74).
+  change?: UpdaterHook
 }
 export type CommitsMessage = {
   source: "reactdx"
@@ -232,8 +236,9 @@ export function parseCommits(data: unknown): CommitsMessage | undefined {
   if (source !== "reactdx" || type !== "commits") return
   if (!isId(oldest) || typeof dropped !== "boolean") return
   const list = parseList(commits, MAX_HISTORY, (item) => {
-    const { seq, time, rootId, updaters, renders } = item
+    const { seq, time, rootId, updaters, renders, wasted, change } = item
     if (!isId(seq) || !isId(rootId) || !isCount(renders)) return
+    if (!isCount(wasted) || wasted > renders) return
     if (typeof time !== "number" || !(time >= 0)) return
     if (
       !Array.isArray(updaters) ||
@@ -241,7 +246,20 @@ export function parseCommits(data: unknown): CommitsMessage | undefined {
       !updaters.every(isId)
     )
       return
-    return { seq, time, rootId, updaters: [...updaters], renders }
+    const summary: CommitSummary = {
+      seq,
+      time,
+      rootId,
+      updaters: [...updaters],
+      renders,
+      wasted,
+    }
+    if (change !== undefined) {
+      const parsed = parseUpdaterHook(change, { left: MAX_VALUES })
+      if (!parsed) return
+      summary.change = parsed
+    }
+    return summary
   })
   if (list && increasing(list.map((commit) => commit.seq)))
     return commitsMessage(list, oldest, dropped)
@@ -828,18 +846,28 @@ function parseRender(
   return reason
 }
 
+// A labeled hook change: `{ name, old, new }`, the values on `budget`.
+function parseUpdaterHook(
+  data: unknown,
+  budget: { left: number },
+): UpdaterHook | undefined {
+  if (typeof data !== "object" || data === null) return
+  const hook = data as Record<string, unknown>
+  const old = parseValue(hook.old, 0, budget)
+  const next = parseValue(hook.new, 0, budget)
+  return old !== undefined && next !== undefined && isName(hook.name)
+    ? { name: hook.name, old, new: next }
+    : undefined
+}
+
 export function parseUpdaters(
   data: unknown,
   budget: { left: number } = { left: MAX_VALUES },
 ): Updater[] | undefined {
   return parseList(data, MAX_CHANGES, (item) => {
-    const changes = parseList(item.hooks, MAX_CHANGES, (hook) => {
-      const old = parseValue(hook.old, 0, budget)
-      const next = parseValue(hook.new, 0, budget)
-      return old !== undefined && next !== undefined && isName(hook.name)
-        ? { name: hook.name, old, new: next }
-        : undefined
-    })
+    const changes = parseList(item.hooks, MAX_CHANGES, (hook) =>
+      parseUpdaterHook(hook, budget),
+    )
     return changes && isId(item.id)
       ? { id: item.id, hooks: changes }
       : undefined

@@ -20,7 +20,15 @@ const summary = (
   ago: number,
   renders: number,
   updaters: number[] = [],
-): CommitSummary => ({ seq, time: NOW - ago, rootId: 1, updaters, renders })
+  wasted = 0,
+): CommitSummary => ({
+  seq,
+  time: NOW - ago,
+  rootId: 1,
+  updaters,
+  renders,
+  wasted,
+})
 
 const add = (id: number, name: string) => ({
   op: "add" as const,

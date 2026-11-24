@@ -322,8 +322,8 @@ test("links move between a commit and its components", () => {
   timeline.receiveCommits(
     commitsMessage(
       [
-        { seq: 4, time: 0, rootId: 1, updaters: [2, 1], renders: 2 },
-        { seq: 7, time: 0, rootId: 1, updaters: [2], renders: 1 },
+        { seq: 4, time: 0, rootId: 1, updaters: [2, 1], renders: 2, wasted: 0 },
+        { seq: 7, time: 0, rootId: 1, updaters: [2], renders: 1, wasted: 0 },
       ],
       1,
       false,

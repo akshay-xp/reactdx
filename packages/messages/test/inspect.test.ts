@@ -557,7 +557,14 @@ test("a reasoned reply carries one render, or null once it's released", () => {
 })
 
 test("commit summaries are at most 100 increasing commits, each bounded", () => {
-  const summary = { seq: 3, time: 12.5, rootId: 1, updaters: [4], renders: 2 }
+  const summary = {
+    seq: 3,
+    time: 12.5,
+    rootId: 1,
+    updaters: [4],
+    renders: 2,
+    wasted: 0,
+  }
   const list = (commits: unknown[]) =>
     commitsMessage(commits as never, 1, false)
   expect(parseCommits(list([summary]))).toEqual(list([summary]))
@@ -653,4 +660,31 @@ test("a render says when it happened: a finite time, or none", () => {
     expect(
       parseReasoned(reasoned(3, 2, { ...render, time } as never)),
     ).toBeUndefined()
+})
+
+test("a summary says how many renders were wasted and what changed", () => {
+  const summary = {
+    seq: 3,
+    time: 1,
+    rootId: 1,
+    updaters: [4],
+    renders: 2,
+    wasted: 1,
+    change: { name: "State #1", old: 1, new: 2 },
+  }
+  const list = (commits: unknown[]) =>
+    commitsMessage(commits as never, 1, false)
+  expect(parseCommits(list([summary]))).toEqual(list([summary]))
+  const { change: _, ...plain } = summary
+  expect(parseCommits(list([plain]))).toEqual(list([plain]))
+  for (const bad of [
+    { ...summary, wasted: 3 },
+    { ...summary, wasted: -1 },
+  ])
+    expect(parseCommits(list([bad]))).toBeUndefined()
+  const { wasted: __, ...noWasted } = plain
+  expect(parseCommits(list([noWasted]))).toBeUndefined()
+  expect(
+    parseCommits(list([{ ...summary, change: { name: 1, old: 1, new: 2 } }])),
+  ).toBeUndefined()
 })

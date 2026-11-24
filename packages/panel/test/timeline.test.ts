@@ -12,6 +12,7 @@ const summary = (seq: number): CommitSummary => ({
   rootId: 1,
   updaters: [],
   renders: 1,
+  wasted: 0,
 })
 
 // The page holds everything from `oldest` on.
