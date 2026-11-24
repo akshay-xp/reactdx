@@ -1,17 +1,10 @@
 import { For, Match, Show, Switch } from "solid-js"
+import { ago } from "./ago"
 import { KIND_TEXT, NodeLink } from "./Inspector"
 import type { InspectorStore } from "./inspection"
 import type { CommitDetail, TimelineStore } from "./timeline"
 import type { TreeStore } from "./tree"
 import { previewText } from "./value"
-
-// "2s", "1m", "2h": how long ago, coarse enough to tick once a second.
-const ago = (ms: number) => {
-  const s = Math.max(0, Math.floor(ms / 1000))
-  if (s < 60) return `${s}s`
-  if (s < 3600) return `${Math.floor(s / 60)}m`
-  return `${Math.floor(s / 3600)}h`
-}
 
 // The recorded commits, newest first (docs/panel.md, Commits). One tab stop:
 // the list holds focus and names the picked row through aria-activedescendant;
