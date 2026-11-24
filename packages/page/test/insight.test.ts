@@ -601,6 +601,19 @@ test("an unmount releases the kept renders of everything under it", async () => 
   expect(recorder.latest(nested)).toBeUndefined()
 })
 
+test("a render carries its commit's time, kept past the commit", async () => {
+  const { record, recorder, id } = await mount(h(Parent), { maxCommits: 5 })
+  await record(() => setParent(1))
+  const late = id("Late")
+  const time = recorder.latest(late)?.time
+  expect(typeof time).toBe("number")
+  expect(Math.abs((time ?? 0) - Date.now())).toBeLessThan(1000)
+  expect(recorder.summaries(0).at(-1)?.time).toBe(time)
+  for (let i = 1; i <= 6; i++) await record(() => setParent(1 + 2 * i))
+  expect(recorder.rendered(1)).toBeUndefined()
+  expect(recorder.latest(late)?.time).toBe(time)
+})
+
 test("history lists a component's last 100 renders", async () => {
   const { record, recorder, id } = await mount(h(Parent), { maxCommits: 200 })
   for (let i = 1; i <= 150; i++) await record(() => setParent(2 * i))

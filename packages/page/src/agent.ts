@@ -370,7 +370,11 @@ export function startAgent(
         ...both(change),
         ...(change.reference && { reference: change.reference }),
       }))
-    const reason: RenderReason = { seq: record.seq, kinds: record.kinds }
+    const reason: RenderReason = {
+      seq: record.seq,
+      time: record.time,
+      kinds: record.kinds,
+    }
     if (record.props) reason.props = keyed(record.props)
     if (record.state) reason.state = keyed(record.state)
     if (record.hooks) {

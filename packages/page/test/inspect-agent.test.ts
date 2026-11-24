@@ -578,6 +578,7 @@ test("an inspection carries why its node last rendered, while watched", async ()
     kinds: ["state"],
     hooks: [{ hook: [0], old: 0, new: 1 }],
   })
+  expect(typeof replies().at(-1)?.data?.render?.time).toBe("number")
 })
 
 test("renders before watch, or before an unwatch, aren't kept", async () => {

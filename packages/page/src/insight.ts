@@ -25,6 +25,8 @@ export type Change = {
 
 export type RenderRecord = {
   seq: number
+  // Its commit's Date.now(): kept past the commit's drop.
+  time: number
   kinds: RenderKind[]
   props?: Change[]
   // A class component's state keys.
@@ -301,6 +303,7 @@ export function createRecorder({
 
   const reasons = (
     at: number,
+    time: number,
     fiber: Fiber,
     updated: boolean,
     ids: Map<Fiber, number>,
@@ -308,9 +311,9 @@ export function createRecorder({
     const prev = fiber.alternate
     if (!prev) {
       const remount = remountOf(fiber, ids)
-      return { seq: at, kinds: ["mount"], ...(remount && { remount }) }
+      return { seq: at, time, kinds: ["mount"], ...(remount && { remount }) }
     }
-    const record: RenderRecord = { seq: at, kinds: [] }
+    const record: RenderRecord = { seq: at, time, kinds: [] }
     const note = <F extends "props" | "state" | "hooks" | "contexts">(
       kind: RenderKind,
       field: F,
@@ -352,6 +355,7 @@ export function createRecorder({
       // are known by the time it is.
       const ids = new Map<Fiber, number>()
       const at = seq++
+      const time = Date.now()
       walk((fiber, id) => {
         // remountOf looks up only new fibers: a commit touching one of 10,000
         // cells visits them all, and storing each cost more than the rest.
@@ -364,7 +368,7 @@ export function createRecorder({
           (fiber.alternate !== null && updaters.has(fiber.alternate))
         if (updated) updaterIds.push(id)
         if (updated || (fiber as Flagged).flags & PERFORMED_WORK) {
-          const record = reasons(at, fiber, updated, ids)
+          const record = reasons(at, time, fiber, updated, ids)
           records.set(id, record)
           latest.set(id, record)
           const count = counts.get(id) ?? { renders: 0, wasted: 0 }
@@ -377,7 +381,7 @@ export function createRecorder({
       })
       commits.push({
         seq: at,
-        time: Date.now(),
+        time,
         rootId,
         records,
         updaters: updaterIds,
