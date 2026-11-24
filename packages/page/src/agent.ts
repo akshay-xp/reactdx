@@ -112,8 +112,8 @@ export function startAgent(
     post(snapshotMessage(roots))
   }
 
-  const tree = createTree()
   const recorder = createRecorder()
+  const tree = createTree({ onForget: recorder.forget })
   // Production builds have minified names and aren't inspected.
   const inspectable = (rendererId: number) =>
     record.renderers.get(rendererId)?.bundleType === 1

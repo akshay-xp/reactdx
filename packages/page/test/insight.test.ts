@@ -50,10 +50,10 @@ async function mount(
   roots.push(root)
   await React.act(() => root.render(node))
   const fiberRoot = fiberRootOf(container)
-  const tree = createTree()
+  const recorder = createRecorder(limits)
+  const tree = createTree({ onForget: recorder.forget })
   const ops: TreeOp[] = []
   tree.full(fiberRoot, 1, ops)
-  const recorder = createRecorder(limits)
   const ids = new Map<string, number>()
   const learn = (list: TreeOp[]) => {
     for (const op of list) if (op.op === "add") ids.set(op.name, op.id)
@@ -535,6 +535,40 @@ test("a component's latest render outlives its commit; older ones drop", async (
   expect(recorder.history(child)).toHaveLength(5)
   expect(recorder.history(child).at(-1)).toBe(recorder.latest(child)?.seq)
   expect(recorder.record(child, 2)).toBeUndefined()
+})
+
+test("an unmount releases a component's kept render", async () => {
+  const { record, recorder, id } = await mount(h(Parent), { maxCommits: 2 })
+  await record(() => setParent(1))
+  const late = id("Late")
+  await record(() => setParent(3))
+  await record(() => setParent(4))
+  expect(recorder.latest(late)).toBeUndefined()
+  expect(recorder.history(late)).toEqual([])
+  expect(recorder.latest(id("Child"))).toBeDefined()
+})
+
+function Nested() {
+  return null
+}
+function Wrap() {
+  return h(Nested)
+}
+let setWrapped: (on: boolean) => void = () => {}
+function Wrapped() {
+  const [on, set] = React.useState(true)
+  setWrapped = set
+  return on && h(Wrap)
+}
+
+test("an unmount releases the kept renders of everything under it", async () => {
+  const { record, recorder, id } = await mount(h(Wrapped))
+  await record(() => setWrapped(false))
+  await record(() => setWrapped(true))
+  const nested = id("Nested")
+  expect(recorder.latest(nested)?.kinds).toEqual(["mount"])
+  await record(() => setWrapped(false))
+  expect(recorder.latest(nested)).toBeUndefined()
 })
 
 test("history lists a component's last 100 renders", async () => {

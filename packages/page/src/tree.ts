@@ -85,8 +85,12 @@ function nameOf(fiber: Fiber, kind: TreeKind): string {
 const bounded = (value: string) => value.slice(0, MAX_TREE_STRING)
 
 // Ids are stable for a fiber's life: React swaps a fiber with its alternate on
-// every update, so both carry the id.
-export function createTree() {
+// every update, so both carry the id. `onForget` hears each id an unmount drops.
+export function createTree({
+  onForget,
+}: {
+  onForget?: (id: number) => void
+} = {}) {
   const ids = new WeakMap<Fiber, number>()
   let nextId = 1
   const idOf = (fiber: Fiber) => {
@@ -181,6 +185,7 @@ export function createTree() {
     children.delete(id)
     names.delete(id)
     fibers.delete(id)
+    onForget?.(id)
   }
 
   // Brings a known node's stored children in line with this commit.

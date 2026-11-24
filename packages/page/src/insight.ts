@@ -432,5 +432,10 @@ export function createRecorder({
       return found?.seq === seq ? found : commitAt(seq)?.records.get(id)
     },
     latest: (id: number) => latest.get(id),
+    // An unmounted component's kept record goes (its buffered ones drop with
+    // their commits).
+    forget: (id: number) => {
+      latest.delete(id)
+    },
   }
 }
