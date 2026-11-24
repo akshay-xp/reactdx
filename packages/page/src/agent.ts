@@ -1,8 +1,10 @@
 import {
   type CommitsMessage,
   type CommittedMessage,
+  type CountsMessage,
   commitsMessage,
   committed,
+  countsMessage,
   type ExpandedMessage,
   expanded,
   type HookValue,
@@ -89,6 +91,7 @@ export function startAgent(
       | ExpandedMessage
       | CommitsMessage
       | CommittedMessage
+      | CountsMessage
       | ReasonedMessage
       | ValueTextMessage
       | ValueStoredMessage,
@@ -142,6 +145,15 @@ export function startAgent(
     // again now (an idle page may not commit for a while), even if empty.
     sentCommit = 0
     postCommits(true)
+    postCounts(true)
+  }
+  // Render counts for the tree, in batches of MAX_OPS: the changed ones on the
+  // flush (if any), every one on a watch (at least one message).
+  const postCounts = (all: boolean) => {
+    const counts = recorder.takeCounts(all)
+    if (!counts.length && !all) return
+    for (let at = 0; at === 0 || at < counts.length; at += MAX_OPS)
+      post(countsMessage(counts.slice(at, at + MAX_OPS)))
   }
   // The commits since the last sent, in batches the relay accepts (`always`:
   // at least one); each says what the page still holds.
@@ -520,6 +532,7 @@ export function startAgent(
       snapshot()
       if (buffer.length) send(buffer.splice(0))
       postCommits()
+      postCounts(false)
       refresh()
     }, THROTTLE_MS)
   })

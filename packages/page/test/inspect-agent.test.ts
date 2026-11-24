@@ -1,10 +1,12 @@
 import {
   type CommitsMessage,
   type CommittedMessage,
+  type CountsMessage,
   committed,
   type ExpandedMessage,
   type InspectedMessage,
   type ReasonedMessage,
+  type RenderCount,
   type TreeBatchMessage,
   UNWATCH,
   valueStored,
@@ -767,6 +769,40 @@ test("the buffer goes out in batches of at most 100, each with what the page hol
   expect([...seqs].sort((a, b) => a - b)).toEqual(seqs)
   expect(new Set(seqs).size).toBe(seqs.length)
   expect(seqs).toHaveLength(101)
+})
+
+const countLists = () =>
+  posted
+    .filter(
+      (m): m is CountsMessage => (m as { type?: string }).type === "counts",
+    )
+    .map((m) => m.counts)
+
+test("render counts go out on the flush when they change, and all on watch", async () => {
+  const reasoned = idOf("Reasoned")
+  const of = (list: RenderCount[] | undefined) =>
+    list?.find((count) => count.id === reasoned)
+  posted.length = 0
+  await React.act(() => setReasoned(700))
+  await flushed()
+  const before = of(countLists().at(-1))?.renders ?? 0
+  expect(before).toBeGreaterThan(0)
+  posted.length = 0
+  await React.act(() => setReasoned(701))
+  await flushed()
+  expect(countLists()).toHaveLength(1)
+  expect(of(countLists()[0])?.renders).toBe(before + 1)
+  posted.length = 0
+  await flushed()
+  expect(countLists()).toEqual([])
+  send(WATCH)
+  const types = posted.map((m) => (m as { type?: string }).type)
+  expect(types.lastIndexOf("counts")).toBeGreaterThan(types.indexOf("commits"))
+  expect(of(countLists().flat())?.renders).toBe(before + 1)
+  posted.length = 0
+  send(UNWATCH)
+  send(WATCH)
+  expect(countLists()).toEqual([[]])
 })
 
 function Cell() {
