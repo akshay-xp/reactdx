@@ -35,18 +35,23 @@ async function benchPanel() {
       ),
     { timeout: 10_000 },
   )
-  // The 10,000 Cells fold into one group row (M6 #72): open it.
-  const group = await panel.waitForSelector(
-    '[data-testid=node][data-id^="-"] [data-toggle]',
-    { timeout: 10_000 },
-  )
-  await group?.click()
+  // The 10,000 Cells fold into one group row (M6 #72): open it. Found and
+  // clicked in the panel: Cells still arriving rebuild the rows, so a handle
+  // to the row can go stale before a click lands.
   await panel.waitForFunction(
-    () =>
-      [...document.querySelectorAll("[data-testid=node]")].some(
+    () => {
+      const open = [...document.querySelectorAll("[data-testid=node]")].some(
         (n) => n.textContent === 'Cell key="0"',
-      ),
-    { timeout: 10_000 },
+      )
+      if (!open)
+        document
+          .querySelector<HTMLElement>(
+            '[data-testid=node][data-id^="-"][aria-expanded=false] [data-toggle]',
+          )
+          ?.click()
+      return open
+    },
+    { timeout: 10_000, polling: 100 },
   )
   return { browser, page, panel }
 }
