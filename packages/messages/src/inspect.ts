@@ -148,6 +148,8 @@ export type EffectRun = {
 }
 export type RenderReason = {
   seq: number
+  // When its commit happened (Date.now(), M6 #73).
+  time?: number
   kinds: RenderKind[]
   props?: KeyChange[]
   state?: KeyChange[]
@@ -745,9 +747,14 @@ function parseRender(
     effects,
     remount,
     updaters,
+    time,
   } = data as Record<string, unknown>
   if (!isId(seq) || !isKinds(kinds)) return
   const reason: RenderReason = { seq, kinds: [...kinds] }
+  if (time !== undefined) {
+    if (typeof time !== "number" || !Number.isFinite(time) || time < 0) return
+    reason.time = time
+  }
   // The old and new values of one change, or undefined if either is invalid.
   const sides = (item: Record<string, unknown>) => {
     const old = parseValue(item.old, 0, budget)

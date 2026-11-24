@@ -638,3 +638,19 @@ test("render counts are at most 2,000, each a positive id with wasted at most re
     parseCounts({ source: "reactdx", type: "counts", counts: {} }),
   ).toBeUndefined()
 })
+
+test("a render says when it happened: a finite time, or none", () => {
+  const render = { seq: 2, kinds: ["state" as const], time: 12.5 }
+  expect(parseReasoned(reasoned(3, 2, render))).toEqual(reasoned(3, 2, render))
+  expect(
+    parseInspected(inspected(3, { props: 1, render }))?.data?.render?.time,
+  ).toBe(12.5)
+  const { time: _, ...timeless } = render
+  expect(parseReasoned(reasoned(3, 2, timeless))).toEqual(
+    reasoned(3, 2, timeless),
+  )
+  for (const time of [-1, Number.NaN, Number.POSITIVE_INFINITY, "1"])
+    expect(
+      parseReasoned(reasoned(3, 2, { ...render, time } as never)),
+    ).toBeUndefined()
+})
