@@ -63,6 +63,8 @@ export type CommitSummary = {
   rootId: number
   updaters: number[]
   renders: number
+  // Renders only because the parent rendered.
+  wasted: number
 }
 
 // A component whose update scheduled a commit, with the state it changed.
@@ -284,6 +286,10 @@ function remountOf(fiber: Fiber, ids: Map<Fiber, number>): Remount | undefined {
     : { cause: "ancestor", ancestor }
 }
 
+// Rendered only because the parent did: nothing of its own changed.
+const isWasted = (record: RenderRecord) =>
+  record.kinds.length === 1 && record.kinds[0] === "parent"
+
 export function createRecorder({
   maxRecords = MAX_RECORDS,
   maxCommits = MAX_COMMITS,
@@ -373,8 +379,7 @@ export function createRecorder({
           latest.set(id, record)
           const count = counts.get(id) ?? { renders: 0, wasted: 0 }
           count.renders++
-          if (record.kinds.length === 1 && record.kinds[0] === "parent")
-            count.wasted++
+          if (isWasted(record)) count.wasted++
           counts.set(id, count)
           changed.add(id)
         }
@@ -433,6 +438,7 @@ export function createRecorder({
           rootId,
           updaters,
           renders: records.size,
+          wasted: [...records.values()].filter(isWasted).length,
         }))
     },
     rendered(seq: number) {

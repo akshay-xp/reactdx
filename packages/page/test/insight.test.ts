@@ -301,6 +301,15 @@ test("a render only because the parent rendered counts as wasted", async () => {
   expect(recorder.takeCounts(true)).toEqual([])
 })
 
+test("a commit's summary counts its renders only because a parent rendered", async () => {
+  const { record, recorder } = await mount(h(Parent))
+  await record(() => setParent(2))
+  expect(recorder.summaries(0).at(-1)).toMatchObject({ renders: 2, wasted: 1 })
+  const cells = await mount(h(Cells))
+  await cells.record(() => setCells(1))
+  expect(cells.recorder.summaries(0).at(-1)?.wasted).toBe(0)
+})
+
 test("the newest commit is kept whole even over the budget", async () => {
   const { record, recorder } = await mount(h(Cells), { maxRecords: 2 })
   await record(() => setCells(1))
