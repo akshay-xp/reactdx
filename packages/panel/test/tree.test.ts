@@ -1,7 +1,12 @@
-import { type TreeKind, type TreeOp, treeBatch } from "@reactdx/messages"
+import {
+  countsMessage,
+  type TreeKind,
+  type TreeOp,
+  treeBatch,
+} from "@reactdx/messages"
 import { createEffect, createMemo, createRoot, on } from "solid-js"
 import { expect, test } from "vitest"
-import { createTreeStore } from "../src/tree"
+import { createTreeStore, type Row } from "../src/tree"
 
 const add = (
   id: number,
@@ -332,4 +337,22 @@ test("reveal selects a node and expands its ancestors", () => {
   expect(names(tree.rows(1))).toEqual(["0 App", "1 A", "2 B", "1 C"])
   tree.reveal(99)
   expect(tree.selected()).toBe(5)
+})
+
+const countsOf = (rows: Row[]) =>
+  rows.map(({ name, renders, wasted }) => `${name} ${renders}/${wasted}`)
+
+test("render counts land on their rows until the tree resets", () => {
+  const tree = createTreeStore()
+  tree.apply(resync)
+  tree.receiveCounts(countsMessage([{ id: 3, renders: 4, wasted: 1 }]))
+  expect(countsOf(tree.rows(1))).toEqual(["App 0/0", "A 4/1", "B 0/0", "C 0/0"])
+  tree.receiveCounts(countsMessage([{ id: 3, renders: 5, wasted: 1 }]))
+  expect(countsOf(tree.rows(1))).toContain("A 5/1")
+  tree.apply(resync)
+  expect(countsOf(tree.rows(1))).toContain("A 0/0")
+  tree.receiveCounts(countsMessage([{ id: 3, renders: 5, wasted: 1 }]))
+  tree.clear()
+  tree.apply(resync)
+  expect(countsOf(tree.rows(1))).toContain("A 0/0")
 })

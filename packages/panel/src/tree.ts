@@ -1,4 +1,10 @@
-import type { TreeBatchMessage, TreeKind, TreeOp } from "@reactdx/messages"
+import type {
+  CountsMessage,
+  RenderCount,
+  TreeBatchMessage,
+  TreeKind,
+  TreeOp,
+} from "@reactdx/messages"
 import { batch, createSignal } from "solid-js"
 
 export type Row = {
@@ -10,6 +16,9 @@ export type Row = {
   expandable: boolean
   expanded: boolean
   match: boolean
+  // Renders since the watch (0: none recorded), and of those, wasted ones.
+  renders: number
+  wasted: number
 }
 
 type Node = {
@@ -28,6 +37,8 @@ export function createTreeStore() {
   const nodes = new Map<number, Node>()
   const tops = new Map<number, number[]>()
   const collapsed = new Set<number>()
+  // The page's render counts by id (docs/messages.md, counts).
+  const counts = new Map<number, RenderCount>()
   const [version, setVersion] = createSignal(0)
   const [selected, select] = createSignal<number>()
   const [showHosts, showHostsSignal] = createSignal(false)
@@ -47,6 +58,7 @@ export function createTreeStore() {
   const reset = () => {
     nodes.clear()
     tops.clear()
+    counts.clear()
   }
   const forget = (id: number) => {
     for (const child of nodes.get(id)?.children ?? []) forget(child)
@@ -126,6 +138,8 @@ export function createTreeStore() {
         expandable: kids.length > 0,
         expanded,
         match: isMatch(node),
+        renders: counts.get(id)?.renders ?? 0,
+        wasted: counts.get(id)?.wasted ?? 0,
       })
       if (expanded) for (const kid of kids) visit(kid, depth + 1)
     }
@@ -216,6 +230,10 @@ export function createTreeStore() {
     },
 
     rows,
+    receiveCounts(message: CountsMessage) {
+      for (const count of message.counts) counts.set(count.id, count)
+      setVersion(version() + 1)
+    },
     // A node's name, kind and key, for the inspector's header.
     info(id: number) {
       version()

@@ -2,6 +2,7 @@ import type {
   ClearHighlightMessage,
   CommitsMessage,
   CommittedMessage,
+  CountsMessage,
   ExpandedMessage,
   HighlightMessage,
   InspectedMessage,
@@ -113,6 +114,7 @@ function connect() {
         | ReasonedMessage
         | CommitsMessage
         | CommittedMessage
+        | CountsMessage
         | ValueTextMessage
         | ValueStoredMessage,
     ) => {
@@ -124,6 +126,7 @@ function connect() {
       else if (message.type === "expanded") inspector.receiveExpanded(message)
       else if (message.type === "reasoned") inspector.receiveReasoned(message)
       else if (message.type === "commits") timeline.receiveCommits(message)
+      else if (message.type === "counts") tree.receiveCounts(message)
       else if (message.type === "committed") timeline.receiveCommitted(message)
       else if (message.type === "value-text")
         inspector.receiveValueText(message)
