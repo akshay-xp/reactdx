@@ -19,7 +19,11 @@ export type Row = {
   // Renders since the watch (0: none recorded), and of those, wasted ones.
   renders: number
   wasted: number
+  // Rendered in the newest counts (the page's last flush), for RECENT_MS.
+  recent: boolean
 }
+
+const RECENT_MS = 1000
 
 type Node = {
   rootId: number
@@ -39,6 +43,8 @@ export function createTreeStore() {
   const collapsed = new Set<number>()
   // The page's render counts by id (docs/messages.md, counts).
   const counts = new Map<number, RenderCount>()
+  const [recent, setRecent] = createSignal(new Set<number>())
+  let fade: ReturnType<typeof setTimeout> | undefined
   const [version, setVersion] = createSignal(0)
   const [selected, select] = createSignal<number>()
   const [showHosts, showHostsSignal] = createSignal(false)
@@ -140,6 +146,7 @@ export function createTreeStore() {
         match: isMatch(node),
         renders: counts.get(id)?.renders ?? 0,
         wasted: counts.get(id)?.wasted ?? 0,
+        recent: recent().has(id),
       })
       if (expanded) for (const kid of kids) visit(kid, depth + 1)
     }
@@ -232,6 +239,9 @@ export function createTreeStore() {
     rows,
     receiveCounts(message: CountsMessage) {
       for (const count of message.counts) counts.set(count.id, count)
+      setRecent(new Set(message.counts.map((count) => count.id)))
+      clearTimeout(fade)
+      fade = setTimeout(() => setRecent(new Set<number>()), RECENT_MS)
       setVersion(version() + 1)
     },
     // A node's name, kind and key, for the inspector's header.

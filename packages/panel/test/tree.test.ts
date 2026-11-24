@@ -5,7 +5,7 @@ import {
   treeBatch,
 } from "@reactdx/messages"
 import { createEffect, createMemo, createRoot, on } from "solid-js"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { createTreeStore, type Row } from "../src/tree"
 
 const add = (
@@ -355,4 +355,28 @@ test("render counts land on their rows until the tree resets", () => {
   tree.clear()
   tree.apply(resync)
   expect(countsOf(tree.rows(1))).toContain("A 0/0")
+})
+
+test("the rows in the newest counts are recent for a second", () => {
+  vi.useFakeTimers()
+  try {
+    const tree = createTreeStore()
+    tree.apply(resync)
+    const recent = () =>
+      tree
+        .rows(1)
+        .filter((row) => row.recent)
+        .map((row) => row.name)
+    tree.receiveCounts(countsMessage([{ id: 3, renders: 2, wasted: 0 }]))
+    expect(recent()).toEqual(["A"])
+    vi.advanceTimersByTime(500)
+    tree.receiveCounts(countsMessage([{ id: 6, renders: 2, wasted: 0 }]))
+    expect(recent()).toEqual(["C"])
+    vi.advanceTimersByTime(999)
+    expect(recent()).toEqual(["C"])
+    vi.advanceTimersByTime(1)
+    expect(recent()).toEqual([])
+  } finally {
+    vi.useRealTimers()
+  }
 })
