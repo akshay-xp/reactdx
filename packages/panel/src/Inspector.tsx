@@ -13,6 +13,7 @@ import {
   createEffect,
   createResource,
   createSignal,
+  createUniqueId,
   For,
   type JSX,
   Match,
@@ -699,13 +700,17 @@ function Section(props: {
   children: JSX.Element
 }) {
   const open = () => props.open || props.forced
+  const summaryId = createUniqueId()
   return (
     <section data-testid="section" class="border-border border-b py-1">
-      {/* A row of the values tree (Keyboard), above its rows. */}
+      {/* A row of the values tree (Keyboard), above its rows: named by the
+          section, described by its summary. */}
       <button
         type="button"
         role="treeitem"
         aria-level={1}
+        aria-label={props.name}
+        aria-describedby={!open() && props.summary ? summaryId : undefined}
         aria-expanded={open()}
         data-path={`section:${props.name}`}
         class="flex w-full items-center gap-1 px-2 py-0.5 font-medium text-muted hover:text-fg focus-visible:outline-1 focus-visible:outline-accent focus-visible:-outline-offset-1"
@@ -715,7 +720,9 @@ function Section(props: {
         {props.name}
         <Show when={!open() && props.summary}>
           {" "}
-          <span class="truncate font-normal font-mono">{props.summary}</span>
+          <span id={summaryId} class="truncate font-normal font-mono">
+            {props.summary}
+          </span>
         </Show>
       </button>
       <Show when={open()}>
