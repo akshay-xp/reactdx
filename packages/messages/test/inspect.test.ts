@@ -556,17 +556,17 @@ test("a reasoned reply carries one render, or null once it's released", () => {
 
 test("commit summaries are at most 100 increasing commits, each bounded", () => {
   const summary = { seq: 3, time: 12.5, rootId: 1, updaters: [4], renders: 2 }
-  expect(parseCommits(commitsMessage([summary]))).toEqual(
-    commitsMessage([summary]),
+  const list = (commits: unknown[]) =>
+    commitsMessage(commits as never, 1, false)
+  expect(parseCommits(list([summary]))).toEqual(list([summary]))
+  expect(parseCommits(list([{ ...summary, extra: 1 }]))).toEqual(
+    list([summary]),
   )
-  expect(
-    parseCommits(commitsMessage([{ ...summary, extra: 1 } as never])),
-  ).toEqual(commitsMessage([summary]))
   const many = Array.from({ length: 101 }, (_, i) => ({
     ...summary,
     seq: i + 1,
   }))
-  expect(parseCommits(commitsMessage(many.slice(0, 100)))).toBeDefined()
+  expect(parseCommits(list(many.slice(0, 100)))).toBeDefined()
   for (const bad of [
     many,
     [summary, { ...summary, seq: 3 }],
@@ -578,7 +578,20 @@ test("commit summaries are at most 100 increasing commits, each bounded", () => 
     [{ ...summary, updaters: [0] }],
     [{ ...summary, renders: 1.5 }],
   ])
-    expect(parseCommits(commitsMessage(bad as never))).toBeUndefined()
+    expect(parseCommits(list(bad))).toBeUndefined()
+})
+
+test("commits say the oldest seq the page holds and whether any dropped", () => {
+  const message = commitsMessage([], 3, true)
+  expect(message).toMatchObject({ oldest: 3, dropped: true })
+  expect(parseCommits({ ...message, extra: 1 })).toEqual(message)
+  for (const bad of [
+    { ...message, oldest: 0 },
+    { ...message, oldest: 1.5 },
+    { ...message, dropped: "yes" },
+    { ...message, dropped: undefined },
+  ])
+    expect(parseCommits(bad)).toBeUndefined()
 })
 
 test("committed carries each render's kinds and the triggers, or null once released", () => {

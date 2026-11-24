@@ -110,7 +110,7 @@ export type InspectedData = {
   // The commits (seqs) of the node's recorded renders, oldest first (M6 #66).
   history?: number[]
 }
-// The page keeps its last 100 commits.
+// Commits per `commits` message, and seqs per node's history.
 export const MAX_HISTORY = 100
 
 // Why the node last rendered, while the panel watched (M6; docs/messages.md,
@@ -192,7 +192,9 @@ export const inspected = (
 ): InspectedMessage => ({ source: "reactdx", type: "inspected", id, data })
 
 // Agent to panel, on the flush (M6 #67): the commits recorded since the last,
-// for the timeline. `renders` counts the components that rendered.
+// for the timeline. `renders` counts the components that rendered. `oldest`
+// is the oldest seq the page still holds; `dropped`, whether its limits
+// dropped any since the watch (M6 #71).
 export type CommitSummary = {
   seq: number
   time: number
@@ -204,17 +206,29 @@ export type CommitsMessage = {
   source: "reactdx"
   type: "commits"
   commits: CommitSummary[]
+  oldest: number
+  dropped: boolean
 }
-export const commitsMessage = (commits: CommitSummary[]): CommitsMessage => ({
+export const commitsMessage = (
+  commits: CommitSummary[],
+  oldest: number,
+  dropped: boolean,
+): CommitsMessage => ({
   source: "reactdx",
   type: "commits",
   commits,
+  oldest,
+  dropped,
 })
 
 export function parseCommits(data: unknown): CommitsMessage | undefined {
   if (typeof data !== "object" || data === null) return
-  const { source, type, commits } = data as Record<string, unknown>
+  const { source, type, commits, oldest, dropped } = data as Record<
+    string,
+    unknown
+  >
   if (source !== "reactdx" || type !== "commits") return
+  if (!isId(oldest) || typeof dropped !== "boolean") return
   const list = parseList(commits, MAX_HISTORY, (item) => {
     const { seq, time, rootId, updaters, renders } = item
     if (!isId(seq) || !isId(rootId) || !isCount(renders)) return
@@ -228,7 +242,7 @@ export function parseCommits(data: unknown): CommitsMessage | undefined {
     return { seq, time, rootId, updaters: [...updaters], renders }
   })
   if (list && increasing(list.map((commit) => commit.seq)))
-    return commitsMessage(list)
+    return commitsMessage(list, oldest, dropped)
 }
 
 // Each after the one before: commit seqs as the page assigns them.

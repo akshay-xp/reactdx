@@ -274,11 +274,20 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
     updaters: [],
     renders: 1,
   })
-  const commits = (list: unknown[]) =>
-    post({ source: "reactdx", type: "commits", commits: list })
+  const commits = (list: unknown[], fields: Record<string, unknown> = {}) =>
+    post({
+      source: "reactdx",
+      type: "commits",
+      commits: list,
+      oldest: 1,
+      dropped: false,
+      ...fields,
+    })
   commits(Array.from({ length: 101 }, (_, i) => summary(9001 + i)))
   commits([summary(9002), summary(9001)])
   commits([{ ...summary(9001), renders: "x" }])
+  commits([summary(9001)], { oldest: 0 })
+  commits([summary(9001)], { dropped: "yes" })
   const forgedCommitted = (fields: Record<string, unknown>) =>
     post({ source: "reactdx", type: "committed", seq: 1, ...fields })
   forgedCommitted({ renders: Array(2001).fill({ id: 1, kinds: ["state"] }) })

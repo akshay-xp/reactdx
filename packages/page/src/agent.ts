@@ -140,7 +140,7 @@ export function startAgent(
     // The panel's commit list starts over with the tree: send the buffer
     // again now (an idle page may not commit for a while), even if empty.
     const commits = recorder.summaries(0)
-    post(commitsMessage(commits))
+    post(commitsMessage(commits, recorder.oldest(), recorder.dropped()))
     sentCommit = commits.at(-1)?.seq ?? 0
   }
 
@@ -507,7 +507,7 @@ export function startAgent(
       const commits = recorder.summaries(sentCommit)
       if (commits.length) {
         sentCommit = commits.at(-1)?.seq ?? sentCommit
-        post(commitsMessage(commits))
+        post(commitsMessage(commits, recorder.oldest(), recorder.dropped()))
       }
       refresh()
     }, THROTTLE_MS)
