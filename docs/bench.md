@@ -57,6 +57,22 @@ React   Case                   Mode   median ms     p95 ms
 
 Matches M0 #3 (`docs/m0-findings.md`) within about 0.5 ms on medians: bippy + traversal adds 0.3 ms to a one-component commit, the bare hook costs nothing measurable, RDT adds about 18 ms to every commit whether DevTools is open or not.
 
+## Recording memory (M6 #71, 2026-11-24)
+
+A scratch vitest file (not kept; jsdom, `NODE_OPTIONS=--expose-gc`, `--pool=forks`): 10,000 `Cell`s with a state hook and an effect on `tick`, 200 commits that render all of them, each walked by `tree.commit` like the agent's, heap after `gc()` with the recorder alive.
+
+```
+React  Recording                               Heap     Buffered records
+19     none (tree only)                        102 MB   0
+19     before #71 (100 commits, no record cap) 1113 MB  1,000,100
+19     #71 (20,000 records, 1,000 commits)     119 MB   10,001 (1 commit) + 10,001 latest
+18     none (tree only)                        101 MB   0
+18     before #71                              1112 MB  1,000,100
+18     #71                                     111 MB   10,001 + 10,001 latest
+```
+
+Recording now costs 10 to 17 MB over the tree alone, from about 1 GB. A record costs about 1 KB here (props, a state hook and an effect with deps); about 350 to 420 bytes with plain props.
+
 ## Key files
 
 - `bench/hook-cost/run.ts`: cases, measurement, table.
