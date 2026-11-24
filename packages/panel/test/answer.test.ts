@@ -1,6 +1,6 @@
 import type { RenderReason } from "@reactdx/messages"
 import { expect, test } from "vitest"
-import { type AnswerContext, answerOf, type Part } from "../src/answer"
+import { type AnswerContext, answerOf, hintOf, type Part } from "../src/answer"
 
 const context: AnswerContext = {
   ago: "2s",
@@ -92,4 +92,48 @@ test("each kind of render reads as one sentence", () => {
   expect(
     says(render({ kinds: ["mount"] }), { ...context, ago: undefined }),
   ).toBe("Mounted.")
+})
+
+test("at most one hint, the first that applies", () => {
+  const counts = { id: 1, renders: 4, wasted: 3 }
+  const hint = (
+    reason: RenderReason,
+    memo = false,
+    at: { count?: typeof counts } = { count: counts },
+  ) => {
+    const parts = hintOf(reason, { name: "ProductRow", memo, count: at.count })
+    return parts && text(parts)
+  }
+  const sameValue = {
+    key: "style",
+    old: 1,
+    new: 1,
+    reference: "same-value" as const,
+  }
+  const newFunction = {
+    key: "onAdd",
+    old: 1,
+    new: 2,
+    reference: "new-function" as const,
+  }
+  expect(hint(render({ kinds: ["parent"] }))).toBe(
+    "3 of its 4 renders were like this. Wrap ProductRow in memo() to skip them.",
+  )
+  expect(hint(render({ props: [sameValue] }))).toBe(
+    "style is a new object with the same value each render. Move it out of the parent's render or wrap it in useMemo.",
+  )
+  expect(hint(render({ props: [newFunction] }), true)).toBe(
+    "onAdd is a new function each render. Wrap it in useCallback.",
+  )
+  expect(hint(render({ props: [newFunction, sameValue] }), true)).toContain(
+    "useMemo",
+  )
+  expect(hint(render({ props: [newFunction] }))).toBeUndefined()
+  expect(hint(render({ kinds: ["parent"] }), false, {})).toBeUndefined()
+  expect(
+    hint(render({ kinds: ["parent"] }), false, {
+      count: { ...counts, wasted: 0 },
+    }),
+  ).toBeUndefined()
+  expect(hint(render({ kinds: ["mount"] }))).toBeUndefined()
 })

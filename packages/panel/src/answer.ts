@@ -1,4 +1,4 @@
-import type { Owner, RenderReason, Value } from "@reactdx/messages"
+import type { Owner, RenderCount, RenderReason, Value } from "@reactdx/messages"
 import { previewText } from "./value"
 
 // A sentence in pieces (docs/panel.md, Inspector): text, a name in code, or a
@@ -115,4 +115,39 @@ export function answerOf(
     ...clauses.flatMap((parts, i) => (i ? [" and ", ...parts] : parts)),
     ".",
   ]
+}
+
+// One fix for the render, first that applies: a render only because the
+// parent rendered (memo skips those), a prop that's a new object with the same
+// value, or a new function a memo component can't skip.
+export function hintOf(
+  render: RenderReason,
+  at: { name: string; memo: boolean; count: RenderCount | undefined },
+): Part[] | undefined {
+  const wasted = at.count?.wasted ?? 0
+  if (render.kinds.length === 1 && render.kinds[0] === "parent" && wasted)
+    return [
+      `${wasted} of its ${at.count?.renders} renders were like this. Wrap `,
+      { code: at.name },
+      " in ",
+      { code: "memo()" },
+      " to skip them.",
+    ]
+  const props = render.props ?? []
+  const same = props.find((change) => change.reference === "same-value")
+  if (same)
+    return [
+      { code: same.key },
+      " is a new object with the same value each render. Move it out of the parent's render or wrap it in ",
+      { code: "useMemo" },
+      ".",
+    ]
+  const fresh = props.find((change) => change.reference === "new-function")
+  if (fresh && at.memo)
+    return [
+      { code: fresh.key },
+      " is a new function each render. Wrap it in ",
+      { code: "useCallback" },
+      ".",
+    ]
 }
