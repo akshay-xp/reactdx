@@ -427,39 +427,6 @@ test("an unrelated commit sends no inspected message", { skip }, async () => {
 
 type Bench = Window & { __bench: (mode: string, n: number) => number[] }
 
-// DIAGNOSTIC (temporary): 20 one-cell commits under the CPU profiler, the top
-// functions by self time.
-async function profileOne(page: import("puppeteer").Page) {
-  const client = await page.createCDPSession()
-  await client.send("Profiler.enable")
-  await client.send("Profiler.setSamplingInterval", { interval: 50 })
-  await client.send("Profiler.start")
-  const times = await page.evaluate(() => (window as Bench).__bench("one", 20))
-  const { profile } = await client.send("Profiler.stop")
-  await client.detach()
-  const byId = new Map(
-    profile.nodes.map(
-      (n: {
-        id: number
-        callFrame: { functionName: string; url: string; lineNumber: number }
-      }) => [n.id, n],
-    ),
-  )
-  const self = new Map<string, number>()
-  profile.samples?.forEach((id: number, i: number) => {
-    const f = byId.get(id)?.callFrame
-    if (!f) return
-    const k = `${f.functionName || "(anon)"} ${f.url.split("/").pop()}:${f.lineNumber}`
-    self.set(k, (self.get(k) ?? 0) + (profile.timeDeltas?.[i] ?? 0) / 1000)
-  })
-  const top = [...self]
-    .filter(([k]) => !k.startsWith("(idle)"))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 20)
-    .map(([k, ms]) => `${ms.toFixed(1)} ${k}`)
-  return { times: times.map((ms) => ms.toFixed(1)).join(" "), top }
-}
-
 // Recording (M6) runs inside React's commit hook while the panel watches:
 // flushSync's time includes it. Medians of five after a warm-up commit. Each
 // waits for the panel to settle (its first load, the warm-up's flush): on a
@@ -488,10 +455,6 @@ test("watching adds under 1 ms to a one-cell commit, under 25% to all cells", {
       return [...times].sort((a, b) => a - b)[2] as number
     }
     const before = { one: await median("one"), all: await median("all") }
-    const profBefore = await profileOne(page)
-    console.log(
-      `DIAG before: ${profBefore.times}\n  ${profBefore.top.join("\n  ")}`,
-    )
     const panel = await openPanel(browser)
     await panel.waitForFunction(
       () =>
@@ -502,11 +465,6 @@ test("watching adds under 1 ms to a one-cell commit, under 25% to all cells", {
     )
     await settle()
     const watched = { one: await median("one"), all: await median("all") }
-    await settle()
-    const profWatched = await profileOne(page)
-    console.log(
-      `DIAG watched: ${profWatched.times}\n  ${profWatched.top.join("\n  ")}`,
-    )
     t.diagnostic(
       `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} ms`,
     )
