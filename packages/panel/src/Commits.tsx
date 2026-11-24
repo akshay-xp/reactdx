@@ -196,17 +196,17 @@ export function Commits(props: {
       </div>
       <section
         data-testid="commit-detail"
-        aria-label="Commit"
+        aria-label="Update"
         class="min-h-0 min-w-0 flex-1 overflow-auto border-border border-t p-2 sm:border-t-0 sm:border-l"
       >
         <Switch>
           <Match when={props.timeline.picked() === undefined}>
             <p class="text-muted">
-              Pick a commit to see what rendered and why.
+              Pick an update to see what rendered and why.
             </p>
           </Match>
           <Match when={props.timeline.detail() === null}>
-            <p class="text-muted">This commit is no longer recorded.</p>
+            <p class="text-muted">This update is no longer recorded.</p>
           </Match>
           <Match when={props.timeline.detail()}>
             {(detail) => (

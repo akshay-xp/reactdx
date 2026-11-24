@@ -308,7 +308,7 @@ export function Inspector(props: {
   // The answer for the render shown (the latest, or the pinned commit's).
   const answer = (): Part[] => {
     const inspector = props.inspector
-    if (inspector.absent()) return ["Didn't render in this commit."]
+    if (inspector.absent()) return ["Didn't render in this update."]
     const render = inspector.render()
     if (render === null) return ["This render is no longer recorded."]
     // Stepped back, the render is loading: nothing yet.
@@ -829,20 +829,18 @@ function Reasons(props: {
   }
   return (
     <>
-      <Show when={props.inspector.pinned()}>
-        {(seq) => (
-          <ReasonRow name="pinned" testid="pinned">
-            Commit #{seq()}
-            <button
-              type="button"
-              tabIndex={-1}
-              class="ml-2 text-accent hover:underline"
-              onClick={() => props.onLatest?.()}
-            >
-              Show latest
-            </button>
-          </ReasonRow>
-        )}
+      <Show when={props.inspector.pinned() !== undefined}>
+        <ReasonRow name="pinned" testid="pinned">
+          An earlier update
+          <button
+            type="button"
+            tabIndex={-1}
+            class="ml-2 text-accent hover:underline"
+            onClick={() => props.onLatest?.()}
+          >
+            Show latest
+          </button>
+        </ReasonRow>
       </Show>
       <Show when={props.inspector.history().length}>
         {(count) => (
@@ -863,7 +861,7 @@ function Reasons(props: {
         fallback={
           <Switch>
             <Match when={props.inspector.absent()}>
-              <p class="pl-6 text-muted">Didn't render in this commit.</p>
+              <p class="pl-6 text-muted">Didn't render in this update.</p>
             </Match>
             <Match when={props.inspector.render() === null}>
               <p class="pl-6 text-muted">This render is no longer recorded.</p>

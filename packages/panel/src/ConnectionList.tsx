@@ -20,7 +20,7 @@ import type { TreeStore } from "./tree"
 
 // The tabs, by index.
 const COMPONENTS = 0
-const COMMITS = 1
+const UPDATES = 1
 
 const build = (bundleType: number) =>
   bundleType === 1 ? "development" : "production"
@@ -32,7 +32,7 @@ export function ConnectionList(props: {
   renderers: RendererView[]
   tree: TreeStore
   inspector: InspectorStore
-  // Recent commits: with them, Components and Commits are tabs.
+  // Recent updates: with them, Components and Updates are tabs.
   timeline?: TimelineStore
   sources: Sources
   settings: Settings
@@ -71,7 +71,7 @@ export function ConnectionList(props: {
                         <li data-testid="root" data-commits={root.commits}>
                           <span>Root {root.id}</span>
                           <span class="pl-2 text-muted">
-                            {root.commits} commits
+                            {root.commits} updates
                           </span>
                           <Show when={renderer.bundleType === 1}>
                             <TreeView tree={props.tree} rootId={root.id} />
@@ -101,11 +101,11 @@ export function ConnectionList(props: {
           settings={props.settings}
           onRenders={() => {
             props.timeline?.setFiltered(true)
-            setTab(COMMITS)
+            setTab(UPDATES)
           }}
           onCommit={(seq) => {
             props.timeline?.pick(seq)
-            setTab(COMMITS)
+            setTab(UPDATES)
           }}
           onLatest={() => props.timeline?.live()}
           now={now}
@@ -148,7 +148,8 @@ export function ConnectionList(props: {
               tabs={[
                 { name: "Components", content: split() },
                 {
-                  name: "Commits",
+                  name: "Updates",
+                  count: timeline().commits().length,
                   content: (
                     <Commits
                       timeline={timeline()}
@@ -174,7 +175,8 @@ export function ConnectionList(props: {
 // Tabs inside the panel, each content kept mounted (hidden when another is
 // selected) so it keeps its scroll and state. Left/Right move between tabs.
 function Tabs(props: {
-  tabs: { name: string; content: JSX.Element }[]
+  // `count`: a number after the name (the tab is named by `name` alone).
+  tabs: { name: string; count?: number; content: JSX.Element }[]
   selected: number
   onSelect: (index: number) => void
 }) {
@@ -200,6 +202,7 @@ function Tabs(props: {
               id={`${id(i())}-tab`}
               aria-controls={id(i())}
               aria-selected={selected() === i()}
+              aria-label={tab.name}
               tabIndex={selected() === i() ? 0 : -1}
               class="-mb-px border-transparent border-b-2 px-2 py-1 text-muted hover:text-fg aria-selected:border-accent aria-selected:text-fg"
               onClick={() => setSelected(i())}
@@ -213,6 +216,11 @@ function Tabs(props: {
               }}
             >
               {tab.name}
+              <Show when={tab.count !== undefined}>
+                <span class="ml-1 rounded bg-surface px-1 text-muted">
+                  {tab.count}
+                </span>
+              </Show>
             </button>
           )}
         </For>

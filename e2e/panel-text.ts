@@ -170,7 +170,7 @@ export async function openPanelText(
         (name) =>
           (
             [...document.querySelectorAll("[role=tab]")].find(
-              (el) => el.textContent === name,
+              (el) => el.getAttribute("aria-label") === name,
             ) as HTMLElement | undefined
           )?.click(),
         name,
@@ -535,7 +535,7 @@ const json = JSON.stringify
 export type Copy = { heading: string; commits: number[]; names: string[] }
 
 const HEADING = /React (\S+) (development|production) (\S+)/g
-const ROOT = /Root \d+ (\d+) commits/g
+const ROOT = /Root \d+ (\d+) updates/g
 const LEGEND = "Numbers: renders since DevTools opened"
 
 // "React 18.3.1 development react-dom Root 1 3 commits App Counter 2 ..." into

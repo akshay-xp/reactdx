@@ -1935,7 +1935,7 @@ test("the node's recorded renders link to Commits; no stepper", () => {
   getByRole("button", { name: "1 render recorded" })
 })
 
-test("a picked commit shows; one the node didn't render in says so", () => {
+test("a picked update shows; one the node didn't render in says so", () => {
   const { container, inspector, select, nav, getByRole } = setup()
   select()
   inspector.receive(
@@ -1946,16 +1946,17 @@ test("a picked commit shows; one the node didn't render in says so", () => {
     }),
   )
   inspector.pin(5)
-  expect(container.textContent).toContain("Didn't render in this commit.")
+  expect(container.textContent).toContain("Didn't render in this update.")
   expect(reasons(container)).toEqual([])
   expect(container.querySelector("[data-testid=pinned]")?.textContent).toBe(
-    "Commit #5Show latest",
+    "An earlier updateShow latest",
   )
+  expect(container.textContent).not.toMatch(/commit|#\d/i)
   fireEvent.click(getByRole("button", { name: "Show latest" }))
   expect(nav).toEqual([["latest"]])
   inspector.pin(undefined)
   expect(container.querySelector("[data-testid=pinned]")).toBeNull()
-  expect(container.textContent).not.toContain("Didn't render in this commit.")
+  expect(container.textContent).not.toContain("Didn't render in this update.")
   expect(reasons(container)).toEqual(["Parent rendered"])
 })
 

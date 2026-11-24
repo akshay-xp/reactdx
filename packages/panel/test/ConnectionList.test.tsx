@@ -110,8 +110,8 @@ test("each React copy with its roots and commit counts", () => {
   expect(
     roots.map((el) => [el.textContent, el.getAttribute("data-commits")]),
   ).toEqual([
-    ["Root 13 commits", "3"],
-    ["Root 20 commits", "0"],
+    ["Root 13 updates", "3"],
+    ["Root 20 updates", "0"],
   ])
 })
 
@@ -239,7 +239,7 @@ test("the inspector sits beside the trees, below them when narrow", () => {
   ).toBeNull()
 })
 
-test("Components and Commits are tabs; the hidden one keeps its state", () => {
+test("Components and Updates are tabs; the hidden one keeps its state", () => {
   const tree = createTreeStore()
   tree.apply(
     treeBatch(1, [
@@ -269,7 +269,7 @@ test("Components and Commits are tabs; the hidden one keeps its state", () => {
     />
   ))
   const components = screen.getByRole("tab", { name: "Components" })
-  const commits = screen.getByRole("tab", { name: "Commits" })
+  const commits = screen.getByRole("tab", { name: "Updates" })
   const panel = (tab: HTMLElement) =>
     document.getElementById(tab.getAttribute("aria-controls") ?? "")
   expect(components.getAttribute("aria-selected")).toBe("true")
@@ -318,7 +318,8 @@ test("links move between a commit and its components", () => {
   const selectedTab = () =>
     screen
       .getAllByRole("tab")
-      .find((t) => t.getAttribute("aria-selected") === "true")?.textContent
+      .find((t) => t.getAttribute("aria-selected") === "true")
+      ?.getAttribute("aria-label")
   timeline.receiveCommits(
     commitsMessage(
       [
@@ -348,13 +349,15 @@ test("links move between a commit and its components", () => {
 
   // The full reasons are folded under Renders.
   fireEvent.click(screen.getByRole("treeitem", { name: /^Renders/ }))
+  // The tab says how many updates there are.
+  expect(tab("Updates").textContent).toBe("Updates2")
   fireEvent.click(screen.getByRole("button", { name: "+1 more" }))
-  expect(selectedTab()).toBe("Commits")
+  expect(selectedTab()).toBe("Updates")
   expect(timeline.picked()).toBe(4)
 
   fireEvent.click(tab("Components"))
   fireEvent.click(screen.getByRole("button", { name: "1 render recorded" }))
-  expect(selectedTab()).toBe("Commits")
+  expect(selectedTab()).toBe("Updates")
   expect(screen.getByRole("button", { name: "Only Counter" }).ariaPressed).toBe(
     "true",
   )
