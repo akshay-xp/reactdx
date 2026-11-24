@@ -2,10 +2,12 @@ import { expect, test } from "vitest"
 import {
   commitsMessage,
   committed,
+  countsMessage,
   expanded,
   inspected,
   parseCommits,
   parseCommitted,
+  parseCounts,
   parseExpanded,
   parseInspected,
   parseReasoned,
@@ -614,4 +616,25 @@ test("committed carries each render's kinds and the triggers, or null once relea
     { ...message, updaters: [{ id: 1, hooks: [{ name: 1, old: 1, new: 2 }] }] },
   ])
     expect(parseCommitted(bad)).toBeUndefined()
+})
+
+test("render counts are at most 2,000, each a positive id with wasted at most renders", () => {
+  const count = { id: 3, renders: 4, wasted: 3 }
+  expect(parseCounts(countsMessage([count]))).toEqual(countsMessage([count]))
+  expect(parseCounts(countsMessage([]))).toEqual(countsMessage([]))
+  expect(parseCounts(countsMessage([{ ...count, extra: 1 } as never]))).toEqual(
+    countsMessage([count]),
+  )
+  for (const bad of [
+    Array(2001).fill(count),
+    [{ ...count, id: 0 }],
+    [{ ...count, renders: 0, wasted: 0 }],
+    [{ ...count, renders: 1.5 }],
+    [{ ...count, wasted: 5 }],
+    [{ ...count, wasted: -1 }],
+  ])
+    expect(parseCounts(countsMessage(bad as never))).toBeUndefined()
+  expect(
+    parseCounts({ source: "reactdx", type: "counts", counts: {} }),
+  ).toBeUndefined()
 })

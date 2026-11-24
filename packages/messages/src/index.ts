@@ -353,6 +353,33 @@ export function parseCommitted(data: unknown): CommittedMessage | undefined {
   if (triggers) return committed(seq, list, triggers)
 }
 
+// Agent to panel, on the flush (M6 #72): renders and wasted renders (only
+// because the parent rendered) per component since the watch, for the ones
+// that changed (a watch: all), at most MAX_OPS per message.
+export type RenderCount = { id: number; renders: number; wasted: number }
+export type CountsMessage = {
+  source: "reactdx"
+  type: "counts"
+  counts: RenderCount[]
+}
+export const countsMessage = (counts: RenderCount[]): CountsMessage => ({
+  source: "reactdx",
+  type: "counts",
+  counts,
+})
+
+export function parseCounts(data: unknown): CountsMessage | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { source, type, counts } = data as Record<string, unknown>
+  if (source !== "reactdx" || type !== "counts") return
+  const list = parseList(counts, MAX_OPS, ({ id, renders, wasted }) =>
+    isId(id) && isId(renders) && isCount(wasted) && wasted <= renders
+      ? { id, renders, wasted }
+      : undefined,
+  )
+  if (list) return countsMessage(list)
+}
+
 // Panel to background: render the inspected node again, nothing changed.
 export type RerenderMessage = { type: "rerender"; tabId: number; id: number }
 

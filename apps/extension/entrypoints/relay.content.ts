@@ -4,6 +4,7 @@ import {
   type InjectAgentMessage,
   parseCommits,
   parseCommitted,
+  parseCounts,
   parseExpanded,
   parseInspected,
   parsePageMessage,
@@ -108,6 +109,7 @@ export default defineContentScript({
         parseReasoned(event.data) ??
         parseCommits(event.data) ??
         parseCommitted(event.data) ??
+        parseCounts(event.data) ??
         parseValueText(event.data) ??
         parseValueStored(event.data)
       if (forward) {
