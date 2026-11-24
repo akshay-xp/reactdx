@@ -669,7 +669,10 @@ export function startAgent(
       setTimeout(refresh)
     } else if (data.type === "copy-value" || data.type === "store-value")
       useValue(parseTreeCommand(data))
-    else if (data.type === "unwatch") {
+    else if (data.type === "clear-updates") {
+      recorder.clearCommits()
+      postCommits(true)
+    } else if (data.type === "unwatch") {
       stopPicking()
       inspect(null)
       watching = false

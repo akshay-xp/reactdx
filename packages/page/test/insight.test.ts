@@ -310,6 +310,19 @@ test("a commit's summary counts its renders only because a parent rendered", asy
   expect(cells.recorder.summaries(0).at(-1)?.wasted).toBe(0)
 })
 
+test("clearing the commits keeps each component's latest render and counts", async () => {
+  const { record, recorder, id } = await mount(h(Parent), { maxCommits: 2 })
+  for (const n of [2, 4, 6]) await record(() => setParent(n))
+  expect(recorder.dropped()).toBe(true)
+  recorder.clearCommits()
+  expect(recorder.summaries(0)).toEqual([])
+  expect(recorder.dropped()).toBe(false)
+  expect(recorder.latest(id("Child"))).toBeDefined()
+  expect(recorder.takeCounts(true).length).toBeGreaterThan(0)
+  await record(() => setParent(8))
+  expect(recorder.summaries(0)).toHaveLength(1)
+})
+
 test("the newest commit is kept whole even over the budget", async () => {
   const { record, recorder } = await mount(h(Cells), { maxRecords: 2 })
   await record(() => setCells(1))

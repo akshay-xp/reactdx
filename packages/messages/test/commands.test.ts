@@ -323,3 +323,10 @@ test("commit asks for the ids a commit rendered", () => {
   })
   expect(parseTreeCommand({ type: "commit", seq: 0 })).toBeUndefined()
 })
+
+test("clear-updates carries nothing: extra fields go", () => {
+  expect(parseTreeCommand({ type: "clear-updates", x: 1 })).toEqual({
+    type: "clear-updates",
+  })
+  expect(parseTreeCommand("clear-updates")).toBeUndefined()
+})

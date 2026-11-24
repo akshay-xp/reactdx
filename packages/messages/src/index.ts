@@ -308,6 +308,8 @@ export type ReasonMessage = {
 
 // Panel to background: the ids the commit `seq` rendered (M6 #67).
 export type CommitMessage = { type: "commit"; tabId: number; seq: number }
+// Panel to background: empty the page's recorded updates (M6 #74).
+export type ClearUpdatesMessage = { type: "clear-updates"; tabId: number }
 
 // What one component rendered for in a commit.
 export type CommitRender = { id: number; kinds: RenderKind[] }
@@ -430,6 +432,7 @@ export type TreeCommand =
   | { type: "rerender"; id: number }
   | { type: "reason"; id: number; seq: number }
   | { type: "commit"; seq: number }
+  | { type: "clear-updates" }
   | { type: "force"; id: number; kind: "fallback" | "error"; on: boolean }
   | {
       type: "rename-path"
@@ -445,6 +448,7 @@ const BARE_COMMANDS = new Set<unknown>([
   "clear-highlight",
   "pick-start",
   "pick-stop",
+  "clear-updates",
 ])
 
 export function parseTreeCommand(data: unknown): TreeCommand | undefined {

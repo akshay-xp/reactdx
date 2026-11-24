@@ -785,6 +785,22 @@ test("each posted update names the state change that caused it", async () => {
   })
 })
 
+test("clear-updates empties the update list, then new updates come", async () => {
+  await React.act(() => setReasoned(950))
+  await flushed()
+  posted.length = 0
+  send({ source: "reactdx-relay", type: "clear-updates" })
+  const [cleared] = posted.filter(
+    (m): m is CommitsMessage => (m as { type?: string }).type === "commits",
+  )
+  expect(cleared?.commits).toEqual([])
+  expect(cleared?.dropped).toBe(false)
+  posted.length = 0
+  await React.act(() => setReasoned(951))
+  await flushed()
+  expect(commitLists().flat()).toHaveLength(1)
+})
+
 const countLists = () =>
   posted
     .filter(

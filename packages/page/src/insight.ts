@@ -305,6 +305,13 @@ export function createRecorder({
   // the ids changed since the last takeCounts.
   const counts = new Map<number, { renders: number; wasted: number }>()
   const changed = new Set<number>()
+  // Empties the buffered commits; each component's latest record and its
+  // counts stay (the Updates list's Clear).
+  const clearCommits = () => {
+    commits.length = 0
+    held = 0
+    dropped = false
+  }
   const commitAt = (seq: number) => commits.find((commit) => commit.seq === seq)
 
   const reasons = (
@@ -401,10 +408,9 @@ export function createRecorder({
         dropped = true
       }
     },
+    clearCommits,
     clear() {
-      commits.length = 0
-      held = 0
-      dropped = false
+      clearCommits()
       latest.clear()
       counts.clear()
       changed.clear()
