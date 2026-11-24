@@ -16,14 +16,9 @@ export type Row = {
   expandable: boolean
   expanded: boolean
   match: boolean
-  // Renders since the watch (0: none recorded), and of those, wasted ones.
-  renders: number
-  wasted: number
-  // Rendered in the newest counts (the page's last flush), for RECENT_MS.
-  recent: boolean
   // A run of same-named siblings shown as one row (its id is minus the first
-  // member's): how many, and their wasted renders.
-  group?: { size: number; wasted: number }
+  // member's): how many.
+  group?: { size: number }
 }
 
 const RECENT_MS = 1000
@@ -52,7 +47,10 @@ export function createTreeStore() {
   const groups = new Map<number, number[]>()
   // The page's render counts by id (docs/messages.md, counts).
   const counts = new Map<number, RenderCount>()
-  const [recent, setRecent] = createSignal(new Set<number>())
+  // Counts and recency change on every flush: rows read them through their own
+  // signal, so a flush doesn't rebuild the rows.
+  const [tally, setTally] = createSignal(0)
+  let recent = new Set<number>()
   let fade: ReturnType<typeof setTimeout> | undefined
   const [version, setVersion] = createSignal(0)
   const [selected, select] = createSignal<number>()
@@ -74,6 +72,7 @@ export function createTreeStore() {
     nodes.clear()
     tops.clear()
     counts.clear()
+    setTally(tally() + 1)
   }
   const forget = (id: number) => {
     for (const child of nodes.get(id)?.children ?? []) forget(child)
@@ -140,7 +139,6 @@ export function createTreeStore() {
   const rows = (rootId: number): Row[] => {
     version()
     const rows: Row[] = []
-    const countOf = (id: number) => counts.get(id) ?? { renders: 0, wasted: 0 }
     const visit = (id: number, depth: number) => {
       const node = nodes.get(id) as Node
       const { name, kind, key, children } = node
@@ -155,15 +153,11 @@ export function createTreeStore() {
         expandable: kids.length > 0,
         expanded,
         match: isMatch(node),
-        renders: countOf(id).renders,
-        wasted: countOf(id).wasted,
-        recent: recent().has(id),
       })
       if (expanded) visitAll(kids, depth + 1)
     }
     const group = (members: number[], depth: number) => {
       const { name, kind } = nodes.get(members[0] as number) as Node
-      const wasted = members.reduce((sum, id) => sum + countOf(id).wasted, 0)
       const id = -(members[0] as number)
       const expanded = members.some((member) => opened.has(member))
       groups.set(id, members)
@@ -176,10 +170,7 @@ export function createTreeStore() {
         expandable: true,
         expanded,
         match: false,
-        renders: 0,
-        wasted,
-        recent: members.some((id) => recent().has(id)),
-        group: { size: members.length, wasted },
+        group: { size: members.length },
       })
       if (expanded) for (const member of members) visit(member, depth + 1)
     }
@@ -290,20 +281,37 @@ export function createTreeStore() {
     rows,
     receiveCounts(message: CountsMessage) {
       for (const count of message.counts) counts.set(count.id, count)
-      setRecent(new Set(message.counts.map((count) => count.id)))
+      recent = new Set(message.counts.map((count) => count.id))
       clearTimeout(fade)
-      fade = setTimeout(() => setRecent(new Set<number>()), RECENT_MS)
-      setVersion(version() + 1)
+      fade = setTimeout(() => {
+        recent = new Set()
+        setTally(tally() + 1)
+      }, RECENT_MS)
+      setTally(tally() + 1)
     },
     // A node's parent id (undefined at the top of a root, or unknown).
     parentOf(id: number) {
       version()
       return nodes.get(id)?.parentId || undefined
     },
-    // A node's render counts (undefined: none since the watch).
-    countOf(id: number) {
-      version()
-      return counts.get(id)
+    // A node's render counts (undefined: none since the watch). A group row's
+    // are its members' wasted renders.
+    countOf(id: number): RenderCount | undefined {
+      tally()
+      if (id > 0) return counts.get(id)
+      const wasted = (groups.get(id) ?? []).reduce(
+        (sum, member) => sum + (counts.get(member)?.wasted ?? 0),
+        0,
+      )
+      return { id, renders: 0, wasted }
+    },
+    // In the newest counts (the page's last flush) for RECENT_MS; a group row
+    // while any member is.
+    isRecent(id: number) {
+      tally()
+      return id > 0
+        ? recent.has(id)
+        : (groups.get(id) ?? []).some((member) => recent.has(member))
     },
     // A node's name, kind and key, for the inspector's header.
     info(id: number) {

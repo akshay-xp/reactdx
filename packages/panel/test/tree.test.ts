@@ -6,7 +6,7 @@ import {
 } from "@reactdx/messages"
 import { createEffect, createMemo, createRoot, on } from "solid-js"
 import { expect, test, vi } from "vitest"
-import { createTreeStore, type Row } from "../src/tree"
+import { createTreeStore, type TreeStore } from "../src/tree"
 
 const add = (
   id: number,
@@ -339,22 +339,25 @@ test("reveal selects a node and expands its ancestors", () => {
   expect(tree.selected()).toBe(5)
 })
 
-const countsOf = (rows: Row[]) =>
-  rows.map(({ name, renders, wasted }) => `${name} ${renders}/${wasted}`)
+const countsOf = (tree: TreeStore) =>
+  tree.rows(1).map(({ id, name }) => {
+    const { renders = 0, wasted = 0 } = tree.countOf(id) ?? {}
+    return `${name} ${renders}/${wasted}`
+  })
 
 test("render counts land on their rows until the tree resets", () => {
   const tree = createTreeStore()
   tree.apply(resync)
   tree.receiveCounts(countsMessage([{ id: 3, renders: 4, wasted: 1 }]))
-  expect(countsOf(tree.rows(1))).toEqual(["App 0/0", "A 4/1", "B 0/0", "C 0/0"])
+  expect(countsOf(tree)).toEqual(["App 0/0", "A 4/1", "B 0/0", "C 0/0"])
   tree.receiveCounts(countsMessage([{ id: 3, renders: 5, wasted: 1 }]))
-  expect(countsOf(tree.rows(1))).toContain("A 5/1")
+  expect(countsOf(tree)).toContain("A 5/1")
   tree.apply(resync)
-  expect(countsOf(tree.rows(1))).toContain("A 0/0")
+  expect(countsOf(tree)).toContain("A 0/0")
   tree.receiveCounts(countsMessage([{ id: 3, renders: 5, wasted: 1 }]))
   tree.clear()
   tree.apply(resync)
-  expect(countsOf(tree.rows(1))).toContain("A 0/0")
+  expect(countsOf(tree)).toContain("A 0/0")
 })
 
 test("the rows in the newest counts are recent for a second", () => {
@@ -365,7 +368,7 @@ test("the rows in the newest counts are recent for a second", () => {
     const recent = () =>
       tree
         .rows(1)
-        .filter((row) => row.recent)
+        .filter((row) => tree.isRecent(row.id))
         .map((row) => row.name)
     tree.receiveCounts(countsMessage([{ id: 3, renders: 2, wasted: 0 }]))
     expect(recent()).toEqual(["A"])
@@ -409,8 +412,10 @@ test("five or more same-named siblings in a row become one group row", () => {
     key: null,
     expandable: true,
     expanded: false,
-    group: { size: 5, wasted: 10 },
+    group: { size: 5 },
   })
+  expect(tree.countOf(-2)?.wasted).toBe(10)
+  expect(tree.isRecent(-2)).toBe(true)
   expect(rows[2]?.group).toBeUndefined()
 })
 

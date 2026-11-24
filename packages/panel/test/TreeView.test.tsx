@@ -212,6 +212,24 @@ test("a row shows its render count past one, and a mark while just rendered", ()
   }
 })
 
+// The page sends counts on every flush: rebuilding the rows for them replaced
+// every row element, which a 10,000-row tree can't afford.
+test("counts and their fade update the rows in place", () => {
+  vi.useFakeTimers()
+  try {
+    const { tree, nodes } = view([add(1, 0, "App"), add(2, 1, "A")])
+    const before = nodes()
+    tree.receiveCounts(countsMessage([{ id: 2, renders: 2, wasted: 0 }]))
+    vi.advanceTimersByTime(1000)
+    expect(
+      nodes()[1]?.querySelector("[data-testid=renders]")?.textContent,
+    ).toBe("2")
+    expect(nodes().every((node, i) => node === before[i])).toBe(true)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 test("a group row shows its size and wasted renders, and opens to its members", () => {
   const rowsOps = [0, 1, 2, 3, 4].map((i) =>
     add(2 + i, 1, "Row", i, "function", `r${i}`),

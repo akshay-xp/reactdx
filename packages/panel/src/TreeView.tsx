@@ -144,77 +144,81 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
           style={{ transform: `translateY(${range().start * ROW_HEIGHT}px)` }}
         >
           <For each={rows().slice(range().start, range().end)}>
-            {(row) => (
-              <div
-                data-testid="node"
-                role="treeitem"
-                tabIndex={-1}
-                aria-level={row.depth + 1}
-                aria-selected={selected(row.id)}
-                aria-expanded={row.expandable ? row.expanded : undefined}
-                class="flex items-center gap-1 whitespace-nowrap font-mono"
-                classList={{
-                  "bg-selected": selected(row.id),
-                  // Just rendered: under the selection's own background.
-                  "bg-highlight/40": row.recent && !selected(row.id),
-                }}
-                data-id={row.id}
-                data-recent={row.recent || undefined}
-                data-match={row.match || undefined}
-                style={{
-                  height: `${ROW_HEIGHT}px`,
-                  "padding-left": `${row.depth * 12}px`,
-                }}
-              >
-                <span data-toggle class="flex w-3 shrink-0 justify-center">
-                  <Show when={row.expandable}>
-                    <span
-                      data-testid="toggle"
-                      aria-hidden="true"
-                      style={TRIANGLE}
-                      classList={{ "rotate-90": row.expanded }}
-                    />
-                  </Show>
-                </span>
-                <span
-                  data-testid="name"
+            {(row) => {
+              const recent = () => props.tree.isRecent(row.id)
+              const count = () => props.tree.countOf(row.id)
+              return (
+                <div
+                  data-testid="node"
+                  role="treeitem"
+                  tabIndex={-1}
+                  aria-level={row.depth + 1}
+                  aria-selected={selected(row.id)}
+                  aria-expanded={row.expandable ? row.expanded : undefined}
+                  class="flex items-center gap-1 whitespace-nowrap font-mono"
                   classList={{
-                    "text-fg": selected(row.id),
-                    "text-accent": row.match && !selected(row.id),
+                    "bg-selected": selected(row.id),
+                    // Just rendered: under the selection's own background.
+                    "bg-highlight/40": recent() && !selected(row.id),
+                  }}
+                  data-id={row.id}
+                  data-recent={recent() || undefined}
+                  data-match={row.match || undefined}
+                  style={{
+                    height: `${ROW_HEIGHT}px`,
+                    "padding-left": `${row.depth * 12}px`,
                   }}
                 >
-                  {row.name}
-                </span>
-                <Show when={BADGES.has(row.kind)}>
-                  {" "}
-                  <span data-testid="badge" class={muted(row.id)}>
-                    {row.kind}
+                  <span data-toggle class="flex w-3 shrink-0 justify-center">
+                    <Show when={row.expandable}>
+                      <span
+                        data-testid="toggle"
+                        aria-hidden="true"
+                        style={TRIANGLE}
+                        classList={{ "rotate-90": row.expanded }}
+                      />
+                    </Show>
                   </span>
-                </Show>
-                <Show when={row.key !== null}>
-                  {" "}
-                  <span data-testid="key" class={`truncate ${muted(row.id)}`}>
-                    {`key="${row.key}"`}
-                  </span>
-                </Show>
-                <Show when={row.group}>
-                  {(group) => (
-                    <span data-testid="group" class={muted(row.id)}>
-                      {`×${group().size}`}
-                      {group().wasted ? ` · ${group().wasted} wasted` : ""}
-                    </span>
-                  )}
-                </Show>
-                <Show when={row.renders > 1}>
                   <span
-                    data-testid="renders"
-                    class={`ml-auto pr-2 pl-3 tabular-nums ${muted(row.id)}`}
+                    data-testid="name"
+                    classList={{
+                      "text-fg": selected(row.id),
+                      "text-accent": row.match && !selected(row.id),
+                    }}
                   >
-                    {row.renders}
+                    {row.name}
                   </span>
-                </Show>
-              </div>
-            )}
+                  <Show when={BADGES.has(row.kind)}>
+                    {" "}
+                    <span data-testid="badge" class={muted(row.id)}>
+                      {row.kind}
+                    </span>
+                  </Show>
+                  <Show when={row.key !== null}>
+                    {" "}
+                    <span data-testid="key" class={`truncate ${muted(row.id)}`}>
+                      {`key="${row.key}"`}
+                    </span>
+                  </Show>
+                  <Show when={row.group}>
+                    {(group) => (
+                      <span data-testid="group" class={muted(row.id)}>
+                        {`×${group().size}`}
+                        {count()?.wasted ? ` · ${count()?.wasted} wasted` : ""}
+                      </span>
+                    )}
+                  </Show>
+                  <Show when={(count()?.renders ?? 0) > 1}>
+                    <span
+                      data-testid="renders"
+                      class={`ml-auto pr-2 pl-3 tabular-nums ${muted(row.id)}`}
+                    >
+                      {count()?.renders}
+                    </span>
+                  </Show>
+                </div>
+              )
+            }}
           </For>
         </div>
       </div>
