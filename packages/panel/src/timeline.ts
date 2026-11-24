@@ -8,7 +8,9 @@ import type {
 import { createSignal } from "solid-js"
 
 // What the store asks the page for; the panel adds the tab (CommitMessage).
-export type TimelineCommand = { type: "commit"; seq: number }
+export type TimelineCommand =
+  | { type: "commit"; seq: number }
+  | { type: "clear-updates" }
 
 export type TimelineStore = ReturnType<typeof createTimelineStore>
 
@@ -28,13 +30,17 @@ export function createTimelineStore(
   const [detail, setDetail] = createSignal<CommitDetail | null>()
   const [filtered, setFiltered] = createSignal(false)
   const [dropped, setDropped] = createSignal(false)
+  // Only the updates that had renders for nothing.
+  const [wasted, setWasted] = createSignal(false)
 
-  const shown = (history: number[]) => {
-    const list = filtered()
-      ? commits().filter((commit) => history.includes(commit.seq))
-      : commits()
-    return [...list].reverse()
-  }
+  const shown = (history: number[]) =>
+    commits()
+      .filter(
+        (commit) =>
+          (!filtered() || history.includes(commit.seq)) &&
+          (!wasted() || commit.wasted > 0),
+      )
+      .reverse()
   const pick = (seq: number) => {
     setPicked(seq)
     setDetail(undefined)
@@ -54,6 +60,14 @@ export function createTimelineStore(
     detail,
     filtered,
     setFiltered,
+    wasted,
+    setWasted,
+    // Empties the page's recorded updates and the list.
+    clearUpdates() {
+      send({ type: "clear-updates" })
+      setCommits([])
+      live()
+    },
     // Whether the page's limits dropped older commits.
     dropped,
     pick,

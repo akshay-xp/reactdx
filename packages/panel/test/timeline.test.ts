@@ -148,3 +148,25 @@ test("Down steps to older commits, Up to newer; Home, End; Escape unpicks", () =
   expect(pins.at(-1)).toBeUndefined()
   expect(timeline.key("a", [])).toBe(false)
 })
+
+test("With wasted renders keeps the updates that had some; clear empties the list", () => {
+  const { timeline, sent } = setup()
+  timeline.receiveCommits(
+    holding([
+      summary(1),
+      { ...summary(2), renders: 3, wasted: 2 },
+      { ...summary(3), renders: 3, wasted: 1 },
+      summary(4),
+    ]),
+  )
+  timeline.setWasted(true)
+  expect(timeline.wasted()).toBe(true)
+  expect(timeline.shown([]).map((c) => c.seq)).toEqual([3, 2])
+  timeline.setFiltered(true)
+  expect(timeline.shown([2, 4]).map((c) => c.seq)).toEqual([2])
+  timeline.pick(2)
+  timeline.clearUpdates()
+  expect(sent.at(-1)).toEqual({ type: "clear-updates" })
+  expect(timeline.shown([])).toEqual([])
+  expect(timeline.picked()).toBeUndefined()
+})
