@@ -294,6 +294,11 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
   forgedCommitted({ renders: [{ id: 0, kinds: ["state"] }] })
   forgedCommitted({ renders: [{ id: 1, kinds: ["DROPPED"] }] })
   forgedCommitted({ renders: [], updaters: [{ id: 1, hooks: [{ name: 1 }] }] })
+  const counts = (list: unknown[]) =>
+    post({ source: "reactdx", type: "counts", counts: list })
+  counts([{ id: 0, renders: 9001, wasted: 0 }])
+  counts([{ id: 1, renders: 2, wasted: 9001 }])
+  counts(Array(2001).fill({ id: 1, renders: 9001, wasted: 0 }))
   command({ type: "commit", seq: 0 })
   command({ type: "commit", seq: "x" })
   command({ type: "reason", id: 1, seq: 0 })
@@ -342,6 +347,9 @@ test("forged inspect messages and commands break nothing", {
     const after = await until(panel.inspector, forged)
     assert.ok(!after.includes("DROPPED"), after)
     assert.ok(forged(after), after)
+    // No forged render count reached a row.
+    const tree = await panel()
+    assert.ok(!tree.includes("9001"), tree)
     if (name === "chrome") {
       const frame = await openPanel(browser)
       assert.equal(await frame.$("img"), null)

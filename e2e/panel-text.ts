@@ -527,9 +527,11 @@ export type Copy = { heading: string; commits: number[]; names: string[] }
 
 const HEADING = /React (\S+) (development|production) (\S+)/g
 const ROOT = /Root \d+ (\d+) commits/g
+const LEGEND = "Numbers: renders since DevTools opened"
 
-// "React 18.3.1 development react-dom Root 1 3 commits App Counter ..." into copies:
-// each root's commit count, and the component names listed under its roots.
+// "React 18.3.1 development react-dom Root 1 3 commits App Counter 2 ..." into
+// copies: each root's commit count, and the component names listed under its
+// roots (not the rows' render counts, nor the legend under the trees).
 export function parseCopies(text: string): Copy[] {
   const headings = [...text.matchAll(HEADING)]
   return headings.map((match, i) => {
@@ -542,7 +544,11 @@ export function parseCopies(text: string): Copy[] {
     return {
       heading: match[0],
       commits: [...segment.matchAll(ROOT)].map(([, n]) => Number(n)),
-      names: segment.replace(ROOT, " ").split(" ").filter(Boolean),
+      names: segment
+        .replace(ROOT, " ")
+        .replace(LEGEND, " ")
+        .split(" ")
+        .filter((name) => name && !/^\d+$/.test(name)),
     }
   })
 }

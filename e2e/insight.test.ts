@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
 import type { BrowserName } from "./launch.ts"
-import { panelFor, selectListed, until } from "./panel-text.ts"
+import { panelFor, parseCopies, selectListed, until } from "./panel-text.ts"
 
 const name = process.env.E2E_BROWSER as BrowserName
 const only = process.env.E2E_FIXTURE
@@ -167,6 +167,52 @@ for (const { fixture, port } of fixtures)
       await panelShows("Pick a commit to see what rendered and why.")
       await panel.press("Only Counter")
       await rows((list) => list.length === 3)
+    } finally {
+      await browser.close()
+    }
+  })
+
+for (const { fixture, port } of fixtures)
+  test(`${fixture}: the tree counts renders and folds a long list`, async () => {
+    const { browser, page, panel } = await panelFor(
+      name,
+      `http://localhost:${port}/insight.html`,
+      "after",
+    )
+    const shows = async (
+      part: string,
+      read = panel as () => Promise<string>,
+    ) => {
+      const text = await until(read, (t) => t.includes(part))
+      assert.ok(text.includes(part), text)
+    }
+    try {
+      await page.waitForSelector("[data-testid=insight]")
+      // Watched before the list mounts, so its mount counts.
+      await until(panel, (t) =>
+        parseCopies(t).some((c) => c.names.includes("Insight")),
+      )
+      await page.click("[data-testid=list]")
+      await page.waitForSelector("[data-testid=search]")
+      await page.type("[data-testid=search]", "abc")
+      // A mount and 3 keystrokes each, the keystrokes for nothing.
+      await shows("Product ×40 · 120 wasted")
+      await panel.select("Product")
+      await panel.key("Product", "ArrowRight")
+      await shows('Product key="0" 4')
+      await panel.key("Product", "ArrowLeft")
+      await until(panel, (t) => !t.includes('Product key="0"'))
+
+      // A pick inside the closed group opens it on the picked row.
+      await panel.press("Pick element")
+      await until(
+        async () => String(await panel.pressed("Pick element")),
+        (t) => t === "true",
+      )
+      const products = await page.$$("[data-testid=product]")
+      await products[6]?.click()
+      await shows('Product key="6"', panel.inspector)
+      await shows('Product key="6" 4')
     } finally {
       await browser.close()
     }

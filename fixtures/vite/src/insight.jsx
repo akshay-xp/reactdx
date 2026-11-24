@@ -9,7 +9,9 @@ import { createRoot } from "react-dom/client"
 // gets an inline object and callback, which are new references on every
 // render. Effects' "b" runs its [a, b] effect (b changed) and its no-deps one,
 // not its [a] one. "rekey" remounts Item by its key; "wrap" swaps Inner's div
-// for a section, remounting Inner.
+// for a section, remounting Inner. "list" mounts Products: 40 Product rows (not
+// memo, a stable item each) that every keystroke in its search re-renders for
+// nothing (M6 #72).
 const Theme = createContext("light")
 Theme.displayName = "Theme"
 
@@ -132,10 +134,39 @@ function Reader() {
   return <p data-testid="reader">Theme {useContext(Theme)}</p>
 }
 
+const items = Array.from({ length: 40 }, (_, id) => ({
+  id,
+  name: `Product ${id}`,
+}))
+function Product({ item }) {
+  return <p data-testid="product">{item.name}</p>
+}
+function Products() {
+  const [query, setQuery] = useState("")
+  const matches = items.filter((item) =>
+    item.name.toLowerCase().includes(query.toLowerCase()),
+  ).length
+  return (
+    <div>
+      <input
+        data-testid="search"
+        aria-label="Search products"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <p>{matches} match</p>
+      {items.map((item) => (
+        <Product key={item.id} item={item} />
+      ))}
+    </div>
+  )
+}
+
 function Insight() {
   const [count, setCount] = useState(1)
   const [theme, setTheme] = useState("dark")
   const [late, setLate] = useState(false)
+  const [list, setList] = useState(false)
   return (
     <div data-testid="insight">
       <Theme.Provider value={theme}>
@@ -155,6 +186,10 @@ function Insight() {
           </>
         )}
       </Theme.Provider>
+      {list && <Products />}
+      <button type="button" data-testid="list" onClick={() => setList(true)}>
+        List
+      </button>
       <button type="button" data-testid="add" onClick={() => setLate(true)}>
         Add
       </button>

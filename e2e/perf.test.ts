@@ -35,6 +35,19 @@ async function benchPanel() {
       ),
     { timeout: 10_000 },
   )
+  // The 10,000 Cells fold into one group row (M6 #72): open it.
+  const group = await panel.waitForSelector(
+    '[data-testid=node][data-id^="-"] [data-toggle]',
+    { timeout: 10_000 },
+  )
+  await group?.click()
+  await panel.waitForFunction(
+    () =>
+      [...document.querySelectorAll("[data-testid=node]")].some(
+        (n) => n.textContent === 'Cell key="0"',
+      ),
+    { timeout: 10_000 },
+  )
   return { browser, page, panel }
 }
 
