@@ -46,6 +46,10 @@ export function createTreeStore() {
   const nodes = new Map<number, Node>()
   const tops = new Map<number, number[]>()
   const collapsed = new Set<number>()
+  // Members of open groups: a group is open when any of its members is here.
+  const opened = new Set<number>()
+  // Each group row's members, by its id, as the last rows() found them.
+  const groups = new Map<number, number[]>()
   // The page's render counts by id (docs/messages.md, counts).
   const counts = new Map<number, RenderCount>()
   const [recent, setRecent] = createSignal(new Set<number>())
@@ -160,20 +164,24 @@ export function createTreeStore() {
     const group = (members: number[], depth: number) => {
       const { name, kind } = nodes.get(members[0] as number) as Node
       const wasted = members.reduce((sum, id) => sum + countOf(id).wasted, 0)
+      const id = -(members[0] as number)
+      const expanded = members.some((member) => opened.has(member))
+      groups.set(id, members)
       rows.push({
-        id: -(members[0] as number),
+        id,
         name,
         depth,
         kind,
         key: null,
         expandable: true,
-        expanded: false,
+        expanded,
         match: false,
         renders: 0,
         wasted,
         recent: members.some((id) => recent().has(id)),
         group: { size: members.length, wasted },
       })
+      if (expanded) for (const member of members) visit(member, depth + 1)
     }
     const visitAll = (ids: number[], depth: number) => {
       for (let at = 0; at < ids.length; ) {
@@ -194,16 +202,13 @@ export function createTreeStore() {
   }
 
   const toggle = (id: number) => {
-    if (!collapsed.delete(id)) collapsed.add(id)
+    if (id < 0) {
+      const members = groups.get(id) ?? [-id]
+      if (members.some((member) => opened.has(member)))
+        for (const member of members) opened.delete(member)
+      else opened.add(-id)
+    } else if (!collapsed.delete(id)) collapsed.add(id)
     setVersion(version() + 1)
-  }
-
-  // The nearest visible ancestor, or undefined at the top of a root.
-  const parentOf = (id: number) => {
-    let parent = nodes.get(id)?.parentId
-    while (parent && !visible(nodes.get(parent)))
-      parent = nodes.get(parent)?.parentId
-    return parent || undefined
   }
 
   // Every root's matches depth-first, collapsed subtrees included.
@@ -226,8 +231,11 @@ export function createTreeStore() {
   const [reveals, setReveals] = createSignal(0)
   const reveal = (id: number) =>
     batch(() => {
-      for (let at = nodes.get(id)?.parentId; at; at = nodes.get(at)?.parentId)
+      opened.add(id)
+      for (let at = nodes.get(id)?.parentId; at; at = nodes.get(at)?.parentId) {
         collapsed.delete(at)
+        opened.add(at)
+      }
       select(id)
       setVersion(version() + 1)
       setReveals(reveals() + 1)
@@ -239,9 +247,12 @@ export function createTreeStore() {
     const at = list.findIndex((row) => row.id === selected())
     const current = list[at]
     if (current && name === "ArrowLeft") {
-      const parent = parentOf(current.id)
+      // The row's parent in the list: a group row for its members.
+      let parent: Row | undefined
+      for (let i = at - 1; i >= 0 && !parent; i--)
+        if ((list[i] as Row).depth < current.depth) parent = list[i]
       if (current.expandable && current.expanded) toggle(current.id)
-      else if (parent) select(parent)
+      else if (parent) select(parent.id)
       return true
     }
     if (current && name === "ArrowRight") {
@@ -270,7 +281,8 @@ export function createTreeStore() {
       else if (batch.seq !== expected) stale = true
       if (!stale) stale = !batch.ops.every(applyOp)
       expected = batch.seq + 1
-      if (!nodes.has(selected() as number)) select(undefined)
+      // A group row's id is minus its first member's.
+      if (!nodes.has(Math.abs(selected() ?? 0))) select(undefined)
       setVersion(version() + 1)
       return stale
     },
@@ -330,13 +342,14 @@ export function createTreeStore() {
     showHosts,
     setShowHosts(on: boolean) {
       showHostsSignal(on)
-      if (!visible(nodes.get(selected() as number))) select(undefined)
+      if (!visible(nodes.get(Math.abs(selected() ?? 0)))) select(undefined)
       setVersion(version() + 1)
     },
 
     clear() {
       reset()
       collapsed.clear()
+      opened.clear()
       select(undefined)
       hover(undefined)
       setPicking(false)

@@ -413,3 +413,38 @@ test("five or more same-named siblings in a row become one group row", () => {
   })
   expect(rows[2]?.group).toBeUndefined()
 })
+
+test("a group opens to its members, by toggle, reveal, keys and search", () => {
+  const tree = createTreeStore()
+  tree.apply(listed)
+  const rowNames = () => names(tree.rows(1)).slice(0, 7)
+  tree.toggle(-2)
+  expect(rowNames()).toEqual([
+    "0 App",
+    "1 Row",
+    "2 Row",
+    "2 Row",
+    "2 Row",
+    "2 Row",
+    "2 Row",
+  ])
+  expect(tree.rows(1)[1]?.expanded).toBe(true)
+  tree.toggle(-2)
+  expect(rowNames()[2]).toBe("1 Item")
+  tree.reveal(4)
+  expect(tree.selected()).toBe(4)
+  expect(tree.rows(1)[1]?.expanded).toBe(true)
+  tree.key(1, "ArrowLeft")
+  expect(tree.selected()).toBe(-2)
+  // A group row stays selected across batches while its first member lives.
+  tree.apply(treeBatch(2, [{ op: "rename", id: 7, name: "Item" }]))
+  expect(tree.selected()).toBe(-2)
+  tree.key(1, "ArrowLeft")
+  expect(tree.rows(1)[1]?.expanded).toBe(false)
+  tree.key(1, "ArrowRight")
+  expect(tree.rows(1)[1]?.expanded).toBe(true)
+  tree.toggle(-2)
+  tree.setQuery("Row")
+  expect(tree.selected()).toBe(2)
+  expect(tree.rows(1)[1]?.expanded).toBe(true)
+})
