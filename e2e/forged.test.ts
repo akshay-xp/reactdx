@@ -273,6 +273,7 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
     rootId: 1,
     updaters: [],
     renders: 1,
+    wasted: 0,
   })
   const commits = (list: unknown[], fields: Record<string, unknown> = {}) =>
     post({
@@ -288,6 +289,7 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
   commits([{ ...summary(9001), renders: "x" }])
   commits([summary(9001)], { oldest: 0 })
   commits([summary(9001)], { dropped: "yes" })
+  commits([{ ...summary(9001), wasted: 2 }])
   const forgedCommitted = (fields: Record<string, unknown>) =>
     post({ source: "reactdx", type: "committed", seq: 1, ...fields })
   forgedCommitted({ renders: Array(2001).fill({ id: 1, kinds: ["state"] }) })
@@ -353,9 +355,10 @@ test("forged inspect messages and commands break nothing", {
     if (name === "chrome") {
       const frame = await openPanel(browser)
       assert.equal(await frame.$("img"), null)
-      // No forged commit joined the list.
+      // No forged update joined the list: their time, 1 ms after the epoch,
+      // would read hundreds of thousands of hours ago.
       const rows = await panel.commits()
-      assert.ok(!rows.some((row) => row.startsWith("#9")), String(rows))
+      assert.ok(!rows.some((row) => /\d{5,}h ago/.test(row)), String(rows))
     }
 
     // The agent and panel still work. A forged inspect command (valid-shaped ids)

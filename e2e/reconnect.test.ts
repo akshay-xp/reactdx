@@ -79,7 +79,7 @@ test("the panel reconnects after the background stops", { skip }, async () => {
 
 type Unwatched = Window & { unwatched?: boolean }
 
-test("a stopped background keeps the recorded commits; closing the panel clears them", {
+test("a stopped background keeps the recorded updates; closing the panel clears them", {
   skip,
 }, async () => {
   const { browser, page, panel } = await panelFor(name, URL_18, "after")
@@ -89,40 +89,44 @@ test("a stopped background keeps the recorded commits; closing the panel clears 
     const text = await until(read, (t) => t.includes(part))
     assert.ok(text.includes(part), text)
   }
-  // The rows' seqs ("#12"): their times move on.
-  const seqs = async (check: (seqs: string[]) => boolean) => {
+  // How many updates Counter's group holds: its clicks share one cause.
+  const grouped = async (check: (count: number) => boolean) => {
     const deadline = Date.now() + 5000
-    const read = async () =>
-      (await panel.commits()).map((row) => row.split(" ")[0] ?? "")
-    let list = await read()
-    while (!check(list) && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      list = await read()
+    const read = async () => {
+      const row = (await panel.commits()).find((text) =>
+        /^Counter · \d+ updates/.test(text),
+      )
+      return Number(row?.match(/(\d+) updates/)?.[1] ?? 0)
     }
-    assert.ok(check(list), JSON.stringify(list))
-    return list
+    let count = await read()
+    while (!check(count) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      count = await read()
+    }
+    assert.ok(check(count), String(count))
+    return count
   }
   try {
     await expectLive(page, panel)
     await selectListed(panel, "Counter")
+    // The renders recorded are in the folded Renders section.
+    await panel.key("Renders", "ArrowRight")
     await click()
     await click()
     await shows(panel.inspector, "3 renders recorded")
-    await panel.tab("Commits")
-    const before = await seqs((list) => list.length >= 2)
-    await panel.key("Commits", "Home")
-    await shows(panel, "Triggered by")
+    await panel.tab("Updates")
+    const before = await grouped((count) => count >= 2)
+    await panel.key("Updates", "Home")
+    await shows(panel, "only because a parent rendered")
 
     await stopBackground(name, browser)
-    // A commit after the reconnect joins the same list, none lost.
+    // An update after the reconnect joins the same list, none lost.
     await click()
-    await seqs(
-      (list) =>
-        list.length === before.length + 1 &&
-        JSON.stringify(list.slice(1)) === JSON.stringify(before),
+    await grouped((count) => count === before + 1)
+    const picked = await until(panel, (t) =>
+      t.includes("only because a parent rendered"),
     )
-    const picked = await until(panel, (t) => t.includes("Triggered by"))
-    assert.ok(!picked.includes("Pick a commit"), picked)
+    assert.ok(!picked.includes("Pick an update"), picked)
     await panel.tab("Components")
     await shows(panel.inspector, "4 renders recorded")
 

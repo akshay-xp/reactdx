@@ -7,7 +7,8 @@ import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 // one (Next's) shows its last rows, where the app's components are, only then.
 // hover(name) puts the pointer on
 // the tree row with that name; leave() moves it off the trees. close() closes DevTools.
-// press(name) clicks the button with that name (its text or aria-label), pressed(name)
+// press(name) clicks the button with that name (its text or aria-label) or the
+// checkbox with that label, pressed(name)
 // reads its aria-pressed, key(text, key) presses a key on a row or the commits
 // list, tab(name) selects the panel tab with that name, commits() reads the
 // commit rows as listed, selected() is the selected row's name, select(name) clicks the row with that name.
@@ -119,8 +120,9 @@ export async function openPanelText(
       await frame.hover("[data-testid=search]")
     }
     const close = () => frame.page().close()
+    // A button by its name, or a checkbox by its label's text.
     const button = (name: string) =>
-      `[...document.querySelectorAll("button")].find((el) => !el.closest("[hidden]") && (el.getAttribute("aria-label") ?? el.textContent.trim()) === ${json(name)})`
+      `[...document.querySelectorAll("button, input[type=checkbox]")].find((el) => !el.closest("[hidden]") && (el.getAttribute("aria-label") ?? (el.labels?.[0] ?? el).textContent.trim()) === ${json(name)})`
     const press = async (name: string) => {
       await frame.evaluate(`${button(name)}.click()`)
     }
@@ -379,7 +381,7 @@ export async function openPanelText(
   }
   const role = (name: string) => `Ci.nsIAccessibleRole.ROLE_${name}`
   const button = (name: string) =>
-    `(node.role === ${role("PUSHBUTTON")} || node.role === ${role("TOGGLE_BUTTON")}) && node.name === ${json(name)}`
+    `[${role("PUSHBUTTON")}, ${role("TOGGLE_BUTTON")}, ${role("CHECKBUTTON")}].includes(node.role) && node.name === ${json(name)}`
   const press = async (name: string) => {
     await onAccessible(button(name), `node.doAction(0); return "ok"`)
   }

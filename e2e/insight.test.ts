@@ -120,7 +120,7 @@ for (const { fixture, port } of fixtures)
   })
 
 for (const { fixture, port } of fixtures)
-  test(`${fixture}: Commits lists what rendered and why, and links to it`, async () => {
+  test(`${fixture}: Updates lists causes, groups bursts and links to components`, async () => {
     const { browser, page, panel } = await panelFor(
       name,
       `http://localhost:${port}/insight.html`,
@@ -156,37 +156,60 @@ for (const { fixture, port } of fixtures)
       await page.click("[data-testid=count]")
       await inspectorShows("2 renders recorded")
 
-      await panel.tab("Commits")
-      await rows((list) => /· 1 component · Counter$/.test(list[0] ?? ""))
-      // The newest: Counter's second update.
-      await panel.key("Commits", "Home")
-      await panelShows("Counter (State #1: 4 → 5)")
+      await panel.tab("Updates")
+      // Two clicks with the same cause: one group.
+      await rows((list) => /^Counter · 2 updates/.test(list[0] ?? ""))
+      // The newest: Counter's second update (its group opens on the pick).
+      await panel.key("Updates", "Home")
+      await panelShows("Counter set State #1: 4 → 5")
       await panelShows("Counter State changed")
-      // Its name opens Counter, the inspector pinned to that commit.
+      // Its name opens Counter, the inspector pinned to that update.
       await panel.press("Counter")
       await inspectorShows("Show latest")
       await inspectorShows("State #1: 4 → 5")
       await selectListed(panel, "Shown", (t) =>
-        t.includes("Didn't render in this commit."),
+        t.includes("Didn't render in this update."),
       )
       await panel.press("Show latest")
-      await inspectorLacks("Didn't render in this commit.")
+      await inspectorLacks("Didn't render in this update.")
 
-      // A commit Counter didn't render in, for the filter to leave out.
+      // An update Counter didn't render in, for the filter to leave out.
       await page.click("[data-testid=state]")
       await selectListed(panel, "Counter", (t) =>
         t.includes("2 renders recorded"),
       )
       await panel.press("2 renders recorded")
-      await panelShows("Pick a commit to see what rendered and why.")
+      await panelShows("Pick an update to see what rendered and why.")
       assert.equal(await panel.pressed("Only Counter"), true)
-      await rows((list) => list.length === 2)
-      await panel.key("Commits", "End")
-      await panelShows("Counter (State #1: 3 → 4)")
-      await panel.key("Commits", "Escape")
-      await panelShows("Pick a commit to see what rendered and why.")
+      // Counter's two updates, as their group.
+      await rows((list) => list.length === 1)
+      await panel.key("Updates", "End")
+      await panelShows("Counter set State #1: 3 → 4")
+      await panel.key("Updates", "Escape")
+      await panelShows("Pick an update to see what rendered and why.")
       await panel.press("Only Counter")
-      await rows((list) => list.length === 3)
+      await rows((list) => list.length === 2)
+
+      // A burst of typing in the list: one group, its renders mostly wasted.
+      await page.click("[data-testid=list]")
+      await page.waitForSelector("[data-testid=search]")
+      await page.type("[data-testid=search]", "abcd")
+      await rows((list) => /^Products · 4 updates/.test(list[0] ?? ""))
+      await page.click("[data-testid=count]")
+      await rows((list) => /^Counter: 5 → 6/.test(list[0] ?? ""))
+      await panel.key("Updates", "Home")
+      await panel.key("Updates", "ArrowDown")
+      await panelShows('Products set State #1: "abc" → "abcd"')
+      await panelShows("40 wasted, hidden")
+      assert.ok(!(await panel()).includes("Product Parent rendered"))
+      await panel.press("Hide renders with no reason")
+      await panelShows("Product ×40 Parent rendered")
+
+      // Clear starts the list over.
+      await panel.press("Clear")
+      await panelShows("No updates since DevTools opened.")
+      await page.click("[data-testid=count]")
+      await rows((list) => list.length === 1)
     } finally {
       await browser.close()
     }
