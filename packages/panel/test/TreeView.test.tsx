@@ -211,3 +211,23 @@ test("a row shows its render count past one, and a mark while just rendered", ()
     vi.useRealTimers()
   }
 })
+
+test("a group row shows its size and wasted renders, and opens to its members", () => {
+  const rowsOps = [0, 1, 2, 3, 4].map((i) =>
+    add(2 + i, 1, "Row", i, "function", `r${i}`),
+  )
+  const { tree, nodes } = view([add(1, 0, "App"), ...rowsOps])
+  tree.receiveCounts(
+    countsMessage([2, 3, 4, 5, 6].map((id) => ({ id, renders: 3, wasted: 2 }))),
+  )
+  const group = nodes()[1] as HTMLElement
+  expect(group.querySelector("[data-testid=name]")?.textContent).toBe("Row")
+  expect(group.querySelector("[data-testid=group]")?.textContent).toBe(
+    "×5 · 10 wasted",
+  )
+  expect(group.querySelector("[data-testid=key]")).toBeNull()
+  fireEvent.pointerOver(group)
+  expect(tree.hovered()).toBeUndefined()
+  fireEvent.click(group.querySelector("[data-toggle]") as Element)
+  expect(nodes()).toHaveLength(7)
+})

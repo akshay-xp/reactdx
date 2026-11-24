@@ -164,7 +164,12 @@ browser.devtools.network.onNavigated.addListener(() => {
 
 render(() => {
   createEffect(
-    on(tree.selected, (id) => inspector.inspect(id), { defer: true }),
+    // A group row (a negative id) has nothing to inspect.
+    on(
+      tree.selected,
+      (id) => inspector.inspect(id !== undefined && id > 0 ? id : undefined),
+      { defer: true },
+    ),
   )
   // The hovered row is highlighted on the page, until the pointer leaves the tree.
   createEffect(

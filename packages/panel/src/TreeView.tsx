@@ -124,7 +124,9 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
         const row = (event.target as Element).closest<HTMLElement>(
           "[data-testid=node]",
         )
-        if (row) props.tree.hover(Number(row.dataset.id))
+        // A group row (a negative id) is no component on the page.
+        const id = Number(row?.dataset.id)
+        if (row) props.tree.hover(id > 0 ? id : undefined)
       }}
       onPointerLeave={() => props.tree.hover(undefined)}
       onKeyDown={(event) => {
@@ -194,6 +196,14 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                   <span data-testid="key" class={`truncate ${muted(row.id)}`}>
                     {`key="${row.key}"`}
                   </span>
+                </Show>
+                <Show when={row.group}>
+                  {(group) => (
+                    <span data-testid="group" class={muted(row.id)}>
+                      {`×${group().size}`}
+                      {group().wasted ? ` · ${group().wasted} wasted` : ""}
+                    </span>
+                  )}
                 </Show>
                 <Show when={row.renders > 1}>
                   <span
