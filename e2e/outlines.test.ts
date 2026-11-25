@@ -224,3 +224,16 @@ if (fixtures.some((f) => f.fixture === "next"))
       await browser.close()
     }
   })
+
+for (const { port } of fixtures.filter((f) => f.fixture === "19"))
+  test("19: the islands mode is unavailable without Server Components, and says why", async () => {
+    const { browser, panel } = await suspensePage(port)
+    try {
+      assert.deepEqual(await panel.described("Light client islands"), {
+        disabled: true,
+        description: "No Server Components on this page",
+      })
+    } finally {
+      await browser.close()
+    }
+  })

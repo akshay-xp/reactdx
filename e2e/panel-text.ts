@@ -24,6 +24,8 @@ export type PanelText = (() => Promise<string>) & {
   close(): Promise<void>
   press(name: string): Promise<void>
   pressed(name: string): Promise<boolean>
+  // Whether that button is disabled, and its description (its title).
+  described(name: string): Promise<{ disabled: boolean; description: string }>
   // Focuses the row (or the listbox) whose text or name includes `text` and
   // presses `key`.
   key(text: string, key: Key): Promise<void>
@@ -136,6 +138,10 @@ export async function openPanelText(
       (await frame.evaluate(
         `${button(name)}.getAttribute("aria-pressed") === "true"`,
       )) as boolean
+    const described = async (name: string) =>
+      (await frame.evaluate(
+        `(() => { const el = ${button(name)}; return { disabled: el.disabled, description: el.title } })()`,
+      )) as { disabled: boolean; description: string }
     const edit = async (row: string, text: string) => {
       const value = await frame.waitForFunction(
         (row) =>
@@ -201,6 +207,7 @@ export async function openPanelText(
       close,
       press,
       pressed,
+      described,
       key,
       tab,
       commits,
@@ -515,6 +522,18 @@ export async function openPanelText(
       node.getState(state, extra)
       return String((state.value & Ci.nsIAccessibleStates.STATE_PRESSED) !== 0)`,
     )) === "true"
+  const described = async (name: string) =>
+    JSON.parse(
+      (await onAccessible(
+        button(name),
+        `const state = {}, extra = {}
+        node.getState(state, extra)
+        return JSON.stringify({
+          disabled: (state.value & Ci.nsIAccessibleStates.STATE_UNAVAILABLE) !== 0,
+          description: node.description,
+        })`,
+      )) as string,
+    ) as { disabled: boolean; description: string }
   // The selected tree item's first text leaf: its name (the toggle has no text).
   const selected = async () =>
     (await onAccessible(
@@ -543,6 +562,7 @@ export async function openPanelText(
     close,
     press,
     pressed,
+    described,
     key,
     tab,
     commits,
