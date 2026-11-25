@@ -58,6 +58,11 @@ export function Commits(props: {
       ...(commit.wasted ? [`${commit.wasted} wasted`] : []),
       when(commit),
     ].join(" · ")
+  const toggleGroup = (option: HTMLElement) => {
+    const { group, open } = option.dataset
+    if (group !== undefined)
+      props.timeline.setGroup(Number(group), open !== "true")
+  }
   // A group or waterfall row's id, toggled open by setGroup.
   const groupId = (row: Exclude<UpdateRow, { kind: "update" }>) =>
     row.kind === "group" ? row.id : row.waterfall.id
@@ -146,15 +151,20 @@ export function Commits(props: {
               const option = (event.target as Element).closest<HTMLElement>(
                 "[role=option]",
               )
-              const { seq, group } = option?.dataset ?? {}
+              const seq = option?.dataset.seq
               if (seq !== undefined) props.timeline.pick(Number(seq))
-              else if (group !== undefined)
-                props.timeline.setGroup(
-                  Number(group),
-                  option?.dataset.open !== "true",
-                )
+              else if (option) toggleGroup(option)
             }}
             onKeyDown={(event) => {
+              // A focused group or waterfall row opens and closes like a click.
+              const group = (event.target as Element).closest<HTMLElement>(
+                "[role=option][data-group]",
+              )
+              if (group && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault()
+                toggleGroup(group)
+                return
+              }
               if (!props.timeline.key(event.key, history())) return
               event.preventDefault()
               // DevTools opens its drawer on Escape.

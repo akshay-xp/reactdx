@@ -390,3 +390,27 @@ test("a waterfall reads as one row; open, its waits on one time axis and a hint"
   fireEvent.click(row())
   expect(container.querySelector("[data-testid=waterfall]")).toBeNull()
 })
+
+test("Enter or Space on a focused group row opens and closes it", () => {
+  const { timeline, container } = setup()
+  const change = (old: number) => ({ hook: 0, old, new: old + 1 })
+  timeline.receiveCommits(
+    commitsMessage(
+      [1, 2].map((seq) => ({
+        ...summary(seq, 1000, 1, [2]),
+        change: change(seq),
+      })),
+      1,
+      false,
+    ),
+  )
+  const group = () =>
+    container.querySelector<HTMLElement>(
+      "[role=option][data-group]",
+    ) as HTMLElement
+  expect(group().dataset.open).toBe("false")
+  fireEvent.keyDown(group(), { key: "Enter" })
+  expect(group().dataset.open).toBe("true")
+  fireEvent.keyDown(group(), { key: " " })
+  expect(group().dataset.open).toBe("false")
+})
