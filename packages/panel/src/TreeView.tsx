@@ -9,6 +9,7 @@ import {
   onMount,
   Show,
 } from "solid-js"
+import { durationText } from "./size"
 import type { TreeStore } from "./tree"
 import { ROW_HEIGHT, windowOf } from "./virtual"
 
@@ -154,6 +155,7 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
             {(row) => {
               const recent = () => props.tree.isRecent(row.id)
               const count = () => props.tree.countOf(row.id)
+              const wait = () => props.tree.waitOf(row.id)
               return (
                 <div
                   data-testid="node"
@@ -222,6 +224,25 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                     <span data-testid="key" class={`truncate ${muted(row.id)}`}>
                       {`key="${row.key}"`}
                     </span>
+                  </Show>
+                  <Show when={wait()}>
+                    {(wait) => (
+                      <>
+                        {" "}
+                        <span
+                          data-testid="wait"
+                          class={
+                            wait().waiting
+                              ? tint(row.id, "text-waiting")
+                              : muted(row.id)
+                          }
+                        >
+                          {wait().waiting
+                            ? `waiting ${durationText(wait().ms)}`
+                            : `arrived in ${durationText(wait().ms)}`}
+                        </span>
+                      </>
+                    )}
                   </Show>
                   <Show when={row.group}>
                     {(group) => (

@@ -290,3 +290,20 @@ test("the first client component under a server row is marked client", () => {
   fireEvent.click(nodes()[1] as Element)
   expect(mark.className).toContain("text-fg")
 })
+
+test("a Suspense row says how long it has waited, then how long it took", () => {
+  const { tree, nodes } = view([add(1, 0, "Suspense", 0, "suspense")])
+  tree.apply(
+    treeBatch(2, [{ op: "suspense", id: 1, state: "waiting", ms: 1200 }]),
+  )
+  expect(nodes().map((n) => n.textContent)).toEqual(["Suspense waiting 1.2s"])
+  const chip = () => nodes()[0]?.querySelector("[data-testid=wait]") as Element
+  expect(chip().className).toContain("text-waiting")
+  tree.apply(
+    treeBatch(3, [{ op: "suspense", id: 1, state: "arrived", ms: 840 }]),
+  )
+  expect(nodes().map((n) => n.textContent)).toEqual([
+    "Suspense arrived in 840 ms",
+  ])
+  expect(chip().className).toContain("text-muted")
+})
