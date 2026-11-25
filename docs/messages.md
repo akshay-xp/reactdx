@@ -85,16 +85,16 @@ The agent's component tree (`docs/page.md`, "Tree"), posted only while watched (
 
 Any invalid op drops the whole batch (a partial batch would desync the mirror). Extra keys are stripped.
 
-| Field               | Accepted                                      |
-| ------------------- | --------------------------------------------- |
-| `seq`               | positive safe integer                         |
-| `ops`               | array of 1 to 2,000 (`MAX_OPS`)               |
-| `id`, `rootId`      | positive safe integer                         |
-| `parentId`, `index` | non-negative safe integer                     |
-| `kind`              | a `TreeKind` (`docs/page.md`)                 |
-| `name`              | string, at most 256 chars (`MAX_TREE_STRING`) |
-| `key`               | `null` or string, at most 256 chars           |
-| `children`          | array of at most 10,000 positive ids          |
+| Field               | Accepted                                                  |
+| ------------------- | --------------------------------------------------------- |
+| `seq`               | positive safe integer                                     |
+| `ops`               | array of 1 to 2,000 (`MAX_OPS`)                           |
+| `id`, `rootId`      | positive safe integer                                     |
+| `parentId`, `index` | non-negative safe integer                                 |
+| `kind`              | a `TreeKind` (`docs/page.md`), `server` included (M7 #77) |
+| `name`              | string, at most 256 chars (`MAX_TREE_STRING`)             |
+| `key`               | `null` or string, at most 256 chars                       |
+| `children`          | array of at most 10,000 positive ids                      |
 
 ## Tree port commands (`parseTreeCommand(data)`; M3 #28)
 
