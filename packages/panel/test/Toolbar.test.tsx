@@ -130,3 +130,30 @@ test("the outlines toggle is off at first and switches the tree's outlines", () 
   expect(button.getAttribute("aria-pressed")).toBe("false")
   expect(tree.outlines()).toBeUndefined()
 })
+
+test("the islands toggle needs a Server Component and takes turns with the Suspense one", () => {
+  const { tree, container } = setup()
+  const islands = container.querySelector(
+    "[data-testid=islands]",
+  ) as HTMLButtonElement
+  const suspense = container.querySelector(
+    "[data-testid=outlines]",
+  ) as HTMLButtonElement
+  expect(islands).not.toBeNull()
+  expect(islands.getAttribute("aria-label")).toBe("Light client islands")
+  expect(islands.disabled).toBe(true)
+  expect(islands.title).toBe("No Server Components on this page")
+
+  tree.apply(treeBatch(2, [add(9, 1, "Shop", 3, "server")]))
+  expect(islands.disabled).toBe(false)
+  expect(islands.title).toBe("Light client islands")
+  fireEvent.click(islands)
+  expect(tree.outlines()).toBe("islands")
+  expect(islands.getAttribute("aria-pressed")).toBe("true")
+  expect(suspense.getAttribute("aria-pressed")).toBe("false")
+  fireEvent.click(suspense)
+  expect(tree.outlines()).toBe("suspense")
+  expect(islands.getAttribute("aria-pressed")).toBe("false")
+  fireEvent.click(suspense)
+  expect(tree.outlines()).toBeUndefined()
+})

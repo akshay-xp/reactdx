@@ -2,7 +2,7 @@ import { type JSX, Show } from "solid-js"
 import type { TreeStore } from "./tree"
 
 // The element picker, search (Enter: next match, Shift+Enter: previous), the
-// DOM elements filter and the page outlines toggle. Laid out like SnapQL's search bar.
+// DOM elements filter and the page outline modes (one at a time). Laid out like SnapQL's search bar.
 export function Toolbar(props: { tree: TreeStore }) {
   return (
     <search class="flex h-10 shrink-0 items-center gap-2 border-border border-b px-2 py-1.5">
@@ -56,6 +56,24 @@ export function Toolbar(props: { tree: TreeStore }) {
           rx="1"
           stroke-dasharray="3 2"
         />
+      </IconButton>
+      <IconButton
+        label="Light client islands"
+        testid="islands"
+        reason={
+          props.tree.hasServers()
+            ? undefined
+            : "No Server Components on this page"
+        }
+        pressed={props.tree.outlines() === "islands"}
+        onClick={() =>
+          props.tree.setOutlines(
+            props.tree.outlines() === "islands" ? undefined : "islands",
+          )
+        }
+      >
+        <rect x="4" y="4" width="16" height="16" rx="1" />
+        <path d="M4 20 20 4v16z" fill="currentColor" />
       </IconButton>
     </search>
   )
@@ -149,6 +167,8 @@ export function IconButton(props: {
   label: string
   testid?: string
   pressed?: boolean
+  // Why it can't be used now: disabled, and the reason is its title.
+  reason?: string
   onClick: () => void
   children: JSX.Element
 }) {
@@ -157,9 +177,10 @@ export function IconButton(props: {
       type="button"
       data-testid={props.testid}
       aria-label={props.label}
-      title={props.label}
+      title={props.reason ?? props.label}
+      disabled={props.reason !== undefined}
       aria-pressed={props.pressed}
-      class="flex h-6 min-w-6 shrink-0 items-center justify-center rounded px-1 hover:bg-selected hover:text-fg"
+      class="flex h-6 min-w-6 shrink-0 items-center justify-center rounded px-1 hover:bg-selected hover:text-fg disabled:opacity-50 disabled:hover:bg-transparent"
       // One color class per state: with both, CSS order decides, and muted wins.
       classList={{
         "bg-accent/20 text-accent": props.pressed,

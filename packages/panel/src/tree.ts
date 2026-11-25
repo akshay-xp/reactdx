@@ -95,9 +95,12 @@ export function createTreeStore() {
   // Vite app's own Router or Head is never hidden.
   const nextRoots = new Set<number>()
   const internals = new Map<number, number>()
-  const countInternal = (node: Node, by: number) => {
+  // Server nodes: the islands mode needs one.
+  let servers = 0
+  const countNode = (node: Node, by: number) => {
     if (node.internal)
       internals.set(node.rootId, (internals.get(node.rootId) ?? 0) + by)
+    if (node.kind === "server") servers += by
   }
   const [query, querySignal] = createSignal("")
   // The row under the pointer: the page highlights it.
@@ -124,6 +127,7 @@ export function createTreeStore() {
     tick()
     nextRoots.clear()
     internals.clear()
+    servers = 0
     setTally(tally() + 1)
   }
   // The nearest node at or above this one that isn't a DOM element.
@@ -136,7 +140,7 @@ export function createTreeStore() {
     const node = nodes.get(id)
     if (!node) return
     for (const child of node.children) forget(child)
-    countInternal(node, -1)
+    countNode(node, -1)
     nodes.delete(id)
     waits.delete(id)
   }
@@ -166,7 +170,7 @@ export function createTreeStore() {
         internal: nextInternal(name, kind, outer(parent)),
       }
       nodes.set(id, node)
-      countInternal(node, 1)
+      countNode(node, 1)
       if (kind === "function" && name === "AppRouter") nextRoots.add(rootId)
       list.splice(index, 0, id)
       return true
@@ -187,14 +191,14 @@ export function createTreeStore() {
       return true
     }
     if (op.op === "rename") {
-      countInternal(node, -1)
+      countNode(node, -1)
       node.name = op.name
       node.internal = nextInternal(
         node.name,
         node.kind,
         outer(nodes.get(node.parentId)),
       )
-      countInternal(node, 1)
+      countNode(node, 1)
     } else {
       const list = siblings(node.rootId, node.parentId) ?? []
       list.splice(list.indexOf(op.id), 1)
@@ -481,6 +485,10 @@ export function createTreeStore() {
     setShowInternals(on: boolean) {
       showInternalsSignal(on)
       hideSelection()
+    },
+    hasServers() {
+      version()
+      return servers > 0
     },
     // Next's own components in Next roots, hidden or shown.
     hiddenCount() {
