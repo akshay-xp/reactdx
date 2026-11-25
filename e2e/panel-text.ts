@@ -539,10 +539,13 @@ export type Copy = { heading: string; commits: number[]; names: string[] }
 const HEADING = /React (\S+) (development|production) (\S+)/g
 const ROOT = /Root \d+ (\d+) updates/g
 const LEGEND = "Numbers: renders since DevTools opened"
+// The legend bar's hidden-internals count and toggle (Next pages).
+const HIDDEN = / · \d+ Next\.js components (hidden|shown) (Show|Hide)/
 
 // "React 18.3.1 development react-dom Root 1 3 commits App Counter 2 ..." into
 // copies: each root's commit count, and the component names listed under its
-// roots (not the rows' render counts, nor the legend under the trees).
+// roots (not the rows' render counts, nor the legend and hidden count under
+// the trees).
 export function parseCopies(text: string): Copy[] {
   const headings = [...text.matchAll(HEADING)]
   return headings.map((match, i) => {
@@ -558,6 +561,7 @@ export function parseCopies(text: string): Copy[] {
       names: segment
         .replace(ROOT, " ")
         .replace(LEGEND, " ")
+        .replace(HIDDEN, " ")
         .split(" ")
         .filter((name) => name && !/^\d+$/.test(name)),
     }
