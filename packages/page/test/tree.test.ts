@@ -13,6 +13,7 @@ import { afterEach, beforeAll, expect, test, vi } from "vitest"
 import { startAgent } from "../src/agent.ts"
 import { type HookRecord, installHook } from "../src/hook.ts"
 import { createTree } from "../src/tree.ts"
+import { react19, ServerChild, server, serverInfo } from "./server.ts"
 import { mirror } from "./tree-mirror.ts"
 import { windowLike } from "./window.ts"
 
@@ -648,32 +649,6 @@ test("a node's last child unmounting is removed", async () => {
   tree.commit(fiberRoot, 1, more)
   expect(more).toEqual([{ op: "remove", id: p }])
 })
-
-// Server Components: Flight sends each one's output wrapped in a lazy whose
-// _debugInfo names it; React 19 copies that chain onto the fibers it creates.
-const react19 = React.version.startsWith("19.")
-const serverInfo = (name: string, key: string | null = null) => ({
-  name,
-  env: "Server",
-  key,
-  owner: null,
-  props: {},
-})
-const server = (
-  info: object,
-  node: React.ReactNode,
-  extra: object[] = [],
-): React.ReactNode =>
-  ({
-    $$typeof: Symbol.for("react.lazy"),
-    _payload: node,
-    _init: (n: unknown) => n,
-    _debugInfo: [{ time: 0 }, ...extra, info],
-  }) as unknown as React.ReactNode
-
-function ServerChild() {
-  return h("i")
-}
 
 async function serverTree(node: React.ReactNode) {
   const container = document.createElement("div")
