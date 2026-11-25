@@ -1,9 +1,13 @@
-import type { CommitRender, CommitSummary, OwnedAwait } from "@reactdx/messages"
+import {
+  type CommitRender,
+  type CommitSummary,
+  durationText,
+  type OwnedAwait,
+} from "@reactdx/messages"
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { ago } from "./ago"
 import { KIND_TEXT, NodeLink } from "./Inspector"
 import type { InspectorStore } from "./inspection"
-import { durationText } from "./size"
 import type { CommitDetail, TimelineStore, UpdateRow } from "./timeline"
 import type { TreeStore } from "./tree"
 import { previewText } from "./value"

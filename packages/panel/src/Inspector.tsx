@@ -9,6 +9,7 @@ import type {
   Updater,
   Value,
 } from "@reactdx/messages"
+import { durationText } from "@reactdx/messages"
 import {
   createEffect,
   createResource,
@@ -35,7 +36,7 @@ import { type PathRoot, pathKey } from "./paths"
 import { type MenuItem, RowMenu } from "./RowMenu"
 import { keyboardRows } from "./rows"
 import { matches, searchRanges } from "./search"
-import { durationText, sizeText } from "./size"
+import { sizeText } from "./size"
 import {
   label,
   locationText,

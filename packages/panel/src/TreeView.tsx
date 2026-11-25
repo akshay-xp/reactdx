@@ -1,4 +1,4 @@
-import type { TreeKind } from "@reactdx/messages"
+import { durationText, type TreeKind } from "@reactdx/messages"
 import {
   createEffect,
   createMemo,
@@ -9,7 +9,6 @@ import {
   onMount,
   Show,
 } from "solid-js"
-import { durationText } from "./size"
 import type { TreeStore } from "./tree"
 import { ROW_HEIGHT, windowOf } from "./virtual"
 

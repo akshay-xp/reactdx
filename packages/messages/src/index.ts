@@ -594,3 +594,7 @@ export function toolbarState(renderers: RendererInfo[]): ToolbarState {
 }
 
 export * from "./inspect.ts"
+
+// A wait (the panel's text, the page's outline labels): whole milliseconds, seconds with one decimal from a second.
+export const durationText = (ms: number) =>
+  ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)}s`
