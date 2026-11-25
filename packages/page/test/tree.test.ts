@@ -725,3 +725,21 @@ test.skipIf(!react19)(
     ])
   },
 )
+
+test.skipIf(!react19)(
+  "a keyed Fragment's Server Component holds the Fragment's children",
+  async () => {
+    const { view } = await serverTree(
+      server(
+        serverInfo("Shop"),
+        h(React.Fragment, { key: "f" }, h("p"), h(ServerChild)),
+      ),
+    )
+    expect(view.outline()).toEqual([
+      "Shop server",
+      "  p host",
+      "  ServerChild function",
+      "    i host",
+    ])
+  },
+)

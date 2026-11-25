@@ -150,24 +150,36 @@ export function createTree({
   // Skipped fibers (fragments, text, modes...) pass their children up. Kids
   // under a skipped fiber that bailed out go in `stale` too: React didn't
   // clone them, so they're last commit's fibers (no alternate, old flags).
-  // Each kid's Server Component chain, outermost first; set only once one has any.
+  // Each kid's Server Component chain, outermost first; set only once one has
+  // any. A skipped fiber's infos (a keyed Fragment's) prefix its kids' chains:
+  // React puts them on the Fragment alone.
   let chains: ServerInfo[][] | undefined
   const visible = (
     fiber: Fiber,
     out: Fiber[] = [],
     stale?: Set<Fiber>,
     under = false,
+    prefix = NONE,
   ) => {
     for (let child = fiber.child; child; child = child.sibling)
       if (kindOf(child)) {
         out.push(child)
         if (under) stale?.add(child)
-        const chain = serverInfos(child)
+        const own = serverInfos(child)
+        const chain = prefix.length ? prefix.concat(own) : own
         if (chain.length && !chains)
           chains = Array<ServerInfo[]>(out.length - 1).fill(NONE)
         chains?.push(chain)
-      } else if (!isHidden(child))
-        visible(child, out, stale, under || bailedOut(child))
+      } else if (!isHidden(child)) {
+        const own = serverInfos(child)
+        visible(
+          child,
+          out,
+          stale,
+          under || bailedOut(child),
+          own.length ? prefix.concat(own) : prefix,
+        )
+      }
     return out
   }
 
