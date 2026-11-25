@@ -299,3 +299,33 @@ test("what rendered nests under what rendered above it; repeated siblings fold",
     "2 Row State changed",
   ])
 })
+
+const arriving = (seq: number, ...names: string[]): CommitSummary => ({
+  ...summary(seq, 2000, 3),
+  arrived: names.map((name, i) => ({
+    boundary: seq * 10 + i,
+    name,
+    waited: 840,
+    awaits: [],
+  })),
+})
+
+test("an update that showed a boundary's content says its data arrived", () => {
+  const { timeline, rows } = setup()
+  timeline.receiveCommits(
+    commitsMessage(
+      [
+        arriving(1, "Reviews"),
+        arriving(2, "Reviews", "CartCount"),
+        summary(3, 2000, 1),
+      ],
+      1,
+      false,
+    ),
+  )
+  expect(rows().map((row) => row.split(" / ")[0])).toEqual([
+    "Root render",
+    "Data arrived · Reviews boundary · waited 840 ms +1",
+    "Data arrived · Reviews boundary · waited 840 ms",
+  ])
+})

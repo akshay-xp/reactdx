@@ -3,6 +3,7 @@ import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { ago } from "./ago"
 import { KIND_TEXT, NodeLink } from "./Inspector"
 import type { InspectorStore } from "./inspection"
+import { durationText } from "./size"
 import type { CommitDetail, TimelineStore, UpdateRow } from "./timeline"
 import type { TreeStore } from "./tree"
 import { previewText } from "./value"
@@ -31,9 +32,17 @@ export function Commits(props: {
     commit.change
       ? `${previewText(commit.change.old)} → ${previewText(commit.change.new)}`
       : undefined
+  // A commit that showed boundaries' content (M7 #81): the first, and how
+  // many more.
+  const arrivedText = (commit: CommitSummary) => {
+    const [first, ...more] = commit.arrived ?? []
+    if (!first) return
+    const also = more.length ? ` +${more.length}` : ""
+    return `Data arrived · ${first.name} boundary · waited ${durationText(first.waited)}${also}`
+  }
   // Who caused it: the first updater the tree knows, and how many more.
   const cause = (commit: CommitSummary) => {
-    if (!commit.updaters.length) return "Root render"
+    if (!commit.updaters.length) return arrivedText(commit) ?? "Root render"
     const [first] = commit.updaters
     const name =
       (first !== undefined && props.tree.info(first)?.name) ?? "Unmounted"
