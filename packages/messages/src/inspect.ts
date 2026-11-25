@@ -113,6 +113,8 @@ export type InspectedData = {
   server?: ServerDetails
   // A component a Server Component rendered (M7 #79).
   fromServer?: FromServer
+  // A Suspense boundary (M7 #80).
+  suspense?: SuspenseDetails
 }
 // Commits per `commits` message, and seqs per node's history.
 export const MAX_HISTORY = 100
@@ -197,6 +199,21 @@ export type PropSize = Size & {
   fields?: (Size & { key: string })[]
 }
 export type FromServer = { owner: Owner; props: PropSize[] }
+// What a waiting Suspense boundary waits on (M7 #80): a Server Component
+// (Next), the component that suspended and its promises (React 18), the
+// boundary's child, a lazy() component loading, or just a promise.
+export type SuspenseCause =
+  | { kind: "server"; name: string }
+  | { kind: "thrown"; name: string; count: number }
+  | { kind: "inside"; name: string }
+  | { kind: "lazy" }
+  | { kind: "promise" }
+// A boundary's cause while it waits, and once its content arrived, the awaits
+// of the Server Components inside it.
+export type SuspenseDetails = {
+  cause?: SuspenseCause
+  awaited?: (ServerAwait & { owner: string })[]
+}
 export const MAX_AWAITS = 50
 export const MAX_RENDERED = 200
 export const MAX_PROP_SIZES = 100
@@ -707,6 +724,7 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     history,
     server,
     fromServer,
+    suspense,
   } = message.data as Record<string, unknown>
   const budget = { left: MAX_VALUES }
   const parsed: InspectedData = { props: null }
@@ -779,6 +797,11 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     const from = parseFromServer(fromServer)
     if (!from) return
     parsed.fromServer = from
+  }
+  if (suspense !== undefined) {
+    const details = parseSuspense(suspense)
+    if (!details) return
+    parsed.suspense = details
   }
   return inspected(message.id, parsed)
 }
@@ -958,14 +981,46 @@ function parseSize<T extends object>(
   return over ? { ...extra, bytes, over } : { ...extra, bytes }
 }
 
+const parseAwait = ({ name, start, end }: Record<string, unknown>) =>
+  isName(name) && isTime(start) && isTime(end) && end >= start
+    ? { name, start, end }
+    : undefined
+
+function parseCause(data: unknown): SuspenseCause | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { kind, name, count } = data as Record<string, unknown>
+  if (kind === "lazy" || kind === "promise") return { kind }
+  if (!isName(name)) return
+  if (kind === "server" || kind === "inside") return { kind, name }
+  if (kind === "thrown" && isId(count)) return { kind, name, count }
+}
+
+function parseSuspense(data: unknown): SuspenseDetails | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { cause, awaited } = data as Record<string, unknown>
+  const details: SuspenseDetails = {}
+  if (cause !== undefined) {
+    const parsed = parseCause(cause)
+    if (!parsed) return
+    details.cause = parsed
+  }
+  if (awaited !== undefined) {
+    const list = parseList(awaited, MAX_AWAITS, (item) => {
+      const wait = parseAwait(item)
+      return wait && isName(item.owner)
+        ? { ...wait, owner: item.owner }
+        : undefined
+    })
+    if (!list) return
+    details.awaited = list
+  }
+  return details
+}
+
 function parseServer(data: unknown): ServerDetails | undefined {
   if (typeof data !== "object" || data === null) return
   const { awaits, rendered } = data as Record<string, unknown>
-  const waits = parseList(awaits, MAX_AWAITS, ({ name, start, end }) =>
-    isName(name) && isTime(start) && isTime(end) && end >= start
-      ? { name, start, end }
-      : undefined,
-  )
+  const waits = parseList(awaits, MAX_AWAITS, parseAwait)
   const clients = parseList(rendered, MAX_RENDERED, (item) =>
     parseSize(
       item,

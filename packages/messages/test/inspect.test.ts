@@ -746,3 +746,33 @@ test("a Server Component's details and the props one passed, with sizes", () => 
       JSON.stringify(bad),
     ).toBeUndefined()
 })
+
+test("what a Suspense boundary waits on, and what it waited on", () => {
+  const causes = [
+    { kind: "server", name: "Reviews" },
+    { kind: "thrown", name: "Comments", count: 2 },
+    { kind: "inside", name: "Comments" },
+    { kind: "lazy" },
+    { kind: "promise" },
+  ]
+  for (const cause of causes) {
+    const data = { props: 1, suspense: { cause } }
+    expect(parseInspected(inspected(3, data as never))?.data).toEqual(data)
+  }
+  const awaited = [
+    { name: "getReviews", owner: "Reviews", start: 96, end: 1297 },
+  ]
+  const data = { props: 1, suspense: { awaited } }
+  expect(parseInspected(inspected(3, data as never))?.data).toEqual(data)
+  for (const suspense of [
+    { cause: { kind: "other" } },
+    { cause: { kind: "thrown", name: "C", count: 0 } },
+    { cause: { kind: "inside", name: "n".repeat(257) } },
+    { awaited: Array(51).fill(awaited[0]) },
+    { awaited: [{ ...awaited[0], owner: "o".repeat(257) }] },
+  ])
+    expect(
+      parseInspected(inspected(3, { props: 1, suspense } as never)),
+      JSON.stringify(suspense),
+    ).toBeUndefined()
+})
