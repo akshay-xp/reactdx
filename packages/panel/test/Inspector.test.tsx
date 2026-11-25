@@ -2179,3 +2179,69 @@ test("a Server Component lists what it awaited and the client components it rend
   )
   expect(sections(container)).not.toContain("Awaited")
 })
+
+test("props a Server Component passed: the answer, a size per prop, a hint", () => {
+  const { container, inspector, select, getByText } = setup(
+    "lazy",
+    null,
+    noSources,
+    createSettings(),
+    [],
+  )
+  select()
+  const fromServer = {
+    owner: { id: 2, name: "ProductDetails" },
+    props: [
+      {
+        key: "product",
+        bytes: 14643,
+        fields: [
+          { key: "specs", bytes: 14233 },
+          { key: "name", bytes: 12 },
+          { key: "id", bytes: 6 },
+        ],
+      },
+      { key: "price", bytes: 2 },
+    ],
+  }
+  inspector.receive(inspected(3, { props: object({}), fromServer }))
+  const text = (testid: string) =>
+    [...container.querySelectorAll(`[data-testid=${testid}]`)].map(
+      (el) => el.textContent,
+    )
+  expect(text("server-answer")).toEqual([
+    "Server Component ProductDetails passed it 2 props, 14.3 KB",
+  ])
+  expect(getByText("Props from ProductDetails")).toBeTruthy()
+  expect(text("server-row")).toEqual(["product 14.3 KB", "price 2 B"])
+  expect(text("size-hint")).toEqual([
+    "product is 14.3 KB, mostly specs (13.9 KB), name (12 B) and id (6 B). Pass Counter only the fields it uses.",
+  ])
+
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      fromServer: {
+        ...fromServer,
+        props: [
+          {
+            key: "data",
+            bytes: 1048576,
+            over: true,
+            fields: [{ key: "rows", bytes: 1048000, over: true }],
+          },
+        ],
+      },
+    }),
+  )
+  expect(text("server-answer")).toEqual([
+    "Server Component ProductDetails passed it 1 prop, over 1,024 KB",
+  ])
+  expect(text("size-hint")).toEqual([
+    "data is over 1,024 KB, mostly rows (over 1,023 KB). Pass Counter only the fields it uses.",
+  ])
+
+  inspector.receive(inspected(3, { props: object({}) }))
+  expect(text("server-answer")).toEqual([])
+  expect(text("size-hint")).toEqual([])
+})

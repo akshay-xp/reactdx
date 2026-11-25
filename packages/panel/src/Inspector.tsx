@@ -22,7 +22,7 @@ import {
   Switch,
 } from "solid-js"
 import { ago } from "./ago"
-import { answerOf, hintOf, type Part } from "./answer"
+import { answerOf, fromServerOf, hintOf, type Part } from "./answer"
 import { Empty, EmptyAction } from "./Empty"
 import type { InspectorStore } from "./inspection"
 import { type PathRoot, pathKey } from "./paths"
@@ -243,6 +243,13 @@ export function Inspector(props: {
   const server = () => info()?.kind === "server"
   const awaits = () => props.inspector.data()?.server?.awaits ?? []
   const clients = () => props.inspector.data()?.server?.rendered ?? []
+  const fromServer = () => {
+    const from = props.inspector.data()?.fromServer
+    const name = info()?.name
+    return from && name !== undefined
+      ? { ...fromServerOf(from, name), from }
+      : undefined
+  }
   const section = (name: string, root: PathRoot, value: Value | undefined) => (
     <Show when={shown(value) && (value as Container)}>
       {(container) => (
@@ -506,6 +513,25 @@ export function Inspector(props: {
               </Show>
               <Show when={query() === ""}>
                 <div class="flex flex-col gap-1 border-border border-b px-2 py-2">
+                  <Show when={fromServer()}>
+                    {(server) => (
+                      <>
+                        <p data-testid="server-answer">
+                          <Parts parts={server().answer} tree={props.tree} />
+                        </p>
+                        <For each={server().hints}>
+                          {(hint) => (
+                            <p
+                              data-testid="size-hint"
+                              class="rounded bg-highlight/40 px-2 py-1"
+                            >
+                              {hint}
+                            </p>
+                          )}
+                        </For>
+                      </>
+                    )}
+                  </Show>
                   <p data-testid="answer">
                     <Parts parts={answer()} tree={props.tree} />
                   </p>
@@ -531,6 +557,28 @@ export function Inspector(props: {
                 </div>
               </Show>
               {section("Props", "props", props.inspector.data()?.props)}
+              <Show when={fromServer()}>
+                {(server) => (
+                  <Section
+                    name={`Props from ${server().from.owner.name}`}
+                    open={!collapsed().has("Props from")}
+                    forced={query() !== ""}
+                    onToggle={() => toggle("Props from")}
+                    summary={server()
+                      .from.props.map((prop) => prop.key)
+                      .join(", ")}
+                  >
+                    <For each={server().from.props}>
+                      {(prop) => (
+                        <div data-testid="server-row" class={SERVER_ROW}>
+                          <span data-search-text>{prop.key}</span>{" "}
+                          <span class="text-muted">{sizeText(prop)}</span>
+                        </div>
+                      )}
+                    </For>
+                  </Section>
+                )}
+              </Show>
               <Show when={props.inspector.data()?.server?.awaits.length}>
                 <Section
                   name="Awaited"
