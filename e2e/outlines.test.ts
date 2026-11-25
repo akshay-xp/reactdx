@@ -140,3 +140,30 @@ if (fixtures.some((f) => f.fixture === "next"))
       await browser.close()
     }
   })
+
+for (const { port } of fixtures.filter((f) => f.fixture === "19"))
+  test("19: outlines take no click and follow a scroll and a commit that moves the fallback", async () => {
+    const { browser, page, panel } = await suspensePage(port)
+    try {
+      await page.waitForSelector("[data-testid=grow]")
+      await page.waitForSelector("[data-testid=comments]", { timeout: 6000 })
+      await panel.press(TOGGLE)
+      await page.click("[data-testid=again]")
+      const fallback = "[data-testid=comments-fallback]"
+      const outline = await outlinedAt(page, fallback, 1000)
+      const hit = await page.evaluate(
+        (x, y) => document.elementFromPoint(x, y)?.getAttribute("data-testid"),
+        outline.left + outline.width / 2,
+        outline.top + outline.height / 2,
+      )
+      assert.equal(hit, "comments-fallback")
+      await page.evaluate(() => window.scrollBy(0, 150))
+      const scrolled = await outlinedAt(page, fallback, 500)
+      assert.ok(Math.abs(scrolled.top - (outline.top - 150)) <= 1)
+      await page.click("[data-testid=grow]")
+      const moved = await outlinedAt(page, fallback, 500)
+      assert.ok(moved.top > scrolled.top + 100, JSON.stringify(moved))
+    } finally {
+      await browser.close()
+    }
+  })

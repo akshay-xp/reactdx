@@ -6,6 +6,8 @@ import { createRoot } from "react-dom/client"
 // (3 s), first so it's the first Suspense row, then a lazy() component (1 s).
 // Again waits once more with a new promise: the load's first wait is over
 // before DevTools watches (and React 18 says who suspended only while it does).
+// Grow adds a block above the boundaries (a commit that moves a fallback), and
+// a spacer below lets the page scroll (e2e/outlines.test.ts).
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const rounds = new Map()
@@ -44,6 +46,7 @@ const LazyDetails = lazy(() => sleep(1000).then(() => ({ default: Details })))
 
 function SuspensePage() {
   const [round, setRound] = useState(0)
+  const [grown, setGrown] = useState(false)
   return (
     <>
       <button
@@ -53,6 +56,10 @@ function SuspensePage() {
       >
         Again
       </button>
+      <button type="button" data-testid="grow" onClick={() => setGrown(!grown)}>
+        Grow
+      </button>
+      {grown && <div style={{ height: 120 }} />}
       <Suspense
         fallback={<p data-testid="comments-fallback">Loading comments</p>}
       >
@@ -63,6 +70,7 @@ function SuspensePage() {
       >
         <LazyDetails />
       </Suspense>
+      <div style={{ height: "200vh" }} />
     </>
   )
 }
