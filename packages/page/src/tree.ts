@@ -434,9 +434,10 @@ export function createTree({
     // The node's fiber as of the last commit.
     fiber: (id: number) => fibers.get(id),
     // A node's name and its top-level DOM elements (itself, for a host node).
+    // A server node's are its children's, in order.
     find(id: number) {
-      const fiber = fibers.get(id)
-      if (!fiber) return
+      const name = names.get(id)
+      if (name === undefined) return
       const elements: Element[] = []
       const collect = (at: Fiber) => {
         if (kindOf(at) === "host") elements.push(at.stateNode as Element)
@@ -444,8 +445,13 @@ export function createTree({
           for (let child = at.child; child; child = child.sibling)
             collect(child)
       }
-      collect(fiber)
-      return { name: names.get(id) as string, elements }
+      const node = (at: number) => {
+        const fiber = fibers.get(at)
+        if (fiber) collect(fiber)
+        else for (const child of children.get(at) ?? []) node(child)
+      }
+      node(id)
+      return { name, elements }
     },
     commit(
       root: FiberRoot,

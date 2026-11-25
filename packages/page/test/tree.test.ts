@@ -696,7 +696,7 @@ async function serverTree(node: React.ReactNode) {
     view.apply(more)
     return more
   }
-  return { tree, ops, view, id, commit, forgot, fiberRoot }
+  return { tree, ops, view, id, commit, forgot, fiberRoot, container }
 }
 
 test.skipIf(!react19)(
@@ -718,7 +718,6 @@ test.skipIf(!react19)(
     expect(shop).toMatchObject({ kind: "server", key: null, parentId: 0 })
     expect(new Set(adds(ops).map((op) => op.id)).size).toBe(adds(ops).length)
     expect(tree.fiber(id("Shop"))).toBeUndefined()
-    expect(tree.find(id("Shop"))).toBeUndefined()
   },
 )
 
@@ -848,5 +847,33 @@ test.skipIf(!react19)(
       "    b host",
     ])
     expect(new Set(adds(ops).map((op) => op.id)).size).toBe(adds(ops).length)
+  },
+)
+
+test.skipIf(!react19)(
+  "a Server Component's DOM is its children's top elements",
+  async () => {
+    const output = server(
+      serverInfo("Shop"),
+      h(
+        "main",
+        null,
+        server(serverInfo("Reviews"), [
+          h("p", { key: "a" }),
+          h(ServerChild, { key: "b" }),
+        ]),
+      ),
+    )
+    const { tree, id, commit, container } = await serverTree(
+      h("div", null, output),
+    )
+    const main = container.querySelector("main")
+    expect(tree.find(id("Shop"))).toEqual({ name: "Shop", elements: [main] })
+    expect(tree.find(id("Reviews"))).toEqual({
+      name: "Reviews",
+      elements: [container.querySelector("p"), container.querySelector("i")],
+    })
+    await commit(h("div"))
+    expect(tree.find(id("Shop"))).toBeUndefined()
   },
 )
