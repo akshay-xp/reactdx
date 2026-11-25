@@ -77,6 +77,9 @@ export function createOutlineLayer(doc: Document) {
 
 const MAX_OUTLINES = 100
 const ARRIVED_MS = 2000
+const TICK_MS = 100
+// Scroll doesn't bubble: capturing on the window hears every scroller.
+const LISTEN = { capture: true, passive: true }
 
 // What a waiting boundary's label says it waits on, when that's known.
 const causeText = (cause: SuspenseCause | undefined) =>
@@ -92,6 +95,7 @@ const causeText = (cause: SuspenseCause | undefined) =>
 // after a change, never inside React's commit (docs/m7-findings.md, spike 2).
 export function createSuspenseOutlines({
   layer,
+  target,
   waits,
   find,
   causeFor,
@@ -118,6 +122,12 @@ export function createSuspenseOutlines({
   }
   let measured: Measured[] = []
   let more = 0
+  // Labels count up from the last measurement, which only a change redoes.
+  let tick: ReturnType<typeof setInterval> | undefined
+  const stopTick = () => {
+    clearInterval(tick)
+    tick = undefined
+  }
 
   const render = () => {
     const at = now()
@@ -155,6 +165,8 @@ export function createSuspenseOutlines({
       measured.push({ ...box, style, label: (at) => label(at, cause) })
     }
     render()
+    if (!measured.some((outline) => outline.style === "waiting")) stopTick()
+    else tick ??= setInterval(render, TICK_MS)
   }
   const changed = () => {
     if (!active || scheduled) return
@@ -165,10 +177,15 @@ export function createSuspenseOutlines({
   return {
     on() {
       active = true
+      target.addEventListener("scroll", changed, LISTEN)
+      target.addEventListener("resize", changed)
       changed()
     },
     off() {
       active = false
+      target.removeEventListener("scroll", changed, LISTEN)
+      target.removeEventListener("resize", changed)
+      stopTick()
       for (const { timer } of arrivals.values()) clearTimeout(timer)
       arrivals.clear()
       measured = []

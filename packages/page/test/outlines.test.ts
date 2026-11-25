@@ -242,3 +242,49 @@ test("a boundary that arrives while on is outlined as arrived for 2 s", () => {
     vi.useRealTimers()
   }
 })
+
+test("scrolls and resizes measure again once per frame; labels count up without measuring", () => {
+  vi.useFakeTimers()
+  try {
+    const c = controller()
+    // A capture listener on the window hears a scroll in any scroller (scroll
+    // doesn't bubble); a plain target stands in, the event sent to it.
+    c.outlines.on()
+    c.run()
+    c.target.dispatchEvent(new Event("scroll"))
+    c.target.dispatchEvent(new Event("resize"))
+    expect(c.frames).toHaveLength(1)
+    c.run()
+
+    c.waits.set(1, { since: 0 })
+    c.clock.now = 1200
+    c.outlines.changed()
+    c.run()
+    expect(c.last()?.outlines[0]?.label).toBe("waiting 1.2s")
+    const found = c.found.length
+    c.clock.now = 1300
+    vi.advanceTimersByTime(100)
+    expect(c.last()?.outlines[0]?.label).toBe("waiting 1.3s")
+    expect(c.found).toHaveLength(found)
+
+    // Nothing waiting: the tick stops.
+    c.waits.clear()
+    c.outlines.changed()
+    c.run()
+    const draws = c.draws.length
+    vi.advanceTimersByTime(500)
+    expect(c.draws).toHaveLength(draws)
+
+    c.waits.set(1, { since: 0 })
+    c.outlines.changed()
+    c.run()
+    c.outlines.off()
+    const after = c.draws.length
+    vi.advanceTimersByTime(500)
+    c.target.dispatchEvent(new Event("scroll"))
+    expect(c.frames).toHaveLength(0)
+    expect(c.draws).toHaveLength(after)
+  } finally {
+    vi.useRealTimers()
+  }
+})
