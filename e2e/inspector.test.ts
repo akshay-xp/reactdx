@@ -279,3 +279,44 @@ for (const { port } of fixtures.filter((f) => f.fixture === "next"))
       await browser.close()
     }
   })
+
+if (fixtures.some((f) => f.fixture === "next"))
+  test("next: a Server Component and the props it passed, on /shop", async () => {
+    const { browser, page, panel } = await panelFor(
+      name,
+      "http://localhost:5220/shop",
+      "after",
+    )
+    try {
+      await page.waitForSelector("[data-testid=cart-count]", {
+        timeout: 15_000,
+      })
+      const server = await selectListed(
+        panel,
+        "ProductDetails",
+        (t) =>
+          t.includes("Ran on the server") &&
+          t.includes("Rendered at page.jsx:") &&
+          /getProduct \d+ ms/.test(t) &&
+          /AddToCart \d+\.\d KB/.test(t),
+      )
+      assert.ok(server.includes('id: "p-12"'), server)
+      assert.ok(server.includes("Rendered at page.jsx:"), server)
+      assert.match(server, /getProduct \d+ ms/)
+      assert.match(server, /AddToCart \d+\.\d KB/)
+      assert.ok(!server.includes("Force re-render"), server)
+      assert.ok(!/\bState\b/.test(server), server)
+
+      const client = await selectListed(panel, "AddToCart", (t) =>
+        t.includes("Props from ProductDetails"),
+      )
+      assert.ok(
+        client.includes("Server Component ProductDetails passed it 2 props"),
+        client,
+      )
+      assert.match(client, /product \d+\.\d KB/)
+      assert.ok(client.includes("mostly specs"), client)
+    } finally {
+      await browser.close()
+    }
+  })
