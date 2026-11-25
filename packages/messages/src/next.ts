@@ -1,4 +1,4 @@
-import type { TreeKind } from "@reactdx/messages"
+import type { TreeKind } from "./index.ts"
 
 // Next.js App Router internals, by kind and name, from Next 16.4.6's tree. The
 // kind keeps an app's own class ErrorBoundary visible.

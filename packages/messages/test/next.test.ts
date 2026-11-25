@@ -1,6 +1,6 @@
-import type { TreeKind } from "@reactdx/messages"
 import { expect, test } from "vitest"
-import { nextInternal } from "../src/next"
+import type { TreeKind } from "../src/index"
+import { nextInternal } from "../src/index"
 
 const internal = { name: "SegmentStateProvider", internal: true }
 const app = { name: "Shop", internal: false }

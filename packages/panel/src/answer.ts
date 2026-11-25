@@ -7,8 +7,8 @@ import type {
   SuspenseCause,
   Value,
 } from "@reactdx/messages"
-import { durationText } from "@reactdx/messages"
-import { sizeText } from "./size"
+import { durationText, sizeText } from "@reactdx/messages"
+
 import { previewText } from "./value"
 
 // A sentence in pieces (docs/panel.md, Inspector): text, a name in code, or a

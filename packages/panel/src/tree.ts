@@ -6,8 +6,8 @@ import type {
   TreeKind,
   TreeOp,
 } from "@reactdx/messages"
+import { nextInternal } from "@reactdx/messages"
 import { batch, createSignal } from "solid-js"
-import { nextInternal } from "./next"
 
 export type Row = {
   id: number
