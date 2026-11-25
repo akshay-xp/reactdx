@@ -4,7 +4,7 @@ import { expect, test, vi } from "vitest"
 import { waitOf } from "../src/suspense.ts"
 import type { Fiber } from "../src/tree.ts"
 import { inspecting } from "./inspecting.ts"
-import { react19, serverInfo } from "./server.ts"
+import { react19, server, serverInfo } from "./server.ts"
 import { KEY } from "./window.ts"
 
 const fiber = (tag: number, memoizedState: unknown) =>
@@ -19,7 +19,7 @@ test("a Suspense boundary waits while it shows its fallback or dehydrated HTML",
 })
 
 const h = React.createElement
-const { inspect, send, idOf, replies, mount } = inspecting()
+const { inspect, send, idOf, replies, mount, posted } = inspecting()
 const react18 = React.version.startsWith("18.")
 const never = new Promise<never>(() => {})
 function Comments(): React.ReactNode {
@@ -145,3 +145,62 @@ test.skipIf(!react18)(
 test("a boundary showing its content has no cause", async () => {
   expect(await causeOf(h("p"))).toBeUndefined()
 })
+
+test.skipIf(!react19)(
+  "an arrived boundary lists the awaits of the Server Components inside it",
+  async () => {
+    const reviews = serverInfo("Reviews")
+    const recs = serverInfo("Recommendations", null, { owner: reviews })
+    const reviewsAwait = {
+      awaited: { name: "sleep", start: 96, end: 1297 },
+      owner: reviews,
+      stack: [["getReviews", "/x.js", 1, 1]],
+    }
+    const recsAwait = {
+      awaited: { name: "sleep", start: 1300, end: 2102 },
+      owner: recs,
+      stack: [["getRecommendations", "/x.js", 2, 1]],
+    }
+    await mount(null)
+    const page = h(
+      "main",
+      null,
+      boundary(
+        server(
+          reviews,
+          h(
+            "ul",
+            null,
+            h(
+              React.Suspense,
+              { fallback: h("b") },
+              server(recs, h("i"), [recsAwait]),
+            ),
+          ),
+          [reviewsAwait],
+        ),
+      ),
+    )
+    const outer = await inspect(page, "Suspense")
+    expect(outer?.suspense?.awaited).toEqual([
+      { name: "getReviews", owner: "Reviews", start: 96, end: 1297 },
+    ])
+    const ids = posted
+      .flatMap(
+        (m) =>
+          (m as { ops?: { op: string; name?: string; id: number }[] }).ops ??
+          [],
+      )
+      .filter((op) => op.op === "add" && op.name === "Suspense")
+      .map((op) => op.id)
+    send({ source: "reactdx-relay", type: "inspect", id: ids[1] })
+    expect(replies().at(-1)?.data?.suspense?.awaited).toEqual([
+      {
+        name: "getRecommendations",
+        owner: "Recommendations",
+        start: 1300,
+        end: 2102,
+      },
+    ])
+  },
+)

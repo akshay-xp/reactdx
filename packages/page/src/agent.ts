@@ -11,6 +11,7 @@ import {
   type InspectedData,
   type InspectedMessage,
   inspected,
+  MAX_AWAITS,
   MAX_CHANGES,
   MAX_COPY,
   MAX_HISTORY,
@@ -370,6 +371,18 @@ export function startAgent(
     data.server = { awaits: awaitsOf(info, entries), rendered }
     return data
   }
+  // An arrived boundary's waits: the awaits of the Server Components inside it.
+  const waitedOn = (id: number) =>
+    tree
+      .serversUnder(id)
+      .flatMap((serverId) => {
+        const found = tree.server(serverId)
+        if (!found) return []
+        const info = found.info as Record<string, unknown>
+        const owner = String(info.name).slice(0, MAX_TREE_STRING)
+        return awaitsOf(info, found.entries).map((wait) => ({ ...wait, owner }))
+      })
+      .slice(0, MAX_AWAITS)
   const describe = (id: number): InspectedData | null => {
     const found = tree.server(id)
     if (found)
@@ -409,6 +422,10 @@ export function startAgent(
           profiled.size ? suspended.causeFor(fiber) : undefined,
         ),
       }
+    else if (fiber.tag === 13) {
+      const awaited = waitedOn(id)
+      if (awaited.length) data.suspense = { awaited }
+    }
     const boundaries = boundariesFor(fiber)
     if (boundaries) data.boundaries = boundaries
     if (contexts.length)

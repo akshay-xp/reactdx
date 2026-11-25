@@ -509,6 +509,20 @@ export function createTree({
       walk(id)
       return out
     },
+    // The server nodes under a node, nearest first, not inside another
+    // Suspense boundary (what that one waited on is its own).
+    serversUnder(id: number) {
+      const out: number[] = []
+      const walk = (at: number) => {
+        for (const child of children.get(at) ?? []) {
+          if (fibers.get(child)?.tag === 13) continue
+          if (servers.has(child)) out.push(child)
+          walk(child)
+        }
+      }
+      walk(id)
+      return out
+    },
     // The mounted server node an info is, if any.
     serverId(info: object) {
       const id = serverIds.get(info)
