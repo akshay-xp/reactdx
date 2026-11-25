@@ -7,8 +7,14 @@ type Shadows = Window & { __shadows: ShadowRoot[] }
 
 // The highlight overlay's shadow root is closed; the agent runs in the page's world,
 // so a wrapped attachShadow (as any page script could do) keeps a handle on it.
-// Opens the page with that preload, then the panel, and waits for the tree.
-export async function overlayPage(name: BrowserName, url: string) {
+// Opens the page with that preload, then the panel, and waits for the tree:
+// `ready` on the page, `component` in the tree.
+export async function overlayPage(
+  name: BrowserName,
+  url: string,
+  ready = "[data-testid=counter]",
+  component = "Counter",
+) {
   const { browser } = await launchWithExtension(name)
   const [page] = await browser.pages()
   if (!page) throw new Error("no page")
@@ -23,12 +29,12 @@ export async function overlayPage(name: BrowserName, url: string) {
     }
   })
   await page.goto(url)
-  await page.waitForSelector("[data-testid=counter]")
+  await page.waitForSelector(ready)
   const panel = await openPanelText(name, browser)
   const text = await until(panel, (t) =>
-    (parseCopies(t)[0]?.names ?? []).includes("Counter"),
+    (parseCopies(t)[0]?.names ?? []).includes(component),
   )
-  assert.ok(parseCopies(text)[0]?.names.includes("Counter"), text)
+  assert.ok(parseCopies(text)[0]?.names.includes(component), text)
   return { browser, page, panel }
 }
 
@@ -80,3 +86,66 @@ export const styles = (page: Page) =>
         )
       })
   })
+
+export type DrawnOutline = {
+  left: number
+  top: number
+  width: number
+  height: number
+  label: string
+  style: string
+}
+
+// Every outline drawn in a connected overlay host, with its rect and label.
+export const outlines = (page: Page): Promise<DrawnOutline[]> =>
+  page.evaluate(() =>
+    (window as unknown as Shadows).__shadows
+      .filter((root) => root.host.isConnected)
+      .flatMap((root) => [
+        ...root.querySelectorAll<HTMLElement>("[data-outline]"),
+      ])
+      .map((el) => {
+        const { left, top, width, height } = el.getBoundingClientRect()
+        return {
+          left,
+          top,
+          width,
+          height,
+          label: el.textContent ?? "",
+          style: el.dataset.style ?? "",
+        }
+      }),
+  )
+
+// Polls the outlines until `check` passes (5 s); asserts it.
+export async function untilOutlines(
+  page: Page,
+  check: (drawn: DrawnOutline[]) => boolean,
+  ms = 5000,
+) {
+  const deadline = Date.now() + ms
+  let drawn = await outlines(page)
+  while (!check(drawn) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    drawn = await outlines(page)
+  }
+  assert.ok(check(drawn), JSON.stringify(drawn))
+  return drawn
+}
+
+// The rect of the page element `selector` matches.
+export const rectOf = (page: Page, selector: string) =>
+  page.$eval(selector, (el) => {
+    const { left, top, width, height } = el.getBoundingClientRect()
+    return { left, top, width, height }
+  })
+
+// Whether an outline sits on that rect, within 1 px.
+export const covers = (
+  outline: DrawnOutline | undefined,
+  rect: { left: number; top: number; width: number; height: number },
+) =>
+  outline !== undefined &&
+  (["left", "top", "width", "height"] as const).every(
+    (side) => Math.abs(outline[side] - rect[side]) <= 1,
+  )

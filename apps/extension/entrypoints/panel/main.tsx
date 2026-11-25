@@ -6,6 +6,7 @@ import type {
   ExpandedMessage,
   HighlightMessage,
   InspectedMessage,
+  OutlinesMessage,
   PickedMessage,
   PickMessage,
   ReasonedMessage,
@@ -135,6 +136,13 @@ function connect() {
       else {
         // A new watch: the page sends its commits again after the tree.
         if (message.ops[0]?.op === "reset") timeline.reset()
+        // A new document's agent starts with outlines off.
+        if (message.ops[0]?.op === "reset" && tree.outlines())
+          next.postMessage({
+            type: "outlines",
+            tabId,
+            on: true,
+          } satisfies OutlinesMessage)
         if (tree.apply(message))
           next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)
         // A new watch (reconnect, reload) starts the agent without a selection.
@@ -195,6 +203,18 @@ render(() => {
           type: active ? "pick-start" : "pick-stop",
           tabId,
         } satisfies PickMessage),
+      { defer: true },
+    ),
+  )
+  createEffect(
+    on(
+      tree.outlines,
+      (active) =>
+        port.postMessage({
+          type: "outlines",
+          tabId,
+          on: active,
+        } satisfies OutlinesMessage),
       { defer: true },
     ),
   )

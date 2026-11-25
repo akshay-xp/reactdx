@@ -382,8 +382,19 @@ export async function openPanelText(
   const role = (name: string) => `Ci.nsIAccessibleRole.ROLE_${name}`
   const button = (name: string) =>
     `[${role("PUSHBUTTON")}, ${role("TOGGLE_BUTTON")}, ${role("CHECKBUTTON")}].includes(node.role) && node.name === ${json(name)}`
+  // Like tabs, a button can be missing from the mirror for a moment.
   const press = async (name: string) => {
-    await onAccessible(button(name), `node.doAction(0); return "ok"`)
+    for (const deadline = Date.now() + 5000; ; ) {
+      const done = await onAccessible(
+        button(name),
+        `node.doAction(0); return "ok"`,
+        false,
+      )
+      if (done) return
+      if (Date.now() > deadline) break
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    await onAccessible(button(name), `return "ok"`)
   }
   // The entry's editable text, which edits as typing does (input events fire).
   const type = async (label: string, text: string) => {

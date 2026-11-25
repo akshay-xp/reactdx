@@ -10,6 +10,7 @@ import {
   type InjectAgentMessage,
   type InspectedMessage,
   type InspectMessage,
+  type OutlinesMessage,
   type PickedMessage,
   type PickMessage,
   type RenamePathMessage,
@@ -118,6 +119,7 @@ export default defineBackground(() => {
           | HighlightMessage
           | ClearHighlightMessage
           | PickMessage
+          | OutlinesMessage
           | InspectMessage
           | ExpandMessage
           | EditMessage
