@@ -134,8 +134,11 @@ export function createTree({
   const label = (fiber: Fiber) =>
     bounded(nameOf(fiber, kindOf(fiber) as TreeKind))
   const serverIds = new WeakMap<object, number>()
-  // Each mounted server node's latest info.
-  const serverInfo = new Map<number, ServerInfo>()
+  // Each mounted server node's latest info and the key it's stored under.
+  const servers = new Map<number, { info: ServerInfo; parent: number }>()
+  const place = (kid: Child, key: number) => {
+    if (isServer(kid)) servers.set(kid.id, { info: kid.info, parent: key })
+  }
   // A new payload (router.refresh, a navigation) brings new info objects: one
   // named and keyed like a server node already under `key` takes its id.
   const serverId = (info: ServerInfo, key: number, used: Set<number>) => {
@@ -143,7 +146,7 @@ export function createTree({
     if (known !== undefined) return known
     const id =
       children.get(key)?.find((id) => {
-        const was = serverInfo.get(id)
+        const was = servers.get(id)?.info
         return was?.name === info.name && was.key === info.key && !used.has(id)
       }) ?? nextId++
     serverIds.set(info, id)
@@ -159,13 +162,13 @@ export function createTree({
     fiber.alternate !== null &&
     fiber.child === fiber.alternate.child
 
-  // Skipped fibers (fragments, text, modes...) pass their children up. Kids
-  // under a skipped fiber that bailed out go in `stale` too: React didn't
-  // clone them, so they're last commit's fibers (no alternate, old flags).
   // Each kid's Server Component chain, outermost first; set only once one has
   // any. A skipped fiber's infos (a keyed Fragment's) prefix its kids' chains:
   // React puts them on the Fragment alone.
   let chains: ServerInfo[][] | undefined
+  // Skipped fibers (fragments, text, modes...) pass their children up. Kids
+  // under a skipped fiber that bailed out go in `stale` too: React didn't
+  // clone them, so they're last commit's fibers (no alternate, old flags).
   const visible = (
     fiber: Fiber,
     out: Fiber[] = [],
@@ -222,6 +225,13 @@ export function createTree({
       if (open?.server.info !== info) {
         close()
         const id = serverId(info, key, used)
+        // One node per info: a second run of it, here or under another
+        // parent, would post a duplicate id. Its kids stay where they are.
+        const at = servers.get(id)?.parent
+        if (used.has(id) || (at !== undefined && at !== key)) {
+          out.push(kid)
+          return
+        }
         used.add(id)
         open = { server: { info, id, kids: [] }, kids: [], of: [] }
         out.push(open.server)
@@ -257,7 +267,6 @@ export function createTree({
       const { id, info, kids } = child
       const name = bounded(info.name)
       names.set(id, name)
-      serverInfo.set(id, info)
       ops.push({
         op: "add",
         id,
@@ -301,6 +310,7 @@ export function createTree({
   ) => {
     children.set(key, kids.map(childId))
     kids.forEach((kid, index) => {
+      place(kid, key)
       addSubtree(kid, parentId, rootId, index, ops)
     })
   }
@@ -310,7 +320,7 @@ export function createTree({
     children.delete(id)
     names.delete(id)
     fibers.delete(id)
-    serverInfo.delete(id)
+    servers.delete(id)
     onForget?.(id)
   }
 
@@ -354,9 +364,9 @@ export function createTree({
     const applied = same ? next : (prev ?? []).filter((id) => kept?.has(id))
     kids.forEach((kid, index) => {
       const id = next[index] as number
+      place(kid, key)
       if (same || known?.has(id)) {
         if (isServer(kid)) {
-          serverInfo.set(id, kid.info)
           reconcile(kid.kids, stale, id, id, rootId, ops)
           return
         }
@@ -392,7 +402,7 @@ export function createTree({
       children.clear()
       names.clear()
       fibers.clear()
-      serverInfo.clear()
+      servers.clear()
     },
     // The nearest mounted component (never a host) owning a DOM element, found
     // through the fiber React keeps on each of its elements.

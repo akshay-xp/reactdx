@@ -823,3 +823,30 @@ test.skipIf(!react19)(
     expect(view.outline()).toEqual(["main host", "  Cart server", "    p host"])
   },
 )
+
+test.skipIf(!react19)(
+  "one Server Component info never makes two nodes",
+  async () => {
+    const shop = serverInfo("Shop")
+    const { ops, view } = await serverTree(
+      h(
+        "div",
+        null,
+        server(shop, h("p")),
+        h("hr"),
+        server(shop, h("em")),
+        h("span", null, server(shop, h("b"))),
+      ),
+    )
+    expect(view.outline()).toEqual([
+      "div host",
+      "  Shop server",
+      "    p host",
+      "  hr host",
+      "  em host",
+      "  span host",
+      "    b host",
+    ])
+    expect(new Set(adds(ops).map((op) => op.id)).size).toBe(adds(ops).length)
+  },
+)
