@@ -171,21 +171,36 @@ export function createTree({
     return out
   }
 
-  // Consecutive kids rendered by the same Server Component go under its node.
-  const group = (kids: Fiber[], of: ServerInfo[][]): Child[] => {
+  // Consecutive kids rendered by the same Server Component go under its node;
+  // the chain's next info nests inside it.
+  const group = (kids: Fiber[], of: ServerInfo[][], depth = 0): Child[] => {
     const out: Child[] = []
-    let open: Server | undefined
+    let open: { server: Server; kids: Fiber[]; of: ServerInfo[][] } | undefined
+    const close = () => {
+      if (open) open.server.kids = group(open.kids, open.of, depth + 1)
+      open = undefined
+    }
     kids.forEach((kid, i) => {
-      const info = of[i]?.[0]
+      const chain = of[i] ?? NONE
+      const info = chain[depth]
       if (!info) {
-        open = undefined
+        close()
         out.push(kid)
-      } else if (open?.info === info) open.kids.push(kid)
-      else {
-        open = { info, id: serverId(info), kids: [kid] }
-        out.push(open)
+        return
       }
+      if (open?.server.info !== info) {
+        close()
+        open = {
+          server: { info, id: serverId(info), kids: [] },
+          kids: [],
+          of: [],
+        }
+        out.push(open.server)
+      }
+      open.kids.push(kid)
+      open.of.push(chain)
     })
+    close()
     return out
   }
 

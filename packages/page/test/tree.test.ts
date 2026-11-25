@@ -698,3 +698,30 @@ test.skipIf(!react19)(
     expect(tree.find(id("Shop"))).toBeUndefined()
   },
 )
+
+test.skipIf(!react19)(
+  "nested Server Components nest by their chain and by position",
+  async () => {
+    const shop = serverInfo("Shop")
+    const reviews = serverInfo("Reviews")
+    const awaited = { awaited: { name: "getReviews", start: 0, end: 5 } }
+    const chained = await serverTree(
+      server(shop, server(reviews, h(ServerChild), [awaited])),
+    )
+    expect(chained.view.outline()).toEqual([
+      "Shop server",
+      "  Reviews server",
+      "    ServerChild function",
+      "      i host",
+    ])
+    const placed = await serverTree(
+      server(shop, h("main", null, server(reviews, h("section")))),
+    )
+    expect(placed.view.outline()).toEqual([
+      "Shop server",
+      "  main host",
+      "    Reviews server",
+      "      section host",
+    ])
+  },
+)
