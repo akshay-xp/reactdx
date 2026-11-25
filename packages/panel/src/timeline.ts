@@ -6,6 +6,7 @@ import type {
   Updater,
 } from "@reactdx/messages"
 import { createSignal } from "solid-js"
+import { type Waterfall, waterfalls } from "./waterfall"
 
 // What the store asks the page for; the panel adds the tab (CommitMessage).
 export type TimelineCommand =
@@ -27,6 +28,9 @@ export type UpdateRow =
       wasted: number
       open: boolean
     }
+  // Awaits that ran one after another (M7 #81), at its newest member update;
+  // the members, wherever they fell, follow it while open.
+  | { kind: "waterfall"; waterfall: Waterfall; open: boolean }
 
 // Same updaters, same changed hook: the same cause again (a burst of typing).
 const sameCause = (a: CommitSummary, b: CommitSummary) =>
@@ -62,13 +66,42 @@ export function createTimelineStore(
   // Groups opened or closed by hand, by id; a pick resets them, so the
   // group holding it opens.
   const [groups, setGroups] = createSignal(new Map<number, boolean>())
+  const isOpen = (id: number, members: CommitSummary[]) =>
+    groups().get(id) ?? members.some((commit) => commit.seq === picked())
   const rows = (history: number[]): UpdateRow[] => {
-    const list = shown(history)
+    const all = shown(history)
+    const fallOf = new Map<number, Waterfall>()
+    for (const fall of waterfalls([...all].reverse()))
+      for (const seq of fall.seqs) fallOf.set(seq, fall)
+    // A waterfall's members leave the list; its row stands at the newest.
+    const list = all.filter((commit) => {
+      const fall = fallOf.get(commit.seq)
+      return !fall || fall.id === commit.seq
+    })
     const out: UpdateRow[] = []
     for (let at = 0; at < list.length; ) {
       const first = list[at] as CommitSummary
+      const fall = fallOf.get(first.seq)
+      if (fall) {
+        at++
+        const members = [...fall.seqs]
+          .reverse()
+          .map(
+            (seq) => all.find((commit) => commit.seq === seq) as CommitSummary,
+          )
+        const open = isOpen(fall.id, members)
+        out.push({ kind: "waterfall", waterfall: fall, open })
+        if (open)
+          for (const commit of members)
+            out.push({ kind: "update", commit, member: true })
+        continue
+      }
       let end = at + 1
-      while (end < list.length && sameCause(first, list[end] as CommitSummary))
+      while (
+        end < list.length &&
+        !fallOf.has((list[end] as CommitSummary).seq) &&
+        sameCause(first, list[end] as CommitSummary)
+      )
         end++
       const run = list.slice(at, end)
       at = end
@@ -77,8 +110,7 @@ export function createTimelineStore(
         continue
       }
       const id = (run.at(-1) as CommitSummary).seq
-      const open =
-        groups().get(id) ?? run.some((commit) => commit.seq === picked())
+      const open = isOpen(id, run)
       out.push({
         kind: "group",
         id,

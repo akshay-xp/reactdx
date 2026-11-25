@@ -48,6 +48,9 @@ export function Commits(props: {
       ...(commit.wasted ? [`${commit.wasted} wasted`] : []),
       when(commit),
     ].join(" · ")
+  // A group or waterfall row's id, toggled open by setGroup.
+  const groupId = (row: Exclude<UpdateRow, { kind: "update" }>) =>
+    row.kind === "group" ? row.id : row.waterfall.id
   // A row's two lines: what happened, then what it cost.
   const lines = (row: UpdateRow): [string, string] => {
     if (row.kind === "group") {
@@ -60,6 +63,7 @@ export function Commits(props: {
         ),
       ]
     }
+    if (row.kind === "waterfall") return ["Waterfall", ""]
     const first = row.member
       ? (changeText(row.commit) ?? cause(row.commit))
       : cause(row.commit)
@@ -146,12 +150,12 @@ export function Commits(props: {
             <For each={props.timeline.rows(history())}>
               {(row) => {
                 const [what, cost] = lines(row)
-                return row.kind === "group" ? (
+                return row.kind !== "update" ? (
                   <div
                     role="option"
-                    id={`group-${row.id}`}
+                    id={`group-${groupId(row)}`}
                     tabIndex={-1}
-                    data-group={row.id}
+                    data-group={groupId(row)}
                     aria-selected={false}
                     // A listbox option has no aria-expanded: the triangle
                     // shows it, the text says how many.
