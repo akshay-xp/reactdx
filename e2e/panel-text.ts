@@ -464,11 +464,20 @@ export async function openPanelText(
       }, 50))`,
     )
   }
+  // Firefox mirrors the panel's accessibility tree a moment late: after a
+  // navigation the tabs can be missing from it briefly, so it's tried again.
   const tab = async (name: string) => {
-    await onAccessible(
-      `node.role === ${role("PAGETAB")} && node.name === ${json(name)}`,
-      `node.doAction(0); return "ok"`,
-    )
+    const match = `node.role === ${role("PAGETAB")} && node.name === ${json(name)}`
+    for (const deadline = Date.now() + 5000; ; ) {
+      const done = await onAccessible(
+        match,
+        `node.doAction(0); return "ok"`,
+        false,
+      )
+      if (done || Date.now() > deadline) break
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    await onAccessible(match, `return "ok"`)
   }
   const commits = async () =>
     JSON.parse(
