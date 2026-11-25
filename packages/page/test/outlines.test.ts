@@ -207,3 +207,38 @@ test("at most 100 boundaries are measured and outlined, with a count of the rest
   expect(c.last()?.more).toBe(1)
   expect(c.found).toHaveLength(100)
 })
+
+test("a boundary that arrives while on is outlined as arrived for 2 s", () => {
+  vi.useFakeTimers()
+  try {
+    const c = controller()
+    c.outlines.arrived(9, 500)
+    c.outlines.on()
+    c.outlines.arrived(7, 840)
+    c.run()
+    expect(c.last()?.outlines).toEqual([
+      {
+        left: 7,
+        top: 0,
+        width: 10,
+        height: 10,
+        style: "arrived",
+        label: "arrived in 840 ms",
+      },
+    ])
+    vi.advanceTimersByTime(1999)
+    c.run()
+    expect(c.last()?.outlines).toHaveLength(1)
+    vi.advanceTimersByTime(1)
+    c.run()
+    expect(c.last()?.outlines).toEqual([])
+
+    c.outlines.arrived(8, 100)
+    c.outlines.off()
+    c.outlines.on()
+    c.run()
+    expect(c.last()?.outlines).toEqual([])
+  } finally {
+    vi.useRealTimers()
+  }
+})

@@ -76,6 +76,7 @@ export function createOutlineLayer(doc: Document) {
 }
 
 const MAX_OUTLINES = 100
+const ARRIVED_MS = 2000
 
 // What a waiting boundary's label says it waits on, when that's known.
 const causeText = (cause: SuspenseCause | undefined) =>
@@ -107,17 +108,23 @@ export function createSuspenseOutlines({
 }) {
   let active = false
   let scheduled = false
+  // Boundaries that just arrived, by id: how long they waited, and the timer
+  // that drops them.
+  const arrivals = new Map<number, { ms: number; timer: number }>()
   // The last frame's measurements, which labels are drawn from.
-  let measured: (Box & { since: number; cause: string })[] = []
+  type Measured = Box & {
+    style: Outline["style"]
+    label: (at: number) => string
+  }
+  let measured: Measured[] = []
   let more = 0
 
   const render = () => {
     const at = now()
     layer.draw(
-      measured.map(({ since, cause, ...box }) => ({
-        ...box,
-        style: "waiting",
-        label: `waiting ${durationText(at - since)}${cause}`,
+      measured.map(({ label, ...outline }) => ({
+        ...outline,
+        label: label(at),
       })),
       more,
     )
@@ -125,13 +132,27 @@ export function createSuspenseOutlines({
   const measure = () => {
     scheduled = false
     if (!active) return
-    const all = [...waits()]
+    const all = [
+      ...[...waits()].map(([id, { since }]) => ({
+        id,
+        style: "waiting" as const,
+        label: (at: number, cause: string) =>
+          `waiting ${durationText(at - since)}${cause}`,
+      })),
+      ...[...arrivals].map(([id, { ms }]) => ({
+        id,
+        style: "arrived" as const,
+        label: () => `arrived in ${durationText(ms)}`,
+      })),
+    ]
     const shown = all.slice(0, MAX_OUTLINES)
     more = all.length - shown.length
     measured = []
-    for (const [id, { since }] of shown) {
+    for (const { id, style, label } of shown) {
       const box = boxOf(find(id)?.elements ?? [])
-      if (box) measured.push({ ...box, since, cause: causeText(causeFor(id)) })
+      if (!box) continue
+      const cause = style === "waiting" ? causeText(causeFor(id)) : ""
+      measured.push({ ...box, style, label: (at) => label(at, cause) })
     }
     render()
   }
@@ -148,10 +169,23 @@ export function createSuspenseOutlines({
     },
     off() {
       active = false
+      for (const { timer } of arrivals.values()) clearTimeout(timer)
+      arrivals.clear()
       measured = []
       more = 0
       layer.draw([], 0)
     },
     changed,
+    // A waiting boundary's content arrived, after `ms`: outlined for 2 s.
+    arrived(id: number, ms: number) {
+      if (!active) return
+      clearTimeout(arrivals.get(id)?.timer)
+      const timer = setTimeout(() => {
+        arrivals.delete(id)
+        changed()
+      }, ARRIVED_MS) as unknown as number
+      arrivals.set(id, { ms, timer })
+      changed()
+    },
   }
 }
