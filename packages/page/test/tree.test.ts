@@ -806,3 +806,20 @@ test.skipIf(!react19)(
     expect(back.find((op) => op.name === "Shop")?.id).toBe(shopId)
   },
 )
+
+test.skipIf(!react19)(
+  "a new server payload for the same component keeps its id",
+  async () => {
+    const page = (name: string) =>
+      h("main", null, server(serverInfo(name), h("p")))
+    const { id, commit, view } = await serverTree(page("Shop"))
+    const shopId = id("Shop")
+    expect(await commit(page("Shop"))).toEqual([])
+    expect(view.outline()).toEqual(["main host", "  Shop server", "    p host"])
+    expect(view.nodes.get(shopId)?.name).toBe("Shop")
+
+    const ops = await commit(page("Cart"))
+    expect(ops).toContainEqual({ op: "remove", id: shopId })
+    expect(view.outline()).toEqual(["main host", "  Cart server", "    p host"])
+  },
+)

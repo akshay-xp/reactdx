@@ -134,10 +134,18 @@ export function createTree({
   const label = (fiber: Fiber) =>
     bounded(nameOf(fiber, kindOf(fiber) as TreeKind))
   const serverIds = new WeakMap<object, number>()
-  const serverId = (info: ServerInfo) => {
+  // Each mounted server node's latest info.
+  const serverInfo = new Map<number, ServerInfo>()
+  // A new payload (router.refresh, a navigation) brings new info objects: one
+  // named and keyed like a server node already under `key` takes its id.
+  const serverId = (info: ServerInfo, key: number, used: Set<number>) => {
     const known = serverIds.get(info)
     if (known !== undefined) return known
-    const id = nextId++
+    const id =
+      children.get(key)?.find((id) => {
+        const was = serverInfo.get(id)
+        return was?.name === info.name && was.key === info.key && !used.has(id)
+      }) ?? nextId++
     serverIds.set(info, id)
     return id
   }
@@ -189,11 +197,18 @@ export function createTree({
 
   // Consecutive kids rendered by the same Server Component go under its node;
   // the chain's next info nests inside it.
-  const group = (kids: Fiber[], of: ServerInfo[][], depth = 0): Child[] => {
+  const group = (
+    kids: Fiber[],
+    of: ServerInfo[][],
+    key: number,
+    depth = 0,
+  ): Child[] => {
     const out: Child[] = []
+    const used = new Set<number>()
     let open: { server: Server; kids: Fiber[]; of: ServerInfo[][] } | undefined
     const close = () => {
-      if (open) open.server.kids = group(open.kids, open.of, depth + 1)
+      if (open)
+        open.server.kids = group(open.kids, open.of, open.server.id, depth + 1)
       open = undefined
     }
     kids.forEach((kid, i) => {
@@ -206,11 +221,9 @@ export function createTree({
       }
       if (open?.server.info !== info) {
         close()
-        open = {
-          server: { info, id: serverId(info), kids: [] },
-          kids: [],
-          of: [],
-        }
+        const id = serverId(info, key, used)
+        used.add(id)
+        open = { server: { info, id, kids: [] }, kids: [], of: [] }
         out.push(open.server)
       }
       open.kids.push(kid)
@@ -220,12 +233,13 @@ export function createTree({
     return out
   }
 
-  const kidsOf = (fiber: Fiber, stale?: Set<Fiber>): Child[] => {
+  // `key` is where the fiber's children are stored.
+  const kidsOf = (fiber: Fiber, key: number, stale?: Set<Fiber>): Child[] => {
     chains = undefined
     const kids = visible(fiber, [], stale)
     const of = chains
     chains = undefined
-    return of ? group(kids, of) : kids
+    return of ? group(kids, of, key) : kids
   }
 
   const noop = () => {}
@@ -243,6 +257,7 @@ export function createTree({
       const { id, info, kids } = child
       const name = bounded(info.name)
       names.set(id, name)
+      serverInfo.set(id, info)
       ops.push({
         op: "add",
         id,
@@ -273,7 +288,7 @@ export function createTree({
       key: fiber.key === null ? null : bounded(fiber.key),
       index,
     })
-    addChildren(kidsOf(fiber), id, id, rootId, ops)
+    addChildren(kidsOf(fiber, id), id, id, rootId, ops)
   }
 
   // `key` is where the children are stored; `parentId` is what the ops say (0 at a root).
@@ -295,6 +310,7 @@ export function createTree({
     children.delete(id)
     names.delete(id)
     fibers.delete(id)
+    serverInfo.delete(id)
     onForget?.(id)
   }
 
@@ -308,7 +324,7 @@ export function createTree({
   ) => {
     if (children.has(key) && bailedOut(fiber)) return
     const stale = new Set<Fiber>()
-    reconcile(kidsOf(fiber, stale), stale, key, parentId, rootId, ops)
+    reconcile(kidsOf(fiber, key, stale), stale, key, parentId, rootId, ops)
   }
 
   // A server node's kids come from its parent fiber's walk, so it reconciles
@@ -340,6 +356,7 @@ export function createTree({
       const id = next[index] as number
       if (same || known?.has(id)) {
         if (isServer(kid)) {
+          serverInfo.set(id, kid.info)
           reconcile(kid.kids, stale, id, id, rootId, ops)
           return
         }
@@ -367,13 +384,15 @@ export function createTree({
     // Appends rather than returns: spreading a large tree into push() overflows the stack.
     full(root: FiberRoot, rootId: number, ops: TreeOp[]) {
       const host = root.current as unknown as Fiber
-      addChildren(kidsOf(host), idOf(host), 0, rootId, ops)
+      const key = idOf(host)
+      addChildren(kidsOf(host, key), key, 0, rootId, ops)
     },
     // Ids stay: the same component keeps its id across watches.
     clear() {
       children.clear()
       names.clear()
       fibers.clear()
+      serverInfo.clear()
     },
     // The nearest mounted component (never a host) owning a DOM element, found
     // through the fiber React keeps on each of its elements.
