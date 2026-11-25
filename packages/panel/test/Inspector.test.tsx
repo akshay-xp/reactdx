@@ -2125,3 +2125,57 @@ test("a Server Component ran on the server: read-only props, rendered at", async
   ).toBe(true)
   expect(getByRole("button", { name: "Open in editor" })).toBeTruthy()
 })
+
+test("a Server Component lists what it awaited and the client components it rendered", () => {
+  const { container, inspector, select, tree, getByText } = setup(
+    "server",
+    null,
+    noSources,
+    createSettings(),
+    [],
+  )
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 4,
+        parentId: 3,
+        rootId: 1,
+        kind: "lazy",
+        name: "AddToCart",
+        key: null,
+        index: 0,
+      },
+    ]),
+  )
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      server: {
+        awaits: [
+          { name: "getProduct", start: 95, end: 397 },
+          { name: "getReviews", start: 96, end: 1297 },
+        ],
+        rendered: [{ id: 4, name: "AddToCart", bytes: 14643 }],
+      },
+    }),
+  )
+  const lines = (name: string) =>
+    [
+      ...(container
+        .querySelector(`[data-path='section:${name}']`)
+        ?.closest("section")
+        ?.querySelectorAll("[data-testid=server-row]") ?? []),
+    ].map((row) => row.textContent)
+  expect(getByText("Awaited")).toBeTruthy()
+  expect(lines("Awaited")).toEqual(["getProduct 302 ms", "getReviews 1.2s"])
+  expect(lines("Client components")).toEqual(["AddToCart 14.3 KB"])
+  fireEvent.click(getByText("AddToCart"))
+  expect(tree.selected()).toBe(4)
+
+  inspector.receive(
+    inspected(3, { props: object({}), server: { awaits: [], rendered: [] } }),
+  )
+  expect(sections(container)).not.toContain("Awaited")
+})
