@@ -5,7 +5,7 @@ import { inspecting } from "./inspecting.ts"
 import { react19, server, serverInfo } from "./server.ts"
 
 const h = React.createElement
-const { inspect, idOf, replies } = inspecting()
+const { inspect, idOf, replies, mount } = inspecting()
 
 const shop = serverInfo("Shop")
 const product = serverInfo("ProductDetails", null, {
@@ -65,5 +65,41 @@ test.skipIf(!react19)(
     const data = await inspect(server(bare, h("p")), "Bare")
     expect(data?.source).toBeUndefined()
     expect(data?.props).toMatchObject({ size: 0 })
+  },
+)
+
+// Past the agent's 100 ms flush.
+const flushed = () =>
+  React.act(() => new Promise((resolve) => setTimeout(resolve, 150)))
+
+let setTicks = (_: number) => {}
+function Ticker() {
+  const [ticks, set] = React.useState(0)
+  setTicks = set
+  return h("b", null, ticks)
+}
+
+test.skipIf(!react19)(
+  "a selected Server Component stays selected until it leaves",
+  async () => {
+    const page = (info: object | null) =>
+      h("div", null, h(Ticker), info && server(info, h("p")))
+    await inspect(page(shop), "Shop")
+    const shopId = idOf("Shop")
+    const sent = () => replies().filter((reply) => reply.id === shopId)
+    const before = sent().length
+
+    await React.act(() => setTicks(1))
+    await flushed()
+    expect(sent().slice(before)).toEqual([])
+
+    await mount(page(serverInfo("Shop")))
+    await flushed()
+    expect(sent().slice(before)).toHaveLength(1)
+    expect(sent().at(-1)?.data).not.toBeNull()
+
+    await mount(page(null))
+    await flushed()
+    expect(sent().at(-1)?.data).toBeNull()
   },
 )

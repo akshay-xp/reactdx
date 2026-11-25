@@ -544,6 +544,12 @@ export function startAgent(
   const refresh = () => {
     if (!selected) return
     const { id, sent } = selected
+    // A server node changes only with a new payload: a new info object.
+    const server = tree.server(id)
+    if (server) {
+      if (server.info !== sent?.props) post(inspected(id, describe(id)))
+      return
+    }
     const fiber = tree.fiber(id)
     if (
       fiber &&
