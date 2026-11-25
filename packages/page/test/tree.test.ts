@@ -964,6 +964,32 @@ test("waits lists each waiting boundary since when, until it arrives", async () 
   expect([...tree.waits()]).toEqual([])
 })
 
+test("find gives a dehydrated boundary's server HTML elements, up to its end marker", () => {
+  const container = document.createElement("div")
+  container.innerHTML =
+    "<!--$?--><p></p><!--$--><span></span><!--/$--><div></div><!--/$--><footer></footer>"
+  const [p, span, div] = ["p", "span", "div"].map((tag) =>
+    container.querySelector(tag),
+  )
+  const node = (tag: number, memoizedState: unknown, child = null) => ({
+    tag,
+    key: null,
+    type: null,
+    elementType: null,
+    child,
+    sibling: null,
+    alternate: null,
+    return: null,
+    memoizedProps: {},
+    memoizedState,
+    stateNode: null,
+  })
+  const boundary = node(13, { dehydrated: container.firstChild })
+  const tree = createTree()
+  tree.full({ current: node(3, null, boundary as never) } as never, 1, [])
+  expect(tree.find(2)?.elements).toEqual([p, span, div])
+})
+
 test("a boundary showing its content reports no wait", async () => {
   const container = document.createElement("div")
   const root = createRoot(container)

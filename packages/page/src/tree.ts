@@ -85,6 +85,20 @@ const COMPONENT_KINDS = new Set<TreeKind>([
 const isHidden = (fiber: Fiber) =>
   fiber.tag === 22 && fiber.memoizedState !== null
 
+// A dehydrated boundary's elements: the server HTML between its <!--$?-->
+// (or $, $!) marker and the matching <!--/$-->.
+function serverHtml(start: Node, out: Element[]) {
+  let depth = 1
+  for (let at = start.nextSibling; at; at = at.nextSibling) {
+    if (at.nodeType === 1) out.push(at as Element)
+    else if (at.nodeType === 8) {
+      const data = (at as Comment).data
+      if (data === "/$" && --depth === 0) return
+      if (data.startsWith("$")) depth++
+    }
+  }
+}
+
 // Every other tag (root, text, fragment, mode, portal, offscreen...) is skipped.
 function kindOf(fiber: Fiber): TreeKind | undefined {
   const kind = KINDS[fiber.tag]
@@ -544,7 +558,10 @@ export function createTree({
       if (name === undefined) return
       const elements: Element[] = []
       const collect = (at: Fiber) => {
+        const dehydrated = (at.memoizedState as { dehydrated?: Node } | null)
+          ?.dehydrated
         if (kindOf(at) === "host") elements.push(at.stateNode as Element)
+        else if (at.tag === 13 && dehydrated) serverHtml(dehydrated, elements)
         else if (!isHidden(at))
           for (let child = at.child; child; child = child.sibling)
             collect(child)
