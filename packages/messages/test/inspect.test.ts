@@ -776,3 +776,40 @@ test("what a Suspense boundary waits on, and what it waited on", () => {
       JSON.stringify(suspense),
     ).toBeUndefined()
 })
+
+test("a commit summary says which boundaries' data arrived, with their awaits", () => {
+  const arrival = {
+    boundary: 4,
+    name: "Reviews",
+    waited: 840,
+    awaits: [
+      { name: "getReviews", owner: "Reviews", start: 96, end: 1297 },
+      { name: "getMore", owner: "Reviews", start: 1297, end: 1300 },
+    ],
+  }
+  const summary = {
+    seq: 1,
+    time: 5,
+    rootId: 1,
+    updaters: [],
+    renders: 2,
+    wasted: 0,
+    arrived: [arrival],
+  }
+  expect(parseCommits(commitsMessage([summary], 1, false))?.commits).toEqual([
+    summary,
+  ])
+  for (const arrived of [
+    [{ ...arrival, boundary: 0 }],
+    [{ ...arrival, waited: -1 }],
+    [{ ...arrival, name: "n".repeat(257) }],
+    [{ ...arrival, awaits: [{ ...arrival.awaits[0], end: 1 }] }],
+    Array(51).fill(arrival),
+  ])
+    expect(
+      parseCommits(
+        commitsMessage([{ ...summary, arrived } as never], 1, false),
+      ),
+      JSON.stringify(arrived).slice(0, 80),
+    ).toBeUndefined()
+})

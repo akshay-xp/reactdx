@@ -212,7 +212,7 @@ export type SuspenseCause =
 // of the Server Components inside it.
 export type SuspenseDetails = {
   cause?: SuspenseCause
-  awaited?: (ServerAwait & { owner: string })[]
+  awaited?: OwnedAwait[]
 }
 export const MAX_AWAITS = 50
 export const MAX_RENDERED = 200
@@ -252,7 +252,19 @@ export type CommitSummary = {
   // The first updater's first changed hook (M6 #74): its list index (no
   // label: that takes a shadow render of the updater, too much per update).
   change?: SummaryChange
+  // The Suspense boundaries whose content this commit showed (M7 #81).
+  arrived?: Arrival[]
 }
+// A boundary whose data arrived: named by the Server Component inside it (or
+// its child component), how long it waited, and the awaits that took the time.
+export type Arrival = {
+  boundary: number
+  name: string
+  waited: number
+  awaits: OwnedAwait[]
+}
+export type OwnedAwait = ServerAwait & { owner: string }
+export const MAX_ARRIVALS = 50
 export type SummaryChange = { hook: number; old: Value; new: Value }
 export type CommitsMessage = {
   source: "reactdx"
@@ -282,7 +294,8 @@ export function parseCommits(data: unknown): CommitsMessage | undefined {
   if (source !== "reactdx" || type !== "commits") return
   if (!isId(oldest) || typeof dropped !== "boolean") return
   const list = parseList(commits, MAX_HISTORY, (item) => {
-    const { seq, time, rootId, updaters, renders, wasted, change } = item
+    const { seq, time, rootId, updaters, renders, wasted, change, arrived } =
+      item
     if (!isId(seq) || !isId(rootId) || !isCount(renders)) return
     if (!isCount(wasted) || wasted > renders) return
     if (typeof time !== "number" || !(time >= 0)) return
@@ -304,6 +317,11 @@ export function parseCommits(data: unknown): CommitsMessage | undefined {
       const parsed = parseSummaryChange(change, { left: MAX_VALUES })
       if (!parsed) return
       summary.change = parsed
+    }
+    if (arrived !== undefined) {
+      const list = parseList(arrived, MAX_ARRIVALS, parseArrival)
+      if (!list) return
+      summary.arrived = list
     }
     return summary
   })
@@ -986,6 +1004,18 @@ const parseAwait = ({ name, start, end }: Record<string, unknown>) =>
     ? { name, start, end }
     : undefined
 
+const parseOwnedAwait = (item: Record<string, unknown>) => {
+  const wait = parseAwait(item)
+  return wait && isName(item.owner) ? { ...wait, owner: item.owner } : undefined
+}
+
+function parseArrival(item: Record<string, unknown>): Arrival | undefined {
+  const { boundary, name, waited, awaits } = item
+  if (!isId(boundary) || !isName(name) || !isTime(waited)) return
+  const list = parseList(awaits, MAX_AWAITS, parseOwnedAwait)
+  if (list) return { boundary, name, waited, awaits: list }
+}
+
 function parseCause(data: unknown): SuspenseCause | undefined {
   if (typeof data !== "object" || data === null) return
   const { kind, name, count } = data as Record<string, unknown>
@@ -1005,12 +1035,7 @@ function parseSuspense(data: unknown): SuspenseDetails | undefined {
     details.cause = parsed
   }
   if (awaited !== undefined) {
-    const list = parseList(awaited, MAX_AWAITS, (item) => {
-      const wait = parseAwait(item)
-      return wait && isName(item.owner)
-        ? { ...wait, owner: item.owner }
-        : undefined
-    })
+    const list = parseList(awaited, MAX_AWAITS, parseOwnedAwait)
     if (!list) return
     details.awaited = list
   }
