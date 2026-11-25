@@ -63,7 +63,7 @@ import { createOverlay } from "./overlay.ts"
 import { awaitsOf, renderedAt } from "./server.ts"
 import { propSizes, sizeOf } from "./size.ts"
 import { sourceOf } from "./source.ts"
-import { causeOf, createSuspended, waitOf } from "./suspense.ts"
+import { causeOf, childName, createSuspended, waitOf } from "./suspense.ts"
 import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
@@ -125,9 +125,14 @@ export function startAgent(
 
   const recorder = createRecorder()
   const suspended = createSuspended()
+  // The boundaries whose data arrived in the commit being recorded.
+  const arrivals: { fiber: Fiber; id: number; ms: number }[] = []
   const tree = createTree({
     onForget: recorder.forget,
-    onArrive: suspended.clear,
+    onArrive: (fiber, id, ms) => {
+      suspended.clear(fiber)
+      arrivals.push({ fiber, id, ms })
+    },
   })
   // React 18's profiling hooks (who suspended), only while watching, and only
   // when no other devtools is on the page: there's one slot, and RDT's Timeline
@@ -385,6 +390,19 @@ export function startAgent(
         return awaitsOf(info, found.entries).map((wait) => ({ ...wait, owner }))
       })
       .slice(0, MAX_AWAITS)
+  // An arrived boundary, named by the first Server Component inside it, else
+  // its child component.
+  const arrivalOf = ({ fiber, id, ms }: (typeof arrivals)[number]) => {
+    const [first] = tree.serversUnder(id)
+    const info = first === undefined ? undefined : tree.server(first)?.info
+    const name = info ? String(info.name) : (childName(fiber) ?? "Suspense")
+    return {
+      boundary: id,
+      name: name.slice(0, MAX_TREE_STRING),
+      waited: ms,
+      awaits: waitedOn(id),
+    }
+  }
   const describe = (id: number): InspectedData | null => {
     const found = tree.server(id)
     if (found)
@@ -657,6 +675,7 @@ export function startAgent(
           (root as { memoizedUpdaters?: Set<unknown> }).memoizedUpdaters ?? [],
         ),
         (visit) => tree.commit(root, entry.id, buffer, visit),
+        () => arrivals.splice(0).map(arrivalOf),
       )
     if (pending) return
     pending = true

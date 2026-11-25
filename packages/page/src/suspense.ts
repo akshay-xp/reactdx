@@ -48,9 +48,21 @@ export function causeOf(
   const type = element ? child.type : undefined
   if ((type as Loose | undefined)?.$$typeof === LAZY) return { kind: "lazy" }
   if (recorded) return recorded
-  // A DOM element suspends nothing itself: something inside it did.
-  if (type == null || typeof type === "string") return { kind: "promise" }
-  return { kind: "inside", name: typeName(type as never).slice(0, MAX_NAME) }
+  const name = childName(boundary)
+  return name ? { kind: "inside", name } : { kind: "promise" }
+}
+
+// The component a boundary's child element renders (not a DOM element, text,
+// a list or a lazy one), by name.
+export function childName(boundary: Fiber): string | undefined {
+  const child = (boundary.memoizedProps as Loose | null)?.children as
+    | Loose
+    | null
+    | undefined
+  if (!child || !ELEMENT.includes(child.$$typeof as symbol)) return
+  const type = child.type as Loose | string | null | undefined
+  if (type == null || typeof type === "string" || type.$$typeof === LAZY) return
+  return typeName(type as never).slice(0, MAX_NAME)
 }
 
 type Suspender = { name: string; wakeables: Set<unknown> }

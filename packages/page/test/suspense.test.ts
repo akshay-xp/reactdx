@@ -204,3 +204,81 @@ test.skipIf(!react19)(
     ])
   },
 )
+
+// Suspends until `arrive` settles it, then shows `shows`.
+let arrive = () => {}
+let arrived = false
+const later = new Promise<void>((resolve) => {
+  arrive = () => {
+    arrived = true
+    resolve()
+  }
+})
+function Arrives({ shows }: { shows: React.ReactNode }): React.ReactNode {
+  if (!arrived) throw later
+  return shows
+}
+function Waits() {
+  return h(Arrives, { shows: h("p") })
+}
+const flushed = () =>
+  React.act(() => new Promise((resolve) => setTimeout(resolve, 150)))
+const lastArrived = () =>
+  posted
+    .flatMap((m) =>
+      (m as { type?: string; commits?: { arrived?: unknown }[] }).type ===
+      "commits"
+        ? (m as { commits: { arrived?: unknown }[] }).commits
+        : [],
+    )
+    .flatMap((commit) => (commit.arrived as unknown[] | undefined) ?? [])
+
+test.skipIf(!react19)(
+  "a commit records the boundaries whose data arrived, named and with their awaits",
+  async () => {
+    const reviews = serverInfo("Reviews")
+    const reviewsAwait = {
+      awaited: { name: "sleep", start: 96, end: 1297 },
+      owner: reviews,
+      stack: [["getReviews", "/x.js", 1, 1]],
+    }
+    await mount(null)
+    await mount(
+      h(
+        "main",
+        null,
+        boundary(
+          h(Arrives, { shows: server(reviews, h("ul"), [reviewsAwait]) }),
+        ),
+        boundary(h(Waits)),
+      ),
+    )
+    send({ source: "reactdx-relay", type: "watch" })
+    await React.act(async () => arrive())
+    await flushed()
+    const ids = posted
+      .flatMap(
+        (m) =>
+          (m as { ops?: { op: string; kind?: string; id: number }[] }).ops ??
+          [],
+      )
+      .filter((op) => op.op === "add" && op.kind === "suspense")
+      .map((op) => op.id)
+    expect(lastArrived()).toEqual([
+      {
+        boundary: ids[0],
+        name: "Reviews",
+        waited: expect.any(Number),
+        awaits: [
+          { name: "getReviews", owner: "Reviews", start: 96, end: 1297 },
+        ],
+      },
+      {
+        boundary: ids[1],
+        name: "Waits",
+        waited: expect.any(Number),
+        awaits: [],
+      },
+    ])
+  },
+)

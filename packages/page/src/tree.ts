@@ -124,7 +124,8 @@ export function createTree({
 }: {
   onForget?: (id: number) => void
   // A waiting Suspense boundary whose content arrived.
-  onArrive?: (boundary: Fiber) => void
+  // with how long it waited (ms).
+  onArrive?: (boundary: Fiber, id: number, ms: number) => void
   // The page's clock, for Suspense waits.
   now?: () => number
 } = {}) {
@@ -184,7 +185,7 @@ export function createTree({
     const at = now()
     if (was) {
       waits.delete(id)
-      onArrive?.(fiber)
+      onArrive?.(fiber, id, at - was.since)
       ops.push({ op: "suspense", id, state: "arrived", ms: at - was.since })
       return
     }
