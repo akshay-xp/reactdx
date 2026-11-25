@@ -2,7 +2,7 @@ import { parseInspected } from "@reactdx/messages"
 import React from "react"
 import { expect, test } from "vitest"
 import { inspecting } from "./inspecting.ts"
-import { react19, server, serverInfo } from "./server.ts"
+import { react19, ServerChild, server, serverInfo } from "./server.ts"
 
 const h = React.createElement
 const { inspect, idOf, replies, mount } = inspecting()
@@ -101,5 +101,39 @@ test.skipIf(!react19)(
     await mount(page(null))
     await flushed()
     expect(sent().at(-1)?.data).toBeNull()
+  },
+)
+
+function AddToCart(_: { product: object; price: number }) {
+  return h("button")
+}
+function Other() {
+  return server(serverInfo("Nested"), h(ServerChild))
+}
+
+test.skipIf(!react19)(
+  "a Server Component lists the client components it rendered, with sizes",
+  async () => {
+    const item = { id: "p-12", name: "Trail shoe" }
+    const data = await inspect(
+      server(
+        product,
+        h(
+          "section",
+          null,
+          h(React.Suspense, null, h(AddToCart, { product: item, price: 89 })),
+          h(Other),
+        ),
+      ),
+      "ProductDetails",
+    )
+    expect(data?.server?.rendered).toEqual([
+      {
+        id: idOf("AddToCart"),
+        name: "AddToCart",
+        bytes: JSON.stringify({ product: item, price: 89 }).length,
+      },
+      { id: idOf("Other"), name: "Other", bytes: 2 },
+    ])
   },
 )

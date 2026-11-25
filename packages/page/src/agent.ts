@@ -16,6 +16,7 @@ import {
   MAX_HISTORY,
   MAX_OPS,
   MAX_OWNERS,
+  MAX_RENDERED,
   MAX_TREE_STRING,
   type Owner,
   type PageMessage,
@@ -59,6 +60,7 @@ import { contextsOf, createRecorder, type RenderRecord } from "./insight.ts"
 import { copyText, createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
 import { awaitsOf, renderedAt } from "./server.ts"
+import { sizeOf } from "./size.ts"
 import { sourceOf } from "./source.ts"
 import { createTree, type Fiber } from "./tree.ts"
 
@@ -311,6 +313,7 @@ export function startAgent(
   // A Server Component: what the server sent about it. Nothing to edit or read
   // from hooks; its props are the server's.
   const describeServer = (
+    id: number,
     info: Record<string, unknown>,
     entries: unknown[],
   ) => {
@@ -322,13 +325,22 @@ export function startAgent(
     }
     const source = renderedAt(info)
     if (source) data.source = source
-    data.server = { awaits: awaitsOf(info, entries), rendered: [] }
+    const rendered = tree
+      .clientsUnder(id)
+      .slice(0, MAX_RENDERED)
+      .map(({ id, fiber }) => ({
+        id,
+        name: tree.known(fiber)?.name ?? "Anonymous",
+        ...sizeOf(fiber.memoizedProps),
+      }))
+    data.server = { awaits: awaitsOf(info, entries), rendered }
     return data
   }
   const describe = (id: number): InspectedData | null => {
     const found = tree.server(id)
     if (found)
       return describeServer(
+        id,
         found.info as Record<string, unknown>,
         found.entries,
       )

@@ -71,6 +71,15 @@ const FIXED_NAMES: Partial<Record<TreeKind, string>> = {
 
 const LAZY = Symbol.for("react.lazy")
 
+// Kinds that are components (Suspense, providers and DOM elements aren't).
+const COMPONENT_KINDS = new Set<TreeKind>([
+  "function",
+  "class",
+  "forwardRef",
+  "memo",
+  "lazy",
+])
+
 // Offscreen (tag 22) keeps suspended or hidden content mounted but off screen.
 const isHidden = (fiber: Fiber) =>
   fiber.tag === 22 && fiber.memoizedState !== null
@@ -453,6 +462,23 @@ export function createTree({
           return { info, entries: entries as unknown[] }
       }
       return { info, entries: [] as unknown[] }
+    },
+    // The components a server node rendered: under it, with no component
+    // between (DOM elements, Suspense and providers are walked through).
+    clientsUnder(id: number) {
+      const out: { id: number; fiber: Fiber }[] = []
+      const walk = (at: number) => {
+        for (const child of children.get(at) ?? []) {
+          if (servers.has(child)) continue
+          const fiber = fibers.get(child)
+          const kind = fiber && kindOf(fiber)
+          if (fiber && kind && COMPONENT_KINDS.has(kind))
+            out.push({ id: child, fiber })
+          else walk(child)
+        }
+      }
+      walk(id)
+      return out
     },
     // The mounted server node an info is, if any.
     serverId(info: object) {
