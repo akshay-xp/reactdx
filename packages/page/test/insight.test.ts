@@ -685,3 +685,18 @@ test("children under a wrapper that bailed out aren't recorded", async () => {
   expect(recorder.latest(id("BenchCell"))).toBeUndefined()
   expect(recorder.summaries(0).at(-1)?.renders).toBe(2)
 })
+
+test("a commit keeps the boundaries whose data arrived in it", () => {
+  const recorder = createRecorder()
+  const arrival = { boundary: 4, name: "Reviews", waited: 840, awaits: [] }
+  recorder.commit(
+    1,
+    new Set(),
+    () => {},
+    () => [arrival],
+  )
+  recorder.commit(1, new Set(), () => {})
+  const [arrived, plain] = recorder.summaries(0)
+  expect(arrived?.arrived).toEqual([arrival])
+  expect(plain).not.toHaveProperty("arrived")
+})
