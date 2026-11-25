@@ -660,13 +660,17 @@ export async function selectListed(
   const deadline = Date.now() + 15_000
   let text = ""
   while (Date.now() < deadline) {
-    await until(
-      async () => {
-        await panel.end()
-        return panel()
-      },
-      (t) => parseCopies(t).some((c) => c.names.includes(component)),
-    )
+    // End only when the row isn't listed yet: it selects the last row, and
+    // Firefox can deliver it after the select below, replacing the
+    // Inspector under a press (#68).
+    const listed = (t: string) =>
+      parseCopies(t).some((c) => c.names.includes(component))
+    await until(async () => {
+      const shown = await panel()
+      if (listed(shown)) return shown
+      await panel.end()
+      return panel()
+    }, listed)
     await panel.select(component)
     const lost = (t: string) => t.startsWith("Select a component")
     text = await until(
