@@ -91,3 +91,51 @@ if (fixtures.some((f) => f.fixture === "next"))
       await browser.close()
     }
   })
+
+if (fixtures.some((f) => f.fixture === "next"))
+  test("next: data arrivals and the waterfall in Updates, by navigation", async () => {
+    const { browser, page, panel } = await panelFor(
+      name,
+      "http://localhost:5220",
+      "after",
+    )
+    try {
+      await page.waitForSelector("[data-testid=counter]")
+      await until(panel, (t) => t.includes("Counter"))
+      await page.click("a[href='/shop']")
+      await page.waitForSelector("[data-testid=recommendations]", {
+        timeout: 10_000,
+      })
+      await panel.tab("Updates")
+      const waterfall = /^Waterfall · 2 waits, one after another · \d\.\ds/
+      let rows: string[] = []
+      for (const deadline = Date.now() + 5000; Date.now() < deadline; ) {
+        rows = await panel.commits()
+        if (rows.some((row) => waterfall.test(row))) break
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      const has = (pattern: RegExp) =>
+        assert.ok(
+          rows.some((row) => pattern.test(row)),
+          rows.join("\n"),
+        )
+      has(waterfall)
+      has(/^Data arrived · ProductDetails boundary · waited \d+ ms/)
+      has(/^Data arrived · CartCount boundary · waited /)
+      // The waterfall is the newest row: Home picks its newest member, which
+      // opens it.
+      assert.match(rows[0] ?? "", waterfall)
+      await panel.key("Updates", "Home")
+      const hint =
+        "getRecommendations in Recommendations started only after getReviews ended"
+      for (const deadline = Date.now() + 5000; Date.now() < deadline; ) {
+        rows = await panel.commits()
+        if (rows.some((row) => row.includes(hint))) break
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      has(new RegExp(hint))
+      has(/^Data arrived · Reviews boundary · waited 1\.\ds/)
+    } finally {
+      await browser.close()
+    }
+  })
