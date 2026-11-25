@@ -2262,6 +2262,8 @@ test("a waiting boundary says how long and what it waits on; an arrived one, wha
     tree.apply(
       treeBatch(2, [{ op: "suspense", id: 3, state: "waiting", ms: 1200 }]),
     )
+    // Before the page says what it waits on, nothing is claimed.
+    expect(answer()).toBe("Showing its fallback for 1.2s.")
     const said = (cause: object) => {
       inspector.receive(
         inspected(3, { props: object({}), suspense: { cause } } as never),

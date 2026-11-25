@@ -199,8 +199,11 @@ export function suspenseAnswer(
   cause: SuspenseCause | undefined,
   ms: number,
 ): Part[] {
-  const lead = `Showing its fallback for ${durationText(ms)}, `
-  switch (cause?.kind) {
+  const time = `Showing its fallback for ${durationText(ms)}`
+  // The page hasn't said what it waits on yet: claim nothing.
+  if (!cause) return [`${time}.`]
+  const lead = `${time}, `
+  switch (cause.kind) {
     case "server":
       return [`${lead}waiting on `, { code: cause.name }, " (server)"]
     case "thrown": {
@@ -214,7 +217,7 @@ export function suspenseAnswer(
       return [`${lead}waiting inside `, { code: cause.name }]
     case "lazy":
       return [`${lead}loading a lazy() component`]
-    default:
+    case "promise":
       return [`${lead}waiting on a promise`]
   }
 }
