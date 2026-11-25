@@ -63,7 +63,7 @@ import { createOverlay } from "./overlay.ts"
 import { awaitsOf, renderedAt } from "./server.ts"
 import { propSizes, sizeOf } from "./size.ts"
 import { sourceOf } from "./source.ts"
-import { causeOf, childName, createSuspended, waitOf } from "./suspense.ts"
+import { causeOf, createSuspended, waitOf } from "./suspense.ts"
 import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
@@ -391,11 +391,15 @@ export function startAgent(
       })
       .slice(0, MAX_AWAITS)
   // An arrived boundary, named by the first Server Component inside it, else
-  // its child component.
-  const arrivalOf = ({ fiber, id, ms }: (typeof arrivals)[number]) => {
+  // the first component it shows (a lazy one resolved by now: Next's client
+  // components are lazy references).
+  const arrivalOf = ({ id, ms }: (typeof arrivals)[number]) => {
     const [first] = tree.serversUnder(id)
     const info = first === undefined ? undefined : tree.server(first)?.info
-    const name = info ? String(info.name) : (childName(fiber) ?? "Suspense")
+    const [client] = tree.clientsUnder(id)
+    const name = info
+      ? String(info.name)
+      : ((client && tree.known(client.fiber)?.name) ?? "Suspense")
     return {
       boundary: id,
       name: name.slice(0, MAX_TREE_STRING),

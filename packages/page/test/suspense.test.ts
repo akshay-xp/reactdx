@@ -282,3 +282,22 @@ test.skipIf(!react19)(
     ])
   },
 )
+
+test.skipIf(!react19)(
+  "an arrived lazy child is named by the component it resolved to",
+  async () => {
+    let load = (_: { default: React.ComponentType }) => {}
+    function CartCount() {
+      return h("p")
+    }
+    const Lazy = React.lazy(
+      () => new Promise<{ default: React.ComponentType }>((r) => (load = r)),
+    )
+    await mount(null)
+    await mount(h("main", null, boundary(h(Lazy))))
+    send({ source: "reactdx-relay", type: "watch" })
+    await React.act(async () => load({ default: CartCount }))
+    await flushed()
+    expect(lastArrived().at(-1)).toMatchObject({ name: "CartCount" })
+  },
+)
