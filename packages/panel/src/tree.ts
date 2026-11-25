@@ -6,6 +6,7 @@ import type {
   TreeOp,
 } from "@reactdx/messages"
 import { batch, createSignal } from "solid-js"
+import { nextInternal } from "./next"
 
 export type Row = {
   id: number
@@ -48,6 +49,8 @@ type Node = {
   // The nearest component kind at or above this node.
   scope: TreeKind | undefined
   client: boolean
+  // One of Next's own (src/next.ts); hidden only in a root that's Next's.
+  internal: boolean
 }
 
 export type TreeStore = ReturnType<typeof createTreeStore>
@@ -71,13 +74,24 @@ export function createTreeStore() {
   const [version, setVersion] = createSignal(0)
   const [selected, select] = createSignal<number>()
   const [showHosts, showHostsSignal] = createSignal(false)
+  const [showInternals, showInternalsSignal] = createSignal(false)
+  // Roots holding Next's AppRouter, and each root's count of internals: a
+  // Vite app's own Router or Head is never hidden.
+  const nextRoots = new Set<number>()
+  const internals = new Map<number, number>()
+  const countInternal = (node: Node, by: number) => {
+    if (node.internal)
+      internals.set(node.rootId, (internals.get(node.rootId) ?? 0) + by)
+  }
   const [query, querySignal] = createSignal("")
   // The row under the pointer: the page highlights it.
   const [hovered, hover] = createSignal<number>()
   const [picking, setPicking] = createSignal(false)
   // Host (DOM element) nodes are rows only while "Show DOM elements" is on.
   const visible = (node: Node | undefined) =>
-    node !== undefined && (node.kind !== "host" || showHosts())
+    node !== undefined &&
+    (node.kind !== "host" || showHosts()) &&
+    !(node.internal && nextRoots.has(node.rootId) && !showInternals())
 
   const siblings = (rootId: number, parentId: number) => {
     if (parentId) return nodes.get(parentId)?.children
@@ -88,10 +102,15 @@ export function createTreeStore() {
     nodes.clear()
     tops.clear()
     counts.clear()
+    nextRoots.clear()
+    internals.clear()
     setTally(tally() + 1)
   }
   const forget = (id: number) => {
-    for (const child of nodes.get(id)?.children ?? []) forget(child)
+    const node = nodes.get(id)
+    if (!node) return
+    for (const child of node.children) forget(child)
+    countInternal(node, -1)
     nodes.delete(id)
   }
 
@@ -105,9 +124,10 @@ export function createTreeStore() {
       const { id, rootId, parentId, kind, name, key, index } = op
       const list = siblings(rootId, parentId)
       if (!list) return false
-      const above = nodes.get(parentId)?.scope
+      const parent = nodes.get(parentId)
+      const above = parent?.scope
       const component = COMPONENT_KINDS.has(kind)
-      nodes.set(id, {
+      const node: Node = {
         rootId,
         parentId,
         kind,
@@ -116,7 +136,11 @@ export function createTreeStore() {
         children: [],
         scope: component ? kind : above,
         client: component && kind !== "server" && above === "server",
-      })
+        internal: nextInternal(name, kind, parent),
+      }
+      nodes.set(id, node)
+      countInternal(node, 1)
+      if (kind === "function" && name === "AppRouter") nextRoots.add(rootId)
       list.splice(index, 0, id)
       return true
     }
@@ -127,8 +151,16 @@ export function createTreeStore() {
     }
     const node = nodes.get(op.id)
     if (!node) return false
-    if (op.op === "rename") node.name = op.name
-    else {
+    if (op.op === "rename") {
+      countInternal(node, -1)
+      node.name = op.name
+      node.internal = nextInternal(
+        node.name,
+        node.kind,
+        nodes.get(node.parentId),
+      )
+      countInternal(node, 1)
+    } else {
       const list = siblings(node.rootId, node.parentId) ?? []
       list.splice(list.indexOf(op.id), 1)
       forget(op.id)
@@ -293,6 +325,12 @@ export function createTreeStore() {
     return true
   }
 
+  // A filter change: a selection whose row went away is dropped.
+  const hideSelection = () => {
+    if (!visible(nodes.get(Math.abs(selected() ?? 0)))) select(undefined)
+    setVersion(version() + 1)
+  }
+
   return {
     // True when the panel must ask the page for a resync.
     apply(batch: TreeBatchMessage): boolean {
@@ -389,8 +427,19 @@ export function createTreeStore() {
     showHosts,
     setShowHosts(on: boolean) {
       showHostsSignal(on)
-      if (!visible(nodes.get(Math.abs(selected() ?? 0)))) select(undefined)
-      setVersion(version() + 1)
+      hideSelection()
+    },
+    showInternals,
+    setShowInternals(on: boolean) {
+      showInternalsSignal(on)
+      hideSelection()
+    },
+    // Next's own components in Next roots, hidden or shown.
+    hiddenCount() {
+      version()
+      let count = 0
+      for (const rootId of nextRoots) count += internals.get(rootId) ?? 0
+      return count
     },
 
     clear() {

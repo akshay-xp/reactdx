@@ -493,3 +493,40 @@ test("a component right under a Server Component is where client code starts", (
     ["App", false],
   ])
 })
+
+test("Next.js internals are hidden in a Next root until shown", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      add(1, 0, "HeadManagerContext", 0, "provider"),
+      add(2, 1, "AppRouter"),
+      add(3, 2, "ErrorBoundary"),
+      add(4, 3, "RootLayout", 0, "server"),
+      add(5, 4, "SegmentStateProvider"),
+      add(6, 5, "Context", 0, "provider"),
+      add(7, 6, "Page", 0, "server"),
+      add(8, 7, "Counter", 0, "lazy"),
+      add(9, 0, "App", 0, "function", 2),
+      add(10, 9, "ErrorBoundary", 0, "function", 2),
+    ]),
+  )
+  const shown = (rootId: number) =>
+    tree.rows(rootId).map((row) => `${row.depth} ${row.name}`)
+  expect(shown(1)).toEqual(["0 RootLayout", "1 Page", "2 Counter"])
+  expect(shown(2)).toEqual(["0 App", "1 ErrorBoundary"])
+  expect(tree.hiddenCount()).toBe(5)
+  tree.setQuery("AppRouter")
+  expect(tree.matches()).toEqual([])
+
+  tree.setShowInternals(true)
+  expect(tree.showInternals()).toBe(true)
+  expect(shown(1)).toHaveLength(8)
+  expect(tree.matches()).toEqual([2])
+  tree.select(3)
+  tree.setShowInternals(false)
+  expect(tree.selected()).toBeUndefined()
+
+  tree.apply(treeBatch(2, [{ op: "remove", id: 3 }]))
+  expect(tree.hiddenCount()).toBe(2)
+})
