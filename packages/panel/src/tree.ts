@@ -102,6 +102,8 @@ export function createTreeStore() {
   // The row under the pointer: the page highlights it.
   const [hovered, hover] = createSignal<number>()
   const [picking, setPicking] = createSignal(false)
+  // Suspense outlines drawn on the page (docs/panel.md, Toolbar).
+  const [outlines, setOutlines] = createSignal(false)
   // Host (DOM element) nodes are rows only while "Show DOM elements" is on.
   const visible = (node: Node | undefined) =>
     node !== undefined &&
@@ -435,6 +437,8 @@ export function createTreeStore() {
     hovered,
     picking,
     setPicking: (on: boolean) => setPicking(on),
+    outlines,
+    setOutlines: (on: boolean) => setOutlines(on),
     // The page's pick ends picking; an id the mirror has is selected and revealed.
     picked(id: number | null) {
       setPicking(false)

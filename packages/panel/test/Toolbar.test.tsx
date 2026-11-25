@@ -113,3 +113,20 @@ test("the picker button toggles picking and follows a pick", () => {
   tree.picked(null)
   expect(pick.getAttribute("aria-pressed")).toBe("false")
 })
+
+test("the outlines toggle is off at first and switches the tree's outlines", () => {
+  const { tree, container } = setup()
+  const button = container.querySelector(
+    "[data-testid=outlines]",
+  ) as HTMLButtonElement
+  expect(button).not.toBeNull()
+  expect(button.getAttribute("aria-label")).toBe("Outline Suspense on the page")
+  expect(button.getAttribute("aria-pressed")).toBe("false")
+  expect(tree.outlines()).toBe(false)
+  fireEvent.click(button)
+  expect(button.getAttribute("aria-pressed")).toBe("true")
+  expect(tree.outlines()).toBe(true)
+  fireEvent.click(button)
+  expect(button.getAttribute("aria-pressed")).toBe("false")
+  expect(tree.outlines()).toBe(false)
+})

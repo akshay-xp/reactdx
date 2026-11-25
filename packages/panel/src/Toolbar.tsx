@@ -1,8 +1,8 @@
 import { type JSX, Show } from "solid-js"
 import type { TreeStore } from "./tree"
 
-// The element picker, search (Enter: next match, Shift+Enter: previous) and the
-// DOM elements filter. Laid out like SnapQL's search bar.
+// The element picker, search (Enter: next match, Shift+Enter: previous), the
+// DOM elements filter and the page outlines toggle. Laid out like SnapQL's search bar.
 export function Toolbar(props: { tree: TreeStore }) {
   return (
     <search class="flex h-10 shrink-0 items-center gap-2 border-border border-b px-2 py-1.5">
@@ -37,6 +37,21 @@ export function Toolbar(props: { tree: TreeStore }) {
         onClick={() => props.tree.setShowHosts(!props.tree.showHosts())}
       >
         <path d="m8 7-5 5 5 5M16 7l5 5-5 5" />
+      </IconButton>
+      <IconButton
+        label="Outline Suspense on the page"
+        testid="outlines"
+        pressed={props.tree.outlines()}
+        onClick={() => props.tree.setOutlines(!props.tree.outlines())}
+      >
+        <rect
+          x="4"
+          y="5"
+          width="16"
+          height="14"
+          rx="1"
+          stroke-dasharray="3 2"
+        />
       </IconButton>
     </search>
   )
