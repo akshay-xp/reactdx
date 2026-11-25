@@ -1,4 +1,9 @@
-import { durationText, type SuspenseCause } from "@reactdx/messages"
+import {
+  durationText,
+  type Size,
+  type SuspenseCause,
+  sizeText,
+} from "@reactdx/messages"
 
 // Suspense outlines on the page (docs/page.md, Outlines).
 
@@ -37,6 +42,8 @@ const COLORS = {
   wrapper: "#a04f00",
 }
 const SVG = "http://www.w3.org/2000/svg"
+
+type Layer = Pick<ReturnType<typeof createOutlineLayer>, "draw">
 
 // Its own host beside the hover overlay's, so a hover doesn't wipe them; the
 // same closed shadow root and click-through host.
@@ -191,7 +198,7 @@ export function createSuspenseOutlines({
   now,
   frame,
 }: {
-  layer: { draw(outlines: Outline[], more: number): void }
+  layer: Layer
   target: EventTarget
   waits: () => ReadonlyMap<number, { since: number }>
   find: (id: number) => { elements: Element[] } | undefined
@@ -282,5 +289,73 @@ export function createSuspenseOutlines({
       arrivals.set(id, { ms, timer })
       changed()
     },
+  }
+}
+
+// A client island (`tree.islands()`), named, with the Server Component that
+// rendered it and its props' size.
+export type Island = {
+  id: number
+  name: string
+  server: string
+  wraps: boolean
+  size: Size
+}
+
+// Client islands lit, wrappers dashed (their box is the server content they
+// wrap), the rest of the page dimmed; the summary counts every island.
+export function createIslandOutlines({
+  layer,
+  target,
+  islands,
+  find,
+  frame,
+}: {
+  layer: Layer
+  target: EventTarget
+  islands: () => Island[]
+  find: (id: number) => { elements: Element[] } | undefined
+  frame: (callback: () => void) => void
+  onPick: (id: number) => void
+}) {
+  const measure = () => {
+    const all = islands()
+    const shown = all.slice(0, MAX_OUTLINES)
+    const outlines: Outline[] = []
+    for (const island of shown) {
+      const box = boxOf(find(island.id)?.elements ?? [])
+      if (!box) continue
+      const size = sizeText(island.size)
+      outlines.push(
+        island.wraps
+          ? {
+              ...box,
+              style: "wrapper",
+              label: `${island.name} · ${size} · wraps server content`,
+            }
+          : { ...box, style: "island", label: `${island.name} · ${size}` },
+      )
+    }
+    const total = {
+      bytes: all.reduce((sum, island) => sum + island.size.bytes, 0),
+      ...(all.some((island) => island.size.over) && { over: true as const }),
+    }
+    const count = `${all.length} client island${all.length === 1 ? "" : "s"}`
+    layer.draw(outlines, all.length - shown.length, {
+      dim: true,
+      summary: `${count} · ${sizeText(total)} of props`,
+    })
+  }
+  const scheduler = createScheduler({ target, frame, measure })
+  return {
+    on() {
+      scheduler.start()
+      scheduler.changed()
+    },
+    off() {
+      scheduler.stop()
+      layer.draw([], 0)
+    },
+    changed: scheduler.changed,
   }
 }

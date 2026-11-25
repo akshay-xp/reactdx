@@ -2,9 +2,11 @@ import type { SuspenseCause } from "@reactdx/messages"
 import { afterEach, expect, test, vi } from "vitest"
 import {
   boxOf,
+  createIslandOutlines,
   createOutlineLayer,
   createScheduler,
   createSuspenseOutlines,
+  type Island,
   type Outline,
 } from "../src/outlines.ts"
 
@@ -351,4 +353,124 @@ test("the layer lights islands, dashes wrappers, dims the rest and shows a summa
   expect(root.querySelector("[data-dim]")).toBeNull()
   expect(root.querySelector("[data-summary]")).toBeNull()
   layer.draw([], 0)
+})
+
+// Islands over a fake layer: boundary-like ids find one 10x10 element at
+// left = id (a wrapper, 100x100 at the origin); `missing` ids find none.
+const islandController = (list: Island[]) => {
+  const draws: {
+    outlines: Outline[]
+    more: number
+    extra?: { dim?: boolean; summary?: string }
+  }[] = []
+  const frames: (() => void)[] = []
+  const missing = new Set<number>()
+  const picks: number[] = []
+  const target = new EventTarget()
+  const outlines = createIslandOutlines({
+    layer: {
+      draw: (outlines, more, extra) => draws.push({ outlines, more, extra }),
+    },
+    target,
+    islands: () => list,
+    find: (id) => {
+      if (missing.has(id)) return { elements: [] }
+      const wraps = list.find((island) => island.id === id)?.wraps
+      return {
+        elements: [wraps ? element(0, 0, 100, 100) : element(id, 0, 10, 10)],
+      }
+    },
+    frame: (callback) => frames.push(callback),
+    onPick: (id) => picks.push(id),
+  })
+  const run = () => {
+    for (const callback of frames.splice(0)) callback()
+  }
+  return {
+    outlines,
+    draws,
+    frames,
+    missing,
+    picks,
+    target,
+    run,
+    last: () => draws.at(-1),
+  }
+}
+
+const addToCart: Island = {
+  id: 20,
+  name: "AddToCart",
+  server: "ProductDetails",
+  wraps: false,
+  size: { bytes: 14643 },
+}
+const theme: Island = {
+  id: 30,
+  name: "ThemeProvider",
+  server: "Shop",
+  wraps: true,
+  size: { bytes: 12 },
+}
+
+test("islands are lit, wrappers dashed, the rest dimmed, and all of them summed", () => {
+  const c = islandController([addToCart, theme])
+  c.outlines.on()
+  expect(c.draws).toEqual([])
+  c.run()
+  expect(c.last()?.outlines).toEqual([
+    {
+      left: 20,
+      top: 0,
+      width: 10,
+      height: 10,
+      style: "island",
+      label: "AddToCart · 14.3 KB",
+    },
+    {
+      left: 0,
+      top: 0,
+      width: 100,
+      height: 100,
+      style: "wrapper",
+      label: "ThemeProvider · 12 B · wraps server content",
+    },
+  ])
+  expect(c.last()?.extra).toEqual({
+    dim: true,
+    summary: "2 client islands · 14.3 KB of props",
+  })
+  c.outlines.off()
+  expect(c.last()?.outlines).toEqual([])
+})
+
+test("one island reads singular; one without a box is summed, not drawn; at most 100 drawn", () => {
+  const one = islandController([addToCart, { ...theme, id: 31, wraps: false }])
+  one.missing.add(31)
+  one.outlines.on()
+  one.run()
+  expect(one.last()?.outlines.map((o) => o.label)).toEqual([
+    "AddToCart · 14.3 KB",
+  ])
+  expect(one.last()?.extra?.summary).toBe("2 client islands · 14.3 KB of props")
+  const single = islandController([addToCart])
+  single.outlines.on()
+  single.run()
+  expect(single.last()?.extra?.summary).toBe(
+    "1 client island · 14.3 KB of props",
+  )
+  const many = islandController(
+    Array.from({ length: 101 }, (_, i) => ({
+      ...addToCart,
+      id: i + 1,
+      size: { bytes: 10 },
+    })),
+  )
+  many.outlines.on()
+  many.run()
+  expect(many.last()?.outlines).toHaveLength(100)
+  expect(many.last()?.more).toBe(1)
+  expect(many.last()?.extra?.summary).toBe(
+    "101 client islands · 1.0 KB of props",
+  )
 })
