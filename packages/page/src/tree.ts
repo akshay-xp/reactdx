@@ -530,6 +530,8 @@ export function createTree({
       walk(id)
       return out
     },
+    // The waiting boundaries by id, since when (`waits` above).
+    waits: (): ReadonlyMap<number, { since: number }> => waits,
     // The mounted server node an info is, if any.
     serverId(info: object) {
       const id = serverIds.get(info)

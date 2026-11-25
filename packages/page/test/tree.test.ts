@@ -945,6 +945,25 @@ test("a dehydrated boundary has waited since navigation start", () => {
   ])
 })
 
+test("waits lists each waiting boundary since when, until it arrives", async () => {
+  rearm()
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() =>
+    root.render(h(React.Suspense, { fallback: h("i") }, h(Thrower))),
+  )
+  const tree = createTree({ now: () => 500 })
+  const fiberRoot = fiberRootOf(container)
+  const ops: TreeOp[] = []
+  tree.full(fiberRoot, 1, ops)
+  const boundary = adds(ops).find((op) => op.kind === "suspense")?.id
+  expect([...tree.waits()]).toEqual([[boundary, { since: 500 }]])
+  await React.act(async () => release())
+  tree.commit(fiberRoot, 1, [])
+  expect([...tree.waits()]).toEqual([])
+})
+
 test("a boundary showing its content reports no wait", async () => {
   const container = document.createElement("div")
   const root = createRoot(container)
