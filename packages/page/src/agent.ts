@@ -19,6 +19,7 @@ import {
   MAX_OWNERS,
   MAX_RENDERED,
   MAX_TREE_STRING,
+  nextInternal,
   type OutlineMode,
   type Owner,
   type PageMessage,
@@ -29,6 +30,7 @@ import {
   type RenderReason,
   type RootInfo,
   reasoned,
+  type Size,
   snapshotMessage,
   type TreeBatchMessage,
   type TreeOp,
@@ -60,7 +62,11 @@ import {
 } from "./hooks.ts"
 import { contextsOf, createRecorder, type RenderRecord } from "./insight.ts"
 import { copyText, createInspector } from "./inspect.ts"
-import { createOutlineLayer, createSuspenseOutlines } from "./outlines.ts"
+import {
+  createIslandOutlines,
+  createOutlineLayer,
+  createSuspenseOutlines,
+} from "./outlines.ts"
 import { createOverlay } from "./overlay.ts"
 import { awaitsOf, renderedAt } from "./server.ts"
 import { propSizes, sizeOf } from "./size.ts"
@@ -218,12 +224,47 @@ export function startAgent(
   }
 
   let overlay: ReturnType<typeof createOverlay> | undefined
-  // Made on the panel's first outlines command (docs/page.md, Outlines).
+  // Made on the panel's first outlines command (docs/page.md, Outlines); one
+  // mode draws at a time, on one layer.
+  let layer: ReturnType<typeof createOutlineLayer> | undefined
   let outlines: ReturnType<typeof createSuspenseOutlines> | undefined
+  let islands: ReturnType<typeof createIslandOutlines> | undefined
+  // Props sizes by props object: a frame re-reads every island.
+  const sizes = new WeakMap<object, Size>()
+  const sizeOfProps = (props: unknown) => {
+    if (typeof props !== "object" || props === null) return sizeOf(props)
+    const size = sizes.get(props) ?? sizeOf(props)
+    sizes.set(props, size)
+    return size
+  }
   const outline = (mode: OutlineMode | null) => {
-    if (mode !== "suspense") return outlines?.off()
+    if (mode !== "suspense") outlines?.off()
+    if (mode !== "islands") islands?.off()
+    if (!mode) return
+    layer ??= createOutlineLayer(document)
+    if (mode === "islands") {
+      islands ??= createIslandOutlines({
+        layer,
+        target,
+        islands: () =>
+          tree
+            .islands()
+            .filter(({ name, kind }) => !nextInternal(name, kind, undefined))
+            .map(({ id, name, server, wraps }) => ({
+              id,
+              name,
+              server: tree.find(server)?.name ?? "",
+              wraps,
+              size: sizeOfProps(tree.fiber(id)?.memoizedProps),
+            })),
+        find: (id) => tree.find(id),
+        frame: (callback) => requestAnimationFrame(callback),
+        onPick: (id) => post(picked(id)),
+      })
+      return islands.on()
+    }
     outlines ??= createSuspenseOutlines({
-      layer: createOutlineLayer(document),
+      layer,
       target,
       waits: () => tree.waits(),
       find: (id) => tree.find(id),
@@ -704,6 +745,7 @@ export function startAgent(
       )
     // Only schedules a frame: layout isn't read inside React's commit.
     outlines?.changed()
+    islands?.changed()
     if (pending) return
     pending = true
     setTimeout(() => {
@@ -834,7 +876,7 @@ export function startAgent(
       postCommits(true)
     } else if (data.type === "unwatch") {
       stopPicking()
-      outlines?.off()
+      outline(null)
       inspect(null)
       watching = false
       unprofile()

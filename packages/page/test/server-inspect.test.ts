@@ -1,11 +1,11 @@
 import { parseInspected } from "@reactdx/messages"
 import React from "react"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { inspecting } from "./inspecting.ts"
 import { ownedBy, react19, ServerChild, server, serverInfo } from "./server.ts"
 
 const h = React.createElement
-const { inspect, idOf, replies, mount } = inspecting()
+const { inspect, idOf, replies, mount, send, posted } = inspecting()
 
 const shop = serverInfo("Shop")
 const product = serverInfo("ProductDetails", null, {
@@ -184,5 +184,82 @@ test.skipIf(!react19)(
       "Suspense",
     )
     expect(data).not.toHaveProperty("fromServer")
+  },
+)
+
+test.skipIf(!react19)(
+  "the islands mode lights islands but Next's, and a click on one picks it",
+  async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: () => void) =>
+      setTimeout(callback),
+    )
+    const rect = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockReturnValue({ left: 1, top: 2, width: 3, height: 4 } as DOMRect)
+    const roots: ShadowRoot[] = []
+    const attach = Element.prototype.attachShadow
+    const shadow = vi
+      .spyOn(Element.prototype, "attachShadow")
+      .mockImplementation(function (this: Element, init) {
+        const root = attach.call(this, init)
+        roots.push(root)
+        return root
+      })
+    const shown = (selector: string) =>
+      roots
+        .filter((root) => root.host.isConnected)
+        .flatMap((root) => [...root.querySelectorAll(selector)])
+        .map((el) => el.textContent)
+    const flushed = () =>
+      React.act(() => new Promise((resolve) => setTimeout(resolve, 150)))
+    try {
+      function AddToCart(_: { price: number }) {
+        return h("button")
+      }
+      function Boundary() {
+        return h("span")
+      }
+      Boundary.displayName = "__next_metadata_boundary__"
+      const shop = serverInfo("Shop")
+      await mount(null)
+      await mount(
+        server(
+          shop,
+          h(
+            "main",
+            null,
+            server(serverInfo("Details"), h(AddToCart, { price: 1 })),
+            server(serverInfo("Wrapper"), h(Boundary)),
+          ),
+        ),
+      )
+      send({ source: "reactdx-relay", type: "watch" })
+      send({ source: "reactdx-relay", type: "outlines", mode: "islands" })
+      await flushed()
+      expect(shown("[data-outline]")).toEqual([
+        expect.stringMatching(/^AddToCart · \d+ B$/),
+      ])
+      expect(shown("[data-summary]")).toEqual([
+        expect.stringMatching(/^1 client island · \d+ B of props$/),
+      ])
+      const id = idOf("AddToCart")
+      posted.length = 0
+      globalThis.dispatchEvent(
+        new MouseEvent("click", { clientX: 2, clientY: 4, cancelable: true }),
+      )
+      expect(posted).toContainEqual({
+        source: "reactdx",
+        type: "picked",
+        id,
+      })
+      send({ source: "reactdx-relay", type: "outlines", mode: "suspense" })
+      await flushed()
+      expect(shown("[data-outline]")).toEqual([])
+    } finally {
+      send({ source: "reactdx-relay", type: "outlines", mode: null })
+      vi.unstubAllGlobals()
+      rect.mockRestore()
+      shadow.mockRestore()
+    }
   },
 )
