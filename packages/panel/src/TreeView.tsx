@@ -13,7 +13,12 @@ import type { TreeStore } from "./tree"
 import { ROW_HEIGHT, windowOf } from "./virtual"
 
 // Kinds worth a badge: the rest are plain components or DOM elements.
-export const BADGES = new Set<TreeKind>(["memo", "forwardRef", "lazy"])
+export const BADGES = new Set<TreeKind>([
+  "memo",
+  "forwardRef",
+  "lazy",
+  "server",
+])
 
 // A right-pointing CSS triangle: no text, so nothing for text readers to pick up.
 export const TRIANGLE = {
@@ -190,7 +195,14 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                   </span>
                   <Show when={BADGES.has(row.kind)}>
                     {" "}
-                    <span data-testid="badge" class={muted(row.id)}>
+                    <span
+                      data-testid="badge"
+                      class={
+                        row.kind === "server" && !selected(row.id)
+                          ? "text-server"
+                          : muted(row.id)
+                      }
+                    >
                       {row.kind}
                     </span>
                   </Show>
