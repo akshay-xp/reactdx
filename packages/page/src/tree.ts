@@ -171,9 +171,15 @@ export function createTree({
   // Waiting boundaries by id, since when (performance time; a dehydrated one has
   // waited since navigation start, 0).
   const waits = new Map<number, { since: number }>()
-  const track = (fiber: Fiber, id: number, ops: TreeOp[]) => {
+  // `added`: the node was just added, here or by a resync, which has to hear
+  // a wait it already knew of.
+  const track = (fiber: Fiber, id: number, ops: TreeOp[], added = false) => {
     const wait = waitOf(fiber)
     const was = waits.get(id)
+    if (added && wait && was) {
+      ops.push({ op: "suspense", id, state: "waiting", ms: now() - was.since })
+      return
+    }
     if (!wait === !was) return
     const at = now()
     if (was) {
@@ -331,7 +337,7 @@ export function createTree({
       key: fiber.key === null ? null : bounded(fiber.key),
       index,
     })
-    track(fiber, id, ops)
+    track(fiber, id, ops, true)
     addChildren(kidsOf(fiber, id), id, id, rootId, ops)
   }
 

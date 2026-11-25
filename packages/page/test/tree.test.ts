@@ -1003,3 +1003,23 @@ test("a boundary's content arriving reports how long it waited, then waiting aga
   ])
   await React.act(async () => release())
 })
+
+test("a resync sends a boundary's wait again, counted from its start", async () => {
+  rearm()
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() =>
+    root.render(h(React.Suspense, { fallback: h("i") }, h(Thrower))),
+  )
+  const times = [100, 400]
+  const tree = createTree({ now: () => times.shift() ?? 0 })
+  const fiberRoot = fiberRootOf(container)
+  tree.full(fiberRoot, 1, [])
+  const again: TreeOp[] = []
+  tree.full(fiberRoot, 1, again)
+  expect(again.filter((op) => op.op === "suspense")).toEqual([
+    { op: "suspense", id: expect.any(Number), state: "waiting", ms: 300 },
+  ])
+  await React.act(async () => release())
+})
