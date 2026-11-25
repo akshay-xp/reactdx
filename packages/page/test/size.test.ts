@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest"
-import { MAX_SIZE, sizeOf } from "../src/size.ts"
+import { largestFields, MAX_SIZE, sizeOf } from "../src/size.ts"
 
 test("a value's size is its JSON length", () => {
   const value = {
@@ -42,4 +42,21 @@ test("a cycle, a huge string, deep nesting or many values stop as over", () => {
   const many = sizeOf(Array.from({ length: 200_000 }, (_, i) => i))
   expect(many.over).toBe(true)
   expect(performance.now() - start).toBeLessThan(100)
+})
+
+test("a big prop's largest fields, largest first", () => {
+  const specs = Array.from({ length: 200 }, (_, i) => ({ label: `Spec ${i}` }))
+  const product = { id: "p-12", name: "Trail shoe", specs }
+  const size = (value: unknown) => JSON.stringify(value).length
+  expect(largestFields(product)).toEqual([
+    { key: "specs", bytes: size(specs) },
+    { key: "name", bytes: size("Trail shoe") },
+    { key: "id", bytes: size("p-12") },
+  ])
+  expect(largestFields({ a: 1, b: 22, c: 333, d: 4444 }, 2)).toEqual([
+    { key: "d", bytes: 4 },
+    { key: "c", bytes: 3 },
+  ])
+  expect(largestFields([1, 2])).toEqual([])
+  expect(largestFields(null)).toEqual([])
 })

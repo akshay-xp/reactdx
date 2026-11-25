@@ -14,6 +14,12 @@ const skipped = (value: unknown) =>
   typeof value === "function" ||
   typeof value === "symbol"
 
+// An own data property's value; an accessor gives none (its getter is app code).
+const fieldValue = (object: object, key: string) => {
+  const field = Object.getOwnPropertyDescriptor(object, key)
+  return field && "value" in field ? { value: field.value } : undefined
+}
+
 export function sizeOf(value: unknown): Size {
   let bytes = 0
   let values = 0
@@ -62,8 +68,8 @@ export function sizeOf(value: unknown): Size {
       let first = true
       for (const key of Object.keys(object)) {
         if (over) break
-        const field = Object.getOwnPropertyDescriptor(object, key)
-        if (!field || !("value" in field) || skipped(field.value)) continue
+        const field = fieldValue(object, key)
+        if (!field || skipped(field.value)) continue
         add(JSON.stringify(key).length + 1 + (first ? 0 : 1))
         first = false
         visit(field.value, depth + 1)
@@ -74,4 +80,17 @@ export function sizeOf(value: unknown): Size {
   // At the top, a value JSON can't write is no text at all.
   if (!skipped(value)) visit(value, 0)
   return over ? { bytes, over: true } : { bytes }
+}
+
+// A plain object's own data fields by size, largest first: what makes a big
+// prop big. Arrays and other values have none.
+export function largestFields(value: unknown, count = 3) {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return []
+  const fields: (Size & { key: string })[] = []
+  for (const key of Object.keys(value)) {
+    const field = fieldValue(value, key)
+    if (field) fields.push({ key, ...sizeOf(field.value) })
+  }
+  return fields.sort((a, b) => b.bytes - a.bytes).slice(0, count)
 }
