@@ -402,6 +402,7 @@ test("suspended content is hidden from the tree until it shows", async () => {
     ])
     await React.act(async () => resolve())
     expect(summary(flush()[0])).toEqual([
+      "suspense",
       "remove",
       "add Shown at 0",
       "add i at 0",
@@ -885,11 +886,16 @@ test.skipIf(!react19)(
   },
 )
 
-// Suspends until `release` settles it.
+// Suspends until `release` settles it; `rearm` makes a new pending promise.
 let release = () => {}
-const pending = new Promise<void>((resolve) => (release = resolve))
+let pending: Promise<void>
 let settled = false
-pending.then(() => (settled = true))
+const rearm = () => {
+  settled = false
+  pending = new Promise<void>((resolve) => (release = resolve))
+  pending.then(() => (settled = true))
+}
+rearm()
 function Thrower() {
   if (!settled) throw pending
   return h("p")
@@ -949,4 +955,51 @@ test("a boundary showing its content reports no wait", async () => {
   const ops: TreeOp[] = []
   createTree().full(fiberRootOf(container), 1, ops)
   expect(ops.filter((op) => op.op === "suspense")).toEqual([])
+})
+
+let showThrower = (_: number) => {}
+function Rearmed() {
+  const [n, set] = React.useState(0)
+  showThrower = set
+  return h(
+    "div",
+    null,
+    h(React.Suspense, { fallback: h("i") }, h(Thrower, { key: n })),
+  )
+}
+
+test("a boundary's content arriving reports how long it waited, then waiting again", async () => {
+  rearm()
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() => root.render(h(Rearmed)))
+  const times = [100, 940, 1000, 1000]
+  const tree = createTree({ now: () => times.shift() ?? 2000 })
+  const fiberRoot = fiberRootOf(container)
+  const ops: TreeOp[] = []
+  tree.full(fiberRoot, 1, ops)
+  const boundary = adds(ops).find((op) => op.kind === "suspense")?.id
+  const waits = (list: TreeOp[]) => list.filter((op) => op.op === "suspense")
+
+  await React.act(async () => release())
+  const arrived: TreeOp[] = []
+  tree.commit(fiberRoot, 1, arrived)
+  expect(waits(arrived)).toEqual([
+    { op: "suspense", id: boundary, state: "arrived", ms: 840 },
+  ])
+
+  await React.act(() => root.render(h(Rearmed)))
+  const quiet: TreeOp[] = []
+  tree.commit(fiberRoot, 1, quiet)
+  expect(waits(quiet)).toEqual([])
+
+  rearm()
+  await React.act(() => showThrower(1))
+  const again: TreeOp[] = []
+  tree.commit(fiberRoot, 1, again)
+  expect(waits(again)).toEqual([
+    { op: "suspense", id: boundary, state: "waiting", ms: 0 },
+  ])
+  await React.act(async () => release())
 })

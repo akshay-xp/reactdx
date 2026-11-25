@@ -170,10 +170,17 @@ export function createTree({
   const waits = new Map<number, { since: number }>()
   const track = (fiber: Fiber, id: number, ops: TreeOp[]) => {
     const wait = waitOf(fiber)
-    if (!wait || waits.has(id)) return
-    const since = wait === "dehydrated" ? 0 : now()
+    const was = waits.get(id)
+    if (!wait === !was) return
+    const at = now()
+    if (was) {
+      waits.delete(id)
+      ops.push({ op: "suspense", id, state: "arrived", ms: at - was.since })
+      return
+    }
+    const since = wait === "dehydrated" ? 0 : at
     waits.set(id, { since })
-    ops.push({ op: "suspense", id, state: "waiting", ms: now() - since })
+    ops.push({ op: "suspense", id, state: "waiting", ms: at - since })
   }
   const childId = (child: Child) => (isServer(child) ? child.id : idOf(child))
 
