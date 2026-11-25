@@ -47,6 +47,11 @@ test("extra keys on the batch and its ops are dropped", () => {
 const add = ops[1] as Extract<TreeOp, { op: "add" }>
 const batchWith = (op: unknown) => ({ ...treeBatch(1, []), ops: [op] })
 
+test("a Server Component node passes", () => {
+  const batch = batchWith({ ...add, kind: "server" })
+  expect(parseTreeBatch(batch)).toEqual(batch)
+})
+
 test.each<[string, unknown]>([
   ["null", null],
   ["a string", "tree"],

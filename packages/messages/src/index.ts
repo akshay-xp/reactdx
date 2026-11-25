@@ -111,6 +111,7 @@ export type TreeKind =
   | "profiler"
   | "activity"
   | "host"
+  | "server"
 
 // parentId 0 is the root's top level; removing a node removes its descendants.
 export type TreeOp =
@@ -159,6 +160,7 @@ const TREE_KINDS = new Set<unknown>([
   "profiler",
   "activity",
   "host",
+  "server",
 ] satisfies TreeKind[])
 
 // Any invalid op drops the whole batch: a partial batch would desync the panel's mirror.
