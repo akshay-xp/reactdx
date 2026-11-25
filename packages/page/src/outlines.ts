@@ -310,6 +310,7 @@ export function createIslandOutlines({
   islands,
   find,
   frame,
+  onPick,
 }: {
   layer: Layer
   target: EventTarget
@@ -318,42 +319,95 @@ export function createIslandOutlines({
   frame: (callback: () => void) => void
   onPick: (id: number) => void
 }) {
-  const measure = () => {
-    const all = islands()
-    const shown = all.slice(0, MAX_OUTLINES)
-    const outlines: Outline[] = []
-    for (const island of shown) {
-      const box = boxOf(find(island.id)?.elements ?? [])
-      if (!box) continue
-      const size = sizeText(island.size)
-      outlines.push(
-        island.wraps
+  // The last frame's boxes, which hovers and clicks are tested against.
+  let shown: (Box & { island: Island })[] = []
+  let more = 0
+  let summary = ""
+  let hovered: number | undefined
+
+  const render = () =>
+    layer.draw(
+      shown.map(({ island, ...box }) => {
+        const size = sizeText(island.size)
+        const from = island.id === hovered ? ` · from ${island.server}` : ""
+        return island.wraps
           ? {
               ...box,
-              style: "wrapper",
-              label: `${island.name} · ${size} · wraps server content`,
+              style: "wrapper" as const,
+              label: `${island.name} · ${size} · wraps server content${from}`,
             }
-          : { ...box, style: "island", label: `${island.name} · ${size}` },
-      )
+          : {
+              ...box,
+              style: "island" as const,
+              label: `${island.name} · ${size}${from}`,
+            }
+      }),
+      more,
+      { dim: true, summary },
+    )
+  const measure = () => {
+    const all = islands()
+    const first = all.slice(0, MAX_OUTLINES)
+    more = all.length - first.length
+    shown = []
+    for (const island of first) {
+      const box = boxOf(find(island.id)?.elements ?? [])
+      if (box) shown.push({ ...box, island })
     }
     const total = {
       bytes: all.reduce((sum, island) => sum + island.size.bytes, 0),
       ...(all.some((island) => island.size.over) && { over: true as const }),
     }
     const count = `${all.length} client island${all.length === 1 ? "" : "s"}`
-    layer.draw(outlines, all.length - shown.length, {
-      dim: true,
-      summary: `${count} · ${sizeText(total)} of props`,
-    })
+    summary = `${count} · ${sizeText(total)} of props`
+    render()
   }
+  // The island under a point: a lit one before a wrapper around it.
+  const islandAt = (event: Event) => {
+    const { clientX: x, clientY: y } = event as MouseEvent
+    const hits = shown.filter(
+      (box) =>
+        x >= box.left &&
+        x < box.left + box.width &&
+        y >= box.top &&
+        y < box.top + box.height,
+    )
+    return (hits.find((box) => !box.island.wraps) ?? hits[0])?.island.id
+  }
+  const pointing = (event: Event) => {
+    const id = islandAt(event)
+    if (id === hovered) return
+    hovered = id
+    render()
+  }
+  // A press on an island is the panel's, not the page's.
+  const pressed = (event: Event) => {
+    const id = islandAt(event)
+    if (id === undefined) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    if (event.type === "click") onPick(id)
+  }
+  const listeners: [string, (event: Event) => void][] = [
+    ["pointermove", pointing],
+    ...["pointerdown", "mousedown", "pointerup", "mouseup", "click"].map(
+      (type) => [type, pressed] as [string, (event: Event) => void],
+    ),
+  ]
   const scheduler = createScheduler({ target, frame, measure })
   return {
     on() {
       scheduler.start()
+      for (const [type, listener] of listeners)
+        target.addEventListener(type, listener, true)
       scheduler.changed()
     },
     off() {
       scheduler.stop()
+      for (const [type, listener] of listeners)
+        target.removeEventListener(type, listener, true)
+      shown = []
+      hovered = undefined
       layer.draw([], 0)
     },
     changed: scheduler.changed,

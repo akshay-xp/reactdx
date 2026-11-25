@@ -474,3 +474,42 @@ test("one island reads singular; one without a box is summed, not drawn; at most
     "101 client islands · 1.0 KB of props",
   )
 })
+
+test("hovering an island names its Server Component; a click on one picks it, others pass", () => {
+  const c = islandController([addToCart, theme])
+  c.outlines.on()
+  c.run()
+  const at = (type: string, x: number, y: number) => {
+    const event = new MouseEvent(type, {
+      clientX: x,
+      clientY: y,
+      cancelable: true,
+    })
+    c.target.dispatchEvent(event)
+    return event
+  }
+  const labels = () => c.last()?.outlines.map((o) => o.label)
+  at("pointermove", 25, 5)
+  expect(labels()).toEqual([
+    "AddToCart · 14.3 KB · from ProductDetails",
+    "ThemeProvider · 12 B · wraps server content",
+  ])
+  at("pointermove", 50, 50)
+  expect(labels()).toEqual([
+    "AddToCart · 14.3 KB",
+    "ThemeProvider · 12 B · wraps server content · from Shop",
+  ])
+  at("pointermove", 500, 500)
+  expect(labels()).toEqual([
+    "AddToCart · 14.3 KB",
+    "ThemeProvider · 12 B · wraps server content",
+  ])
+  expect(at("pointerdown", 25, 5).defaultPrevented).toBe(true)
+  expect(at("click", 25, 5).defaultPrevented).toBe(true)
+  expect(c.picks).toEqual([20])
+  expect(at("click", 500, 500).defaultPrevented).toBe(false)
+  expect(c.picks).toEqual([20])
+  c.outlines.off()
+  expect(at("click", 25, 5).defaultPrevented).toBe(false)
+  expect(c.picks).toEqual([20])
+})
