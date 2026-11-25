@@ -105,16 +105,19 @@ export async function openPanelText(
       throw new Error(`no row named ${name}`)
     }
     const hover = async (name: string) => (await row(name)).hover()
-    // The tree renders only the rows in view and re-renders them as batches
-    // arrive, so a found row can be replaced before the click: find it again.
+    // Found and clicked in one step: the tree re-renders rows as batches
+    // arrive, and a row found in one round trip could be replaced before the
+    // click's next ("detached", or "not clickable" once its box is gone; #68).
+    // The tree selects on a click anywhere in the row.
     const select = async (name: string) => {
-      for (let attempt = 1; ; attempt++) {
-        try {
-          return await (await row(name)).click()
-        } catch (error) {
-          if (attempt === 3 || !String(error).includes("detached")) throw error
-        }
-      }
+      const clicked = await frame.evaluate((name) => {
+        const found = [
+          ...document.querySelectorAll<HTMLElement>("[data-testid=name]"),
+        ].find((el) => el.textContent === name)
+        found?.click()
+        return Boolean(found)
+      }, name)
+      if (!clicked) throw new Error(`no row named ${name}`)
     }
     // Onto the toolbar above the trees: CDP's synthetic moves out of the panel
     // frame fire no leave events inside it.
@@ -660,14 +663,28 @@ export async function selectListed(
   const deadline = Date.now() + 15_000
   let text = ""
   while (Date.now() < deadline) {
-    await until(
-      async () => {
-        await panel.end()
-        return panel()
-      },
-      (t) => parseCopies(t).some((c) => c.names.includes(component)),
+    // End only when the row isn't listed yet: it selects the last row, and
+    // Firefox can deliver it after the select below, replacing the
+    // Inspector under a press (#68).
+    const listed = (t: string) =>
+      parseCopies(t).some((c) => c.names.includes(component))
+    await until(async () => {
+      const shown = await panel()
+      if (listed(shown)) return shown
+      await panel.end()
+      return panel()
+    }, listed)
+    // The row can go between that read and the click: right after a
+    // navigation, Firefox's tree showed the row, cleared, then showed it again
+    // (#68). Look again.
+    const missed = await panel.select(component).then(
+      () => undefined,
+      (error: Error) => error.message,
     )
-    await panel.select(component)
+    if (missed) {
+      text = missed
+      continue
+    }
     const lost = (t: string) => t.startsWith("Select a component")
     text = await until(
       panel.inspector,
