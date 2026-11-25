@@ -115,3 +115,29 @@ test("each script and map is fetched once", async () => {
   await resolve({ url: chunk, line: 5, column: 1 })
   expect(requests).toEqual([chunk, `${chunk}.map`])
 })
+
+// A Server Component's frame: a server chunk on disk, its map served by Next's
+// dev server (__nextjs_source-map).
+const serverChunk = "file:///abs/.next/dev/server/chunks/ssr/[root]__1._.js"
+const serverMap = `http://h/__nextjs_source-map?filename=${encodeURIComponent(serverChunk)}`
+const serverFrame = { url: serverChunk, line: 18, column: 47 }
+
+test("a server frame maps through the dev server's source map", async () => {
+  const { fetch, requests } = serve({ [serverMap]: sectioned })
+  const origin = async () => "http://h"
+  expect(await createSourceResolver(fetch, origin)(serverFrame)).toEqual({
+    file: "/abs/app/Counter.jsx",
+    line: 13,
+    column: 7,
+  })
+  expect(requests).toEqual([serverMap])
+})
+
+test("a server frame without an origin or a map resolves to nothing", async () => {
+  const { fetch, requests } = serve({})
+  expect(await createSourceResolver(fetch)(serverFrame)).toBe(null)
+  expect(requests).toEqual([])
+  expect(
+    await createSourceResolver(fetch, async () => "http://h")(serverFrame),
+  ).toBe(null)
+})

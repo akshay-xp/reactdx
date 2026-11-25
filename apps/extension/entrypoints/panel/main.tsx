@@ -78,7 +78,7 @@ const editor = {
   },
 }
 const sources: Sources = {
-  resolve: createSourceResolver(editor.fetch),
+  resolve: createSourceResolver(editor.fetch, editor.origin),
   open: (location) => openInEditor(location, editor),
   hookName: createHookNamer(editor.fetch),
 }
