@@ -119,9 +119,12 @@ const bounded = (value: string) => value.slice(0, MAX_TREE_STRING)
 // every update, so both carry the id. `onForget` hears each id an unmount drops.
 export function createTree({
   onForget,
+  onArrive,
   now = () => performance.now(),
 }: {
   onForget?: (id: number) => void
+  // A waiting Suspense boundary whose content arrived.
+  onArrive?: (boundary: Fiber) => void
   // The page's clock, for Suspense waits.
   now?: () => number
 } = {}) {
@@ -175,6 +178,7 @@ export function createTree({
     const at = now()
     if (was) {
       waits.delete(id)
+      onArrive?.(fiber)
       ops.push({ op: "suspense", id, state: "arrived", ms: at - was.since })
       return
     }

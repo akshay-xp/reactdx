@@ -62,7 +62,7 @@ import { createOverlay } from "./overlay.ts"
 import { awaitsOf, renderedAt } from "./server.ts"
 import { propSizes, sizeOf } from "./size.ts"
 import { sourceOf } from "./source.ts"
-import { causeOf, waitOf } from "./suspense.ts"
+import { causeOf, createSuspended, waitOf } from "./suspense.ts"
 import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
@@ -121,7 +121,32 @@ export function startAgent(
   }
 
   const recorder = createRecorder()
-  const tree = createTree({ onForget: recorder.forget })
+  const suspended = createSuspended()
+  const tree = createTree({
+    onForget: recorder.forget,
+    onArrive: suspended.clear,
+  })
+  // React 18's profiling hooks (who suspended), only while watching, and only
+  // when no other devtools is on the page: there's one slot, and RDT's Timeline
+  // uses it (docs/page.md, Suspense).
+  type Profiled = { injectProfilingHooks?: (hooks: unknown) => void }
+  const profiled = new Set<Profiled>()
+  const profile = () => {
+    if (Object.hasOwn(target, "__REACT_DEVTOOLS_GLOBAL_HOOK__")) return
+    const hook = (scope as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook })
+      .__REACT_DEVTOOLS_GLOBAL_HOOK__
+    for (const [id, renderer] of hook?.renderers ?? []) {
+      const inject = (renderer as Profiled).injectProfilingHooks
+      if (!inspectable(id) || typeof inject !== "function") continue
+      inject(suspended.hooks)
+      profiled.add(renderer as Profiled)
+    }
+  }
+  const unprofile = () => {
+    for (const renderer of profiled) renderer.injectProfilingHooks?.(null)
+    profiled.clear()
+    suspended.reset()
+  }
   // Production builds have minified names and aren't inspected.
   const inspectable = (rendererId: number) =>
     record.renderers.get(rendererId)?.bundleType === 1
@@ -138,6 +163,7 @@ export function startAgent(
   }
   const watch = () => {
     watching = true
+    profile()
     buffer.length = 0
     seq = 1
     const ops: TreeOp[] = [{ op: "reset" }]
@@ -376,7 +402,13 @@ export function startAgent(
       data.fromServer = { owner: from, props: propSizes(fiber.memoizedProps) }
     const source = sourceOf(fiber)
     if (source) data.source = source
-    if (waitOf(fiber)) data.suspense = { cause: causeOf(fiber) }
+    if (waitOf(fiber))
+      data.suspense = {
+        cause: causeOf(
+          fiber,
+          profiled.size ? suspended.causeFor(fiber) : undefined,
+        ),
+      }
     const boundaries = boundariesFor(fiber)
     if (boundaries) data.boundaries = boundaries
     if (contexts.length)
@@ -735,6 +767,7 @@ export function startAgent(
       stopPicking()
       inspect(null)
       watching = false
+      unprofile()
       buffer.length = 0
       tree.clear()
       recorder.clear()

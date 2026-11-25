@@ -1,9 +1,11 @@
+import { UNWATCH } from "@reactdx/messages"
 import React from "react"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { waitOf } from "../src/suspense.ts"
 import type { Fiber } from "../src/tree.ts"
 import { inspecting } from "./inspecting.ts"
 import { react19, serverInfo } from "./server.ts"
+import { KEY } from "./window.ts"
 
 const fiber = (tag: number, memoizedState: unknown) =>
   ({ tag, memoizedState }) as unknown as Fiber
@@ -17,15 +19,19 @@ test("a Suspense boundary waits while it shows its fallback or dehydrated HTML",
 })
 
 const h = React.createElement
-const { inspect } = inspecting()
+const { inspect, send, idOf, replies, mount } = inspecting()
+const react18 = React.version.startsWith("18.")
 const never = new Promise<never>(() => {})
 function Comments(): React.ReactNode {
   throw never
 }
 const boundary = (children: React.ReactNode) =>
   h(React.Suspense, { fallback: h("i") }, children)
-const causeOf = async (children: React.ReactNode) =>
-  (await inspect(boundary(children), "Suspense"))?.suspense?.cause
+// A fresh boundary each time: the root is shared across tests.
+const causeOf = async (children: React.ReactNode) => {
+  await mount(null)
+  return (await inspect(boundary(children), "Suspense"))?.suspense?.cause
+}
 
 test.skipIf(!react19)(
   "a boundary waiting on a Server Component names it",
@@ -41,19 +47,100 @@ test.skipIf(!react19)(
   },
 )
 
-test("a boundary waiting inside its child names the child", async () => {
-  expect(await causeOf(h(Comments))).toEqual({
-    kind: "inside",
-    name: "Comments",
-  })
+test.skipIf(!react19)(
+  "a boundary waiting inside its child names the child",
+  async () => {
+    expect(await causeOf(h(Comments))).toEqual({
+      kind: "inside",
+      name: "Comments",
+    })
+  },
+)
+
+test("a lazy component loading is said as such", async () => {
+  expect(await causeOf(h(React.lazy(() => never)))).toEqual({ kind: "lazy" })
 })
 
-test("a lazy component loading, or anything else, is said as such", async () => {
-  expect(await causeOf(h(React.lazy(() => never)))).toEqual({ kind: "lazy" })
+test.skipIf(!react19)("anything else is a promise", async () => {
   expect(await causeOf([h(Comments, { key: "c" }), "text"])).toEqual({
     kind: "promise",
   })
 })
+
+// React 18 says which component suspended, and on which promises.
+let second: Promise<void> | undefined
+let resolveFirst = () => {}
+const first = new Promise<void>((resolve) => (resolveFirst = resolve))
+let firstDone = false
+first.then(() => (firstDone = true))
+function Twice(): React.ReactNode {
+  if (!firstDone) throw first
+  second ??= new Promise<void>(() => {})
+  throw second
+}
+
+test.skipIf(!react18)(
+  "React 18: the component that suspended, and how many promises",
+  async () => {
+    expect(await causeOf(h(Comments))).toEqual({
+      kind: "thrown",
+      name: "Comments",
+      count: 1,
+    })
+    await mount(null)
+    await inspect(boundary(h(Twice)), "Suspense")
+    await React.act(async () => resolveFirst())
+    send({ source: "reactdx-relay", type: "inspect", id: idOf("Suspense") })
+    expect(replies().at(-1)?.data?.suspense?.cause).toEqual({
+      kind: "thrown",
+      name: "Twice",
+      count: 2,
+    })
+  },
+)
+
+test.skipIf(!react18)(
+  "React 18: unwatching takes the profiling hooks out; another devtools keeps them",
+  async () => {
+    const hook = (
+      globalThis as {
+        __REACT_DEVTOOLS_GLOBAL_HOOK__?: {
+          renderers: Map<
+            number,
+            { injectProfilingHooks?: (h: unknown) => void }
+          >
+        }
+      }
+    ).__REACT_DEVTOOLS_GLOBAL_HOOK__
+    const renderer = [...(hook?.renderers.values() ?? [])].find(
+      (r) => typeof r.injectProfilingHooks === "function",
+    )
+    const injected = vi.spyOn(
+      renderer as { injectProfilingHooks: (h: unknown) => void },
+      "injectProfilingHooks",
+    )
+    await inspect(boundary(h(Comments)), "Suspense")
+    send(UNWATCH)
+    expect(injected.mock.calls.at(-1)).toEqual([null])
+
+    Object.defineProperty(globalThis, KEY, {
+      value: hook,
+      configurable: true,
+      writable: true,
+    })
+    try {
+      injected.mockClear()
+      expect(await causeOf(h(Comments))).toEqual({
+        kind: "inside",
+        name: "Comments",
+      })
+      expect(injected).not.toHaveBeenCalled()
+    } finally {
+      delete (globalThis as Record<string, unknown>)[KEY]
+      injected.mockRestore()
+    }
+  },
+)
 
 test("a boundary showing its content has no cause", async () => {
   expect(await causeOf(h("p"))).toBeUndefined()

@@ -31,7 +31,11 @@ function serverName(lazy: Loose): string | undefined {
 // What a waiting boundary waits on, from its children: a Server Component
 // still streaming (a Flight lazy, Next), the component it renders (React 19
 // says nothing about which one suspended), a lazy() one loading, or a promise.
-export function causeOf(boundary: Fiber): SuspenseCause {
+export function causeOf(
+  boundary: Fiber,
+  // React 18's record of who suspended (createSuspended), if any.
+  recorded?: SuspenseCause,
+): SuspenseCause {
   const children = (boundary.memoizedProps as Loose | null)?.children
   if (typeof children !== "object" || children === null)
     return { kind: "promise" }
@@ -40,10 +44,60 @@ export function causeOf(boundary: Fiber): SuspenseCause {
     const name = serverName(child)
     return name ? { kind: "server", name } : { kind: "lazy" }
   }
-  if (!ELEMENT.includes(child.$$typeof as symbol)) return { kind: "promise" }
-  const type = child.type
+  const element = ELEMENT.includes(child.$$typeof as symbol)
+  const type = element ? child.type : undefined
+  if ((type as Loose | undefined)?.$$typeof === LAZY) return { kind: "lazy" }
+  if (recorded) return recorded
   // A DOM element suspends nothing itself: something inside it did.
   if (type == null || typeof type === "string") return { kind: "promise" }
-  if ((type as Loose).$$typeof === LAZY) return { kind: "lazy" }
   return { kind: "inside", name: typeName(type as never).slice(0, MAX_NAME) }
+}
+
+type Suspender = { name: string; wakeables: Set<unknown> }
+
+// React 18 tells a profiler which component suspended, and on what
+// (`markComponentSuspended`; React 19 dropped the hook). Kept per boundary,
+// the suspender's nearest one, until its content arrives (`clear`).
+export function createSuspended() {
+  let records = new WeakMap<Fiber, Suspender>()
+  const recordOf = (boundary: Fiber) =>
+    records.get(boundary) ??
+    (boundary.alternate ? records.get(boundary.alternate) : undefined)
+  return {
+    hooks: {
+      markComponentSuspended(fiber: Fiber, wakeable: unknown) {
+        let boundary = fiber.return
+        while (boundary && boundary.tag !== 13) boundary = boundary.return
+        if (!boundary) return
+        let record = recordOf(boundary)
+        if (!record) {
+          const type = (fiber.type ?? fiber.elementType) as never
+          record = {
+            name: typeName(type).slice(0, MAX_NAME),
+            wakeables: new Set(),
+          }
+          records.set(boundary, record)
+          if (boundary.alternate) records.set(boundary.alternate, record)
+        }
+        record.wakeables.add(wakeable)
+      },
+    },
+    causeFor(boundary: Fiber): SuspenseCause | undefined {
+      const record = recordOf(boundary)
+      if (record)
+        return {
+          kind: "thrown",
+          name: record.name,
+          count: record.wakeables.size,
+        }
+    },
+    clear(boundary: Fiber) {
+      records.delete(boundary)
+      if (boundary.alternate) records.delete(boundary.alternate)
+    },
+    // Unwatched: what was recorded is no longer kept up to date.
+    reset() {
+      records = new WeakMap()
+    },
+  }
 }
