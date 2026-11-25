@@ -545,3 +545,16 @@ test("a Next boundary's Suspense is hidden through a DOM element between", () =>
   )
   expect(tree.rows(1).map((row) => row.name)).toEqual(["Page"])
 })
+
+test("a Suspense wait keeps its node", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [{ op: "reset" }, add(1, 0, "Suspense", 0, "suspense")]),
+  )
+  expect(
+    tree.apply(
+      treeBatch(2, [{ op: "suspense", id: 1, state: "waiting", ms: 0 }]),
+    ),
+  ).toBe(false)
+  expect(tree.rows(1).map((row) => row.name)).toEqual(["Suspense"])
+})

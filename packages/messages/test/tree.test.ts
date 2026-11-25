@@ -110,3 +110,22 @@ test("names and keys of 256 chars and 2,000 ops pass", () => {
   const batch = treeBatch(1, Array(2000).fill(long))
   expect(parseTreeBatch(batch)).toEqual(batch)
 })
+
+test("a Suspense wait passes: waiting so far, or how long it took", () => {
+  for (const op of [
+    { op: "suspense", id: 3, state: "waiting", ms: 0 },
+    { op: "suspense", id: 3, state: "arrived", ms: 840.5 },
+  ]) {
+    const batch = batchWith(op)
+    expect(parseTreeBatch(batch)).toEqual(batch)
+  }
+  const wait = { op: "suspense", id: 3, state: "waiting", ms: 1 }
+  for (const bad of [
+    { ...wait, state: "done" },
+    { ...wait, ms: -1 },
+    { ...wait, ms: Number.POSITIVE_INFINITY },
+    { ...wait, ms: "1" },
+    { ...wait, id: 0 },
+  ])
+    expect(parseTreeBatch(batchWith(bad)), JSON.stringify(bad)).toBeUndefined()
+})

@@ -129,6 +129,9 @@ export type TreeOp =
   | { op: "remove"; id: number }
   | { op: "reorder"; rootId: number; parentId: number; children: number[] }
   | { op: "rename"; id: number; name: string }
+  // A Suspense boundary (M7 #80): waiting so far at the commit, or how long it
+  // took once its content arrived, in ms.
+  | { op: "suspense"; id: number; state: "waiting" | "arrived"; ms: number }
 
 export type TreeBatchMessage = {
   source: "reactdx"
@@ -214,6 +217,12 @@ function parseTreeOp(data: unknown): TreeOp | undefined {
       const { id, name } = o
       if (!isId(id) || !isString(name, MAX_TREE_STRING)) return
       return { op: "rename", id, name }
+    }
+    case "suspense": {
+      const { id, state, ms } = o
+      if (!isId(id) || (state !== "waiting" && state !== "arrived")) return
+      if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return
+      return { op: "suspense", id, state, ms }
     }
   }
 }

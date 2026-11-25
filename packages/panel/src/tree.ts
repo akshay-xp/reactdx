@@ -157,6 +157,7 @@ export function createTreeStore() {
     }
     const node = nodes.get(op.id)
     if (!node) return false
+    if (op.op === "suspense") return true
     if (op.op === "rename") {
       countInternal(node, -1)
       node.name = op.name
