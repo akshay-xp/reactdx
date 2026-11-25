@@ -255,3 +255,31 @@ test("a waterfall's updates fold into one row, at its newest member, open to the
     "update 2",
   ])
 })
+
+test("Home picks a waterfall's newest member, opening it; Left and Right close and open it", () => {
+  const { timeline } = setup()
+  const arrival = (seq: number, start: number, end: number) => ({
+    ...summary(seq),
+    arrived: [
+      {
+        boundary: seq,
+        name: "B",
+        waited: 1,
+        awaits: [{ name: `w${seq}`, owner: "O", start, end }],
+      },
+    ],
+  })
+  timeline.receiveCommits(
+    holding([arrival(1, 96, 1297), arrival(2, 1300, 2102)]),
+  )
+  const open = () =>
+    timeline.rows([]).find((row) => row.kind === "waterfall")?.open
+  expect(open()).toBe(false)
+  timeline.key("Home", [])
+  expect(timeline.picked()).toBe(2)
+  expect(open()).toBe(true)
+  expect(timeline.key("ArrowLeft", [])).toBe(true)
+  expect(open()).toBe(false)
+  timeline.key("ArrowRight", [])
+  expect(open()).toBe(true)
+})

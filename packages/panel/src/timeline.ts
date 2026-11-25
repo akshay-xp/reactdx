@@ -127,12 +127,16 @@ export function createTimelineStore(
   const setGroup = (id: number, open: boolean) =>
     setGroups(new Map(groups()).set(id, open))
   // The group holding the picked update, if any.
-  const pickedGroup = (history: number[]) =>
-    rows(history).find(
-      (row): row is Extract<UpdateRow, { kind: "group" }> =>
-        row.kind === "group" &&
-        row.commits.some((commit) => commit.seq === picked()),
-    )
+  // The group or waterfall holding the picked update, by its id.
+  const pickedGroup = (history: number[]) => {
+    const seq = picked()
+    for (const row of rows(history)) {
+      if (row.kind === "group" && row.commits.some((c) => c.seq === seq))
+        return { id: row.id }
+      if (row.kind === "waterfall" && row.waterfall.seqs.includes(seq ?? -1))
+        return { id: row.waterfall.id }
+    }
+  }
   const pick = (seq: number) => {
     setGroups(new Map())
     setPicked(seq)
