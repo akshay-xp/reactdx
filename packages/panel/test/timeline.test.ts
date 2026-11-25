@@ -189,7 +189,9 @@ test("consecutive updates with the same cause fold into a group that opens with 
       .map((row) =>
         row.kind === "group"
           ? `group ${row.id} ${row.commits.map((c) => c.seq).join(",")} ${row.wasted} ${row.open ? "open" : "closed"}`
-          : `update ${row.commit.seq}`,
+          : row.kind === "update"
+            ? `update ${row.commit.seq}`
+            : `waterfall ${row.waterfall.id}`,
       )
   expect(shape()).toEqual(["update 5", "group 1 4,3,2,1 8 closed"])
   timeline.pick(3)
@@ -216,4 +218,68 @@ test("consecutive updates with the same cause fold into a group that opens with 
   const other = setup().timeline
   other.receiveCommits(holding([by(1, 7, 0), by(2, 7, 1)]))
   expect(other.rows([]).map((row) => row.kind)).toEqual(["update", "update"])
+})
+
+test("a waterfall's updates fold into one row, at its newest member, open to them", () => {
+  const { timeline } = setup()
+  const arrival = (seq: number, start: number, end: number) => ({
+    ...summary(seq),
+    arrived: [
+      {
+        boundary: seq,
+        name: "B",
+        waited: 1,
+        awaits: [{ name: `w${seq}`, owner: "O", start, end }],
+      },
+    ],
+  })
+  timeline.receiveCommits(
+    holding([arrival(1, 96, 1297), summary(2), arrival(3, 1300, 2102)]),
+  )
+  const shown = () =>
+    timeline
+      .rows([])
+      .map((row) =>
+        row.kind === "waterfall"
+          ? `waterfall ${row.waterfall.id}`
+          : row.kind === "group"
+            ? `group ${row.id}`
+            : `update ${row.commit.seq}${row.member ? " (member)" : ""}`,
+      )
+  expect(shown()).toEqual(["waterfall 3", "update 2"])
+  timeline.setGroup(3, true)
+  expect(shown()).toEqual([
+    "waterfall 3",
+    "update 3 (member)",
+    "update 1 (member)",
+    "update 2",
+  ])
+})
+
+test("Home picks a waterfall's newest member, opening it; Left and Right close and open it", () => {
+  const { timeline } = setup()
+  const arrival = (seq: number, start: number, end: number) => ({
+    ...summary(seq),
+    arrived: [
+      {
+        boundary: seq,
+        name: "B",
+        waited: 1,
+        awaits: [{ name: `w${seq}`, owner: "O", start, end }],
+      },
+    ],
+  })
+  timeline.receiveCommits(
+    holding([arrival(1, 96, 1297), arrival(2, 1300, 2102)]),
+  )
+  const open = () =>
+    timeline.rows([]).find((row) => row.kind === "waterfall")?.open
+  expect(open()).toBe(false)
+  timeline.key("Home", [])
+  expect(timeline.picked()).toBe(2)
+  expect(open()).toBe(true)
+  expect(timeline.key("ArrowLeft", [])).toBe(true)
+  expect(open()).toBe(false)
+  timeline.key("ArrowRight", [])
+  expect(open()).toBe(true)
 })

@@ -1,4 +1,14 @@
-import type { Owner, RenderCount, RenderReason, Value } from "@reactdx/messages"
+import type {
+  FromServer,
+  Owner,
+  RenderCount,
+  RenderReason,
+  Size,
+  SuspenseCause,
+  Value,
+} from "@reactdx/messages"
+import { durationText, sizeText } from "@reactdx/messages"
+
 import { previewText } from "./value"
 
 // A sentence in pieces (docs/panel.md, Inspector): text, a name in code, or a
@@ -150,4 +160,65 @@ export function hintOf(
       { code: "useCallback" },
       ".",
     ]
+}
+
+// "a", "a and b", "a, b and c".
+const listed = (items: string[]) =>
+  items.length < 2
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`
+
+// A component a Server Component rendered (M7 #79): who passed its props and
+// their total size, and for each big prop, what makes it big.
+export function fromServerOf(from: FromServer, name: string) {
+  const { owner, props } = from
+  const total: Size = {
+    bytes: props.reduce((sum, prop) => sum + prop.bytes, 0),
+    ...(props.some((prop) => prop.over) && { over: true as const }),
+  }
+  const count = `${props.length} ${props.length === 1 ? "prop" : "props"}`
+  const answer: Part[] = [
+    "Server Component ",
+    owner.id === null ? owner.name : { node: owner.id, name: owner.name },
+    ` passed it ${count}, ${sizeText(total)}`,
+  ]
+  const hints = props.flatMap((prop) =>
+    prop.fields?.length
+      ? [
+          `${prop.key} is ${sizeText(prop)}, mostly ${listed(
+            prop.fields.map((field) => `${field.key} (${sizeText(field)})`),
+          )}. Pass ${name} only the fields it uses.`,
+        ]
+      : [],
+  )
+  return { answer, hints }
+}
+
+// A waiting boundary (M7 #80): how long, and what it waits on as far as the
+// page could tell.
+export function suspenseAnswer(
+  cause: SuspenseCause | undefined,
+  ms: number,
+): Part[] {
+  const time = `Showing its fallback for ${durationText(ms)}`
+  // The page hasn't said what it waits on yet: claim nothing.
+  if (!cause) return [`${time}.`]
+  const lead = `${time}, `
+  switch (cause.kind) {
+    case "server":
+      return [`${lead}waiting on `, { code: cause.name }, " (server)"]
+    case "thrown": {
+      const promises = cause.count === 1 ? "promise" : "promises"
+      return [
+        `${lead}waiting on ${cause.count} ${promises} thrown by `,
+        { code: cause.name },
+      ]
+    }
+    case "inside":
+      return [`${lead}waiting inside `, { code: cause.name }]
+    case "lazy":
+      return [`${lead}loading a lazy() component`]
+    case "promise":
+      return [`${lead}waiting on a promise`]
+  }
 }

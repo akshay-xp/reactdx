@@ -1,4 +1,9 @@
-import type { CommitRender, CommitSummary } from "@reactdx/messages"
+import {
+  type CommitRender,
+  type CommitSummary,
+  durationText,
+  type OwnedAwait,
+} from "@reactdx/messages"
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { ago } from "./ago"
 import { KIND_TEXT, NodeLink } from "./Inspector"
@@ -7,6 +12,7 @@ import type { CommitDetail, TimelineStore, UpdateRow } from "./timeline"
 import type { TreeStore } from "./tree"
 import { previewText } from "./value"
 import { Triangle } from "./values"
+import type { Waterfall } from "./waterfall"
 
 // The recorded commits, newest first (docs/panel.md, Commits). One tab stop:
 // the list holds focus and names the picked row through aria-activedescendant;
@@ -31,9 +37,17 @@ export function Commits(props: {
     commit.change
       ? `${previewText(commit.change.old)} → ${previewText(commit.change.new)}`
       : undefined
+  // A commit that showed boundaries' content (M7 #81): the first, and how
+  // many more.
+  const arrivedText = (commit: CommitSummary) => {
+    const [first, ...more] = commit.arrived ?? []
+    if (!first) return
+    const also = more.length ? ` +${more.length}` : ""
+    return `Data arrived · ${first.name} boundary · waited ${durationText(first.waited)}${also}`
+  }
   // Who caused it: the first updater the tree knows, and how many more.
   const cause = (commit: CommitSummary) => {
-    if (!commit.updaters.length) return "Root render"
+    if (!commit.updaters.length) return arrivedText(commit) ?? "Root render"
     const [first] = commit.updaters
     const name =
       (first !== undefined && props.tree.info(first)?.name) ?? "Unmounted"
@@ -48,6 +62,9 @@ export function Commits(props: {
       ...(commit.wasted ? [`${commit.wasted} wasted`] : []),
       when(commit),
     ].join(" · ")
+  // A group or waterfall row's id, toggled open by setGroup.
+  const groupId = (row: Exclude<UpdateRow, { kind: "update" }>) =>
+    row.kind === "group" ? row.id : row.waterfall.id
   // A row's two lines: what happened, then what it cost.
   const lines = (row: UpdateRow): [string, string] => {
     if (row.kind === "group") {
@@ -58,6 +75,16 @@ export function Commits(props: {
         [...(row.wasted ? [`${row.wasted} wasted`] : []), when(newest)].join(
           " · ",
         ),
+      ]
+    }
+    if (row.kind === "waterfall") {
+      const { waits, ms, id } = row.waterfall
+      const newest = props.timeline
+        .commits()
+        .find((commit) => commit.seq === id)
+      return [
+        `Waterfall · ${waits.length} waits, one after another · ${durationText(ms)}`,
+        newest ? when(newest) : "",
       ]
     }
     const first = row.member
@@ -146,12 +173,12 @@ export function Commits(props: {
             <For each={props.timeline.rows(history())}>
               {(row) => {
                 const [what, cost] = lines(row)
-                return row.kind === "group" ? (
+                return row.kind !== "update" ? (
                   <div
                     role="option"
-                    id={`group-${row.id}`}
+                    id={`group-${groupId(row)}`}
                     tabIndex={-1}
-                    data-group={row.id}
+                    data-group={groupId(row)}
                     aria-selected={false}
                     // A listbox option has no aria-expanded: the triangle
                     // shows it, the text says how many.
@@ -165,6 +192,11 @@ export function Commits(props: {
                     <span data-testid="line" class="block truncate text-muted">
                       {cost}
                     </span>
+                    <Show when={row.kind === "waterfall" && row.open && row}>
+                      {(fall) => (
+                        <WaterfallDetail waterfall={fall().waterfall} />
+                      )}
+                    </Show>
                   </div>
                 ) : (
                   <div
@@ -219,6 +251,46 @@ export function Commits(props: {
           </Match>
         </Switch>
       </section>
+    </div>
+  )
+}
+
+// A waterfall's waits on one time axis (M7 #81), and which could start
+// sooner: the second waited for the first to end.
+function WaterfallDetail(props: { waterfall: Waterfall }) {
+  const start = () => (props.waterfall.waits[0] as OwnedAwait).start
+  const percent = (ms: number) => `${(ms / (props.waterfall.ms || 1)) * 100}%`
+  const hint = () => {
+    const [first, second] = props.waterfall.waits as [OwnedAwait, OwnedAwait]
+    return `${second.name} in ${second.owner} started only after ${first.name} ended. Starting it alongside would save up to ${durationText(second.end - second.start)}.`
+  }
+  return (
+    <div data-testid="waterfall" class="flex flex-col gap-1 py-1 pl-4">
+      <For each={props.waterfall.waits}>
+        {(wait) => (
+          <div class="flex items-center gap-2">
+            <span
+              data-testid="waterfall-label"
+              class="w-1/2 truncate text-muted"
+            >
+              {`${wait.name} · ${wait.owner} · ${durationText(wait.end - wait.start)}`}
+            </span>
+            <span class="relative h-2 flex-1 rounded bg-surface">
+              <span
+                data-testid="waterfall-bar"
+                class="absolute inset-y-0 rounded bg-waiting"
+                style={{
+                  left: percent(wait.start - start()),
+                  width: percent(wait.end - wait.start),
+                }}
+              />
+            </span>
+          </div>
+        )}
+      </For>
+      <p data-testid="waterfall-hint" class="rounded bg-highlight/40 px-2 py-1">
+        {hint()}
+      </p>
     </div>
   )
 }

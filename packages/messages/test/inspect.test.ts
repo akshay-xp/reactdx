@@ -688,3 +688,128 @@ test("a summary says how many renders were wasted and what changed", () => {
     parseCommits(list([{ ...summary, change: { hook: -1, old: 1, new: 2 } }])),
   ).toBeUndefined()
 })
+
+test("a Server Component's details and the props one passed, with sizes", () => {
+  const server = {
+    awaits: [{ name: "getProduct", start: 95.7, end: 397.2 }],
+    rendered: [
+      { id: 4, name: "AddToCart", bytes: 14643 },
+      { id: 5, name: "Huge", bytes: 1048576, over: true },
+    ],
+  }
+  const fromServer = {
+    owner: { id: 2, name: "ProductDetails" },
+    props: [
+      {
+        key: "product",
+        bytes: 14643,
+        fields: [
+          { key: "specs", bytes: 14233 },
+          { key: "name", bytes: 12 },
+          { key: "id", bytes: 6 },
+        ],
+      },
+      { key: "price", bytes: 2 },
+    ],
+  }
+  const data = { props: 1, server, fromServer }
+  expect(parseInspected(inspected(3, data as never))?.data).toEqual(data)
+  const field = { key: "f", bytes: 1 }
+  const prop = (extra: object) => ({
+    props: 1,
+    fromServer: { ...fromServer, props: [{ key: "p", bytes: 1, ...extra }] },
+  })
+  const awaited = (extra: object) => ({
+    props: 1,
+    server: { ...server, awaits: [{ name: "a", start: 1, end: 2, ...extra }] },
+  })
+  for (const bad of [
+    prop({ bytes: -1 }),
+    prop({ over: false }),
+    prop({ fields: [field, field, field, field] }),
+    prop({ key: "k".repeat(257) }),
+    awaited({ end: 0 }),
+    awaited({ start: -1, end: 2 }),
+    awaited({ name: "n".repeat(257) }),
+    {
+      props: 1,
+      server: { ...server, awaits: Array(51).fill(server.awaits[0]) },
+    },
+    {
+      props: 1,
+      server: { ...server, rendered: [{ id: 0, name: "A", bytes: 1 }] },
+    },
+    { props: 1, fromServer: { ...fromServer, owner: { id: 0, name: "P" } } },
+  ])
+    expect(
+      parseInspected(inspected(3, bad as never)),
+      JSON.stringify(bad),
+    ).toBeUndefined()
+})
+
+test("what a Suspense boundary waits on, and what it waited on", () => {
+  const causes = [
+    { kind: "server", name: "Reviews" },
+    { kind: "thrown", name: "Comments", count: 2 },
+    { kind: "inside", name: "Comments" },
+    { kind: "lazy" },
+    { kind: "promise" },
+  ]
+  for (const cause of causes) {
+    const data = { props: 1, suspense: { cause } }
+    expect(parseInspected(inspected(3, data as never))?.data).toEqual(data)
+  }
+  const awaited = [
+    { name: "getReviews", owner: "Reviews", start: 96, end: 1297 },
+  ]
+  const data = { props: 1, suspense: { awaited } }
+  expect(parseInspected(inspected(3, data as never))?.data).toEqual(data)
+  for (const suspense of [
+    { cause: { kind: "other" } },
+    { cause: { kind: "thrown", name: "C", count: 0 } },
+    { cause: { kind: "inside", name: "n".repeat(257) } },
+    { awaited: Array(51).fill(awaited[0]) },
+    { awaited: [{ ...awaited[0], owner: "o".repeat(257) }] },
+  ])
+    expect(
+      parseInspected(inspected(3, { props: 1, suspense } as never)),
+      JSON.stringify(suspense),
+    ).toBeUndefined()
+})
+
+test("a commit summary says which boundaries' data arrived, with their awaits", () => {
+  const arrival = {
+    boundary: 4,
+    name: "Reviews",
+    waited: 840,
+    awaits: [
+      { name: "getReviews", owner: "Reviews", start: 96, end: 1297 },
+      { name: "getMore", owner: "Reviews", start: 1297, end: 1300 },
+    ],
+  }
+  const summary = {
+    seq: 1,
+    time: 5,
+    rootId: 1,
+    updaters: [],
+    renders: 2,
+    wasted: 0,
+    arrived: [arrival],
+  }
+  expect(parseCommits(commitsMessage([summary], 1, false))?.commits).toEqual([
+    summary,
+  ])
+  for (const arrived of [
+    [{ ...arrival, boundary: 0 }],
+    [{ ...arrival, waited: -1 }],
+    [{ ...arrival, name: "n".repeat(257) }],
+    [{ ...arrival, awaits: [{ ...arrival.awaits[0], end: 1 }] }],
+    Array(51).fill(arrival),
+  ])
+    expect(
+      parseCommits(
+        commitsMessage([{ ...summary, arrived } as never], 1, false),
+      ),
+      JSON.stringify(arrived).slice(0, 80),
+    ).toBeUndefined()
+})

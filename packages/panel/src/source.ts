@@ -46,7 +46,13 @@ function decodeDataUrl(url: string) {
 
 // Maps a React 19 call site in a served script to its original file, through the
 // script's source map. Only the page's web scripts (and data: maps) are read.
-export function createSourceResolver(fetch: typeof globalThis.fetch) {
+// A Server Component's frame is a file on the server (M7 #79): with the page's
+// `origin`, its map comes from Next's dev server, which serves server chunks'
+// maps at /__nextjs_source-map.
+export function createSourceResolver(
+  fetch: typeof globalThis.fetch,
+  origin?: () => Promise<string>,
+) {
   const text = async (url: string) => {
     const response = await fetch(url)
     if (!response.ok) throw new Error(`${response.status} for ${url}`)
@@ -63,10 +69,18 @@ export function createSourceResolver(fetch: typeof globalThis.fetch) {
   }
   // Per script for the panel's lifetime; a failed load is tried again next time.
   const consumers = new Map<string, Promise<TraceMap | null>>()
+  const loadServer = async (fileUrl: string) => {
+    const from = origin && (await origin())
+    if (!from || !WEB.test(from)) return null
+    const mapUrl = `${from}/__nextjs_source-map?filename=${encodeURIComponent(fileUrl)}`
+    return AnyMap(await text(mapUrl), mapUrl)
+  }
   const consumerFor = (scriptUrl: string) => {
     let consumer = consumers.get(scriptUrl)
     if (!consumer) {
-      consumer = load(scriptUrl)
+      consumer = scriptUrl.startsWith("file:")
+        ? loadServer(scriptUrl)
+        : load(scriptUrl)
       consumers.set(scriptUrl, consumer)
       consumer.catch(() => consumers.delete(scriptUrl))
     }
@@ -75,7 +89,8 @@ export function createSourceResolver(fetch: typeof globalThis.fetch) {
   return async (source: SourceRef): Promise<SourceLocation | null> => {
     if ("file" in source) return source
     const { url, line, column } = source
-    if (!WEB.test(url)) return null
+    const server = url.startsWith("file:")
+    if (server ? !origin : !WEB.test(url)) return null
     try {
       const map = await consumerFor(url)
       const original =
@@ -86,7 +101,8 @@ export function createSourceResolver(fetch: typeof globalThis.fetch) {
           line: original.line,
           column: original.column + 1,
         }
-      return { file: pathOf(url), line, column }
+      // A server chunk's own path is no use to open.
+      return server ? null : { file: pathOf(url), line, column }
     } catch {
       return null
     }

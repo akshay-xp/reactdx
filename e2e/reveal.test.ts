@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
-import type { Frame, Page } from "puppeteer"
+import type { ElementHandle, Frame, Page } from "puppeteer"
 import { startFixture } from "../fixtures/start.ts"
 import type { BrowserName } from "./launch.ts"
 import { type PanelText, panelFor, until } from "./panel-text.ts"
@@ -132,6 +132,13 @@ test("a row wider than the pane is scrolled to its start", {
 }, async () => {
   const { browser, frame } = await nextPanel()
   try {
+    // SegmentTrieNode is one of Next's own: shown, not hidden (M7 #78).
+    const show = await frame.waitForFunction(() =>
+      [...document.querySelectorAll("button")].find(
+        (button) => button.textContent === "Show",
+      ),
+    )
+    await (show as ElementHandle<HTMLButtonElement>).click()
     // Narrower than the deep SegmentTrieNode row with its key.
     await frame.evaluate(() => {
       const pane = document.querySelector("[data-testid=trees]") as HTMLElement

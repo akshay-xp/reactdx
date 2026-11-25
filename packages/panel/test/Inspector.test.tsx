@@ -2088,3 +2088,226 @@ test("the header says where the component sits: its nearest two owners", () => {
   fireEvent.click(within(header()).getByRole("button", { name: "Layout" }))
   expect(tree.selected()).toBe(4)
 })
+
+test("a Server Component ran on the server: read-only props, rendered at", async () => {
+  const pageAt = { file: "/app/shop/page.jsx", line: 50, column: 9 }
+  const { container, inspector, select, getByRole, queryByRole } = setup(
+    "server",
+    null,
+    resolving(pageAt),
+    createSettings(),
+    [],
+  )
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ id: "p-12" }),
+      source: { url: "file:///app/.next/chunk.js", line: 221, column: 514 },
+      server: { awaits: [], rendered: [] },
+    }),
+  )
+  await settled()
+  expect(container.querySelector("[data-testid=answer]")?.textContent).toBe(
+    "Ran on the server.",
+  )
+  const row = rowOf(container, 'id: "p-12"')
+  const value = row.querySelector("[data-value]") as HTMLElement
+  expect(value.classList.contains("editable-value")).toBe(false)
+  fireEvent.click(value)
+  expect(container.querySelector("[data-testid=value-input]")).toBeNull()
+  expect(queryByRole("button", { name: "Force re-render" })).toBeNull()
+  expect(sections(container)).not.toContain("Renders")
+  expect(container.querySelector("[data-testid=hint]")).toBeNull()
+  expect(
+    container
+      .querySelector("[data-testid=source]")
+      ?.textContent?.startsWith("Rendered at page.jsx:50"),
+  ).toBe(true)
+  expect(getByRole("button", { name: "Open in editor" })).toBeTruthy()
+})
+
+test("a Server Component lists what it awaited and the client components it rendered", () => {
+  const { container, inspector, select, tree, getByText } = setup(
+    "server",
+    null,
+    noSources,
+    createSettings(),
+    [],
+  )
+  tree.apply(
+    treeBatch(2, [
+      {
+        op: "add",
+        id: 4,
+        parentId: 3,
+        rootId: 1,
+        kind: "lazy",
+        name: "AddToCart",
+        key: null,
+        index: 0,
+      },
+    ]),
+  )
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      server: {
+        awaits: [
+          { name: "getProduct", start: 95, end: 397 },
+          { name: "getReviews", start: 96, end: 1297 },
+        ],
+        rendered: [{ id: 4, name: "AddToCart", bytes: 14643 }],
+      },
+    }),
+  )
+  const lines = (name: string) =>
+    [
+      ...(container
+        .querySelector(`[data-path='section:${name}']`)
+        ?.closest("section")
+        ?.querySelectorAll("[data-testid=server-row]") ?? []),
+    ].map((row) => row.textContent)
+  expect(getByText("Awaited")).toBeTruthy()
+  expect(lines("Awaited")).toEqual(["getProduct 302 ms", "getReviews 1.2s"])
+  expect(lines("Client components")).toEqual(["AddToCart 14.3 KB"])
+  fireEvent.click(getByText("AddToCart"))
+  expect(tree.selected()).toBe(4)
+
+  inspector.receive(
+    inspected(3, { props: object({}), server: { awaits: [], rendered: [] } }),
+  )
+  expect(sections(container)).not.toContain("Awaited")
+})
+
+test("props a Server Component passed: the answer, a size per prop, a hint", () => {
+  const { container, inspector, select, getByText } = setup(
+    "lazy",
+    null,
+    noSources,
+    createSettings(),
+    [],
+  )
+  select()
+  const fromServer = {
+    owner: { id: 2, name: "ProductDetails" },
+    props: [
+      {
+        key: "product",
+        bytes: 14643,
+        fields: [
+          { key: "specs", bytes: 14233 },
+          { key: "name", bytes: 12 },
+          { key: "id", bytes: 6 },
+        ],
+      },
+      { key: "price", bytes: 2 },
+    ],
+  }
+  inspector.receive(inspected(3, { props: object({}), fromServer }))
+  const text = (testid: string) =>
+    [...container.querySelectorAll(`[data-testid=${testid}]`)].map(
+      (el) => el.textContent,
+    )
+  expect(text("server-answer")).toEqual([
+    "Server Component ProductDetails passed it 2 props, 14.3 KB",
+  ])
+  expect(getByText("Props from ProductDetails")).toBeTruthy()
+  expect(text("server-row")).toEqual(["product 14.3 KB", "price 2 B"])
+  expect(text("size-hint")).toEqual([
+    "product is 14.3 KB, mostly specs (13.9 KB), name (12 B) and id (6 B). Pass Counter only the fields it uses.",
+  ])
+
+  inspector.receive(
+    inspected(3, {
+      props: object({}),
+      fromServer: {
+        ...fromServer,
+        props: [
+          {
+            key: "data",
+            bytes: 1048576,
+            over: true,
+            fields: [{ key: "rows", bytes: 1048000, over: true }],
+          },
+        ],
+      },
+    }),
+  )
+  expect(text("server-answer")).toEqual([
+    "Server Component ProductDetails passed it 1 prop, over 1,024 KB",
+  ])
+  expect(text("size-hint")).toEqual([
+    "data is over 1,024 KB, mostly rows (over 1,023 KB). Pass Counter only the fields it uses.",
+  ])
+
+  inspector.receive(inspected(3, { props: object({}) }))
+  expect(text("server-answer")).toEqual([])
+  expect(text("size-hint")).toEqual([])
+})
+
+test("a waiting boundary says how long and what it waits on; an arrived one, what it waited on", () => {
+  vi.useFakeTimers()
+  try {
+    const { container, inspector, select, tree } = setup(
+      "suspense",
+      null,
+      noSources,
+      createSettings(),
+      [],
+    )
+    select()
+    const answer = () =>
+      container.querySelector("[data-testid=answer]")?.textContent
+    tree.apply(
+      treeBatch(2, [{ op: "suspense", id: 3, state: "waiting", ms: 1200 }]),
+    )
+    // Before the page says what it waits on, nothing is claimed.
+    expect(answer()).toBe("Showing its fallback for 1.2s.")
+    const said = (cause: object) => {
+      inspector.receive(
+        inspected(3, { props: object({}), suspense: { cause } } as never),
+      )
+      return answer()
+    }
+    const lead = "Showing its fallback for 1.2s, "
+    expect(said({ kind: "server", name: "Reviews" })).toBe(
+      `${lead}waiting on Reviews (server)`,
+    )
+    expect(said({ kind: "thrown", name: "Comments", count: 1 })).toBe(
+      `${lead}waiting on 1 promise thrown by Comments`,
+    )
+    expect(said({ kind: "thrown", name: "Comments", count: 2 })).toBe(
+      `${lead}waiting on 2 promises thrown by Comments`,
+    )
+    expect(said({ kind: "inside", name: "Comments" })).toBe(
+      `${lead}waiting inside Comments`,
+    )
+    expect(said({ kind: "lazy" })).toBe(`${lead}loading a lazy() component`)
+    expect(said({ kind: "promise" })).toBe(`${lead}waiting on a promise`)
+    vi.advanceTimersByTime(300)
+    expect(answer()).toBe("Showing its fallback for 1.5s, waiting on a promise")
+
+    tree.apply(
+      treeBatch(3, [{ op: "suspense", id: 3, state: "arrived", ms: 1201 }]),
+    )
+    inspector.receive(
+      inspected(3, {
+        props: object({}),
+        suspense: {
+          awaited: [
+            { name: "getReviews", owner: "Reviews", start: 96, end: 1297 },
+          ],
+        },
+      } as never),
+    )
+    expect(answer()).toBe("No renders since DevTools opened.")
+    expect(
+      [...container.querySelectorAll("[data-testid=server-row]")].map(
+        (row) => row.textContent,
+      ),
+    ).toEqual(["getReviews · Reviews · 1.2s"])
+  } finally {
+    vi.useRealTimers()
+  }
+})

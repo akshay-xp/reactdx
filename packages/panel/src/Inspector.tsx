@@ -9,6 +9,7 @@ import type {
   Updater,
   Value,
 } from "@reactdx/messages"
+import { durationText, sizeText } from "@reactdx/messages"
 import {
   createEffect,
   createResource,
@@ -22,13 +23,20 @@ import {
   Switch,
 } from "solid-js"
 import { ago } from "./ago"
-import { answerOf, hintOf, type Part } from "./answer"
+import {
+  answerOf,
+  fromServerOf,
+  hintOf,
+  type Part,
+  suspenseAnswer,
+} from "./answer"
 import { Empty, EmptyAction } from "./Empty"
 import type { InspectorStore } from "./inspection"
 import { type PathRoot, pathKey } from "./paths"
 import { type MenuItem, RowMenu } from "./RowMenu"
 import { keyboardRows } from "./rows"
 import { matches, searchRanges } from "./search"
+
 import {
   label,
   locationText,
@@ -103,6 +111,9 @@ export const KIND_TEXT: Record<RenderKind, string> = {
   force: "Forced",
 }
 const WHY = "Renders"
+// A line in a Server Component's Awaited or Client components section.
+const SERVER_ROW =
+  "flex min-h-5 items-center whitespace-nowrap pr-2 pl-6 font-mono"
 // The detail behind one-line summaries until opened.
 const FOLDED = [WHY, "Context", "Rendered by"]
 // A prop change that's only a new reference (M6 #62), which still re-renders a
@@ -235,6 +246,18 @@ export function Inspector(props: {
     entriesOf(value).entries.some((entry) =>
       entryShows(props.inspector, entry, query()),
     )
+  // A Server Component (M7 #79): run on the server, nothing to edit or re-render.
+  const server = () => info()?.kind === "server"
+  const awaits = () => props.inspector.data()?.server?.awaits ?? []
+  const clients = () => props.inspector.data()?.server?.rendered ?? []
+  const waitedOn = () => props.inspector.data()?.suspense?.awaited ?? []
+  const fromServer = () => {
+    const from = props.inspector.data()?.fromServer
+    const name = info()?.name
+    return from && name !== undefined
+      ? { ...fromServerOf(from, name), from }
+      : undefined
+  }
   const section = (name: string, root: PathRoot, value: Value | undefined) => (
     <Show when={shown(value) && (value as Container)}>
       {(container) => (
@@ -251,7 +274,7 @@ export function Inspector(props: {
             path={{ root, keys: [] }}
             depth={0}
             query={query()}
-            editable={isPlain(container())}
+            editable={!server() && isPlain(container())}
             onMenu={onMenu}
           />
         </Section>
@@ -306,7 +329,18 @@ export function Inspector(props: {
     return `${count.renders} since DevTools opened${wasted}`
   }
   // The answer for the render shown (the latest, or the pinned commit's).
+  // A Suspense boundary's wait, from the tree (it ticks while waiting).
+  const wait = () => {
+    const id = props.tree.selected()
+    return id !== undefined && info()?.kind === "suspense"
+      ? props.tree.waitOf(id)
+      : undefined
+  }
   const answer = (): Part[] => {
+    if (server()) return ["Ran on the server."]
+    const waiting = wait()
+    if (waiting?.waiting)
+      return suspenseAnswer(props.inspector.data()?.suspense?.cause, waiting.ms)
     const inspector = props.inspector
     if (inspector.absent()) return ["Didn't render in this update."]
     const render = inspector.render()
@@ -324,6 +358,7 @@ export function Inspector(props: {
     })
   }
   const hint = () => {
+    if (server()) return
     const render = props.inspector.render()
     const node = info()
     const id = props.tree.selected()
@@ -421,7 +456,7 @@ export function Inspector(props: {
                     </IconButton>
                   )}
                 </For>
-                <Show when={node().kind !== "host"}>
+                <Show when={node().kind !== "host" && !server()}>
                   <IconButton
                     label="Force re-render"
                     onClick={() => props.inspector.rerender()}
@@ -468,7 +503,7 @@ export function Inspector(props: {
                     class="flex h-7 shrink-0 items-center gap-2 border-border border-b px-2 font-mono text-muted"
                   >
                     <span class="truncate" title={locationText(at())}>
-                      {label(at())}
+                      {server() ? `Rendered at ${label(at())}` : label(at())}
                     </span>
                     <button
                       type="button"
@@ -496,6 +531,25 @@ export function Inspector(props: {
               </Show>
               <Show when={query() === ""}>
                 <div class="flex flex-col gap-1 border-border border-b px-2 py-2">
+                  <Show when={fromServer()}>
+                    {(server) => (
+                      <>
+                        <p data-testid="server-answer">
+                          <Parts parts={server().answer} tree={props.tree} />
+                        </p>
+                        <For each={server().hints}>
+                          {(hint) => (
+                            <p
+                              data-testid="size-hint"
+                              class="rounded bg-highlight/40 px-2 py-1"
+                            >
+                              {hint}
+                            </p>
+                          )}
+                        </For>
+                      </>
+                    )}
+                  </Show>
                   <p data-testid="answer">
                     <Parts parts={answer()} tree={props.tree} />
                   </p>
@@ -521,6 +575,96 @@ export function Inspector(props: {
                 </div>
               </Show>
               {section("Props", "props", props.inspector.data()?.props)}
+              <Show when={fromServer()}>
+                {(server) => (
+                  <Section
+                    name={`Props from ${server().from.owner.name}`}
+                    open={!collapsed().has("Props from")}
+                    forced={query() !== ""}
+                    onToggle={() => toggle("Props from")}
+                    summary={server()
+                      .from.props.map((prop) => prop.key)
+                      .join(", ")}
+                  >
+                    <For each={server().from.props}>
+                      {(prop) => (
+                        <div data-testid="server-row" class={SERVER_ROW}>
+                          <span data-search-text>{prop.key}</span>{" "}
+                          <span class="text-muted">{sizeText(prop)}</span>
+                        </div>
+                      )}
+                    </For>
+                  </Section>
+                )}
+              </Show>
+              <Show when={waitedOn().length}>
+                <Section
+                  name="Waited on"
+                  open={!collapsed().has("Waited on")}
+                  forced={query() !== ""}
+                  onToggle={() => toggle("Waited on")}
+                  summary={waitedOn()
+                    .map((wait) => wait.name)
+                    .join(", ")}
+                >
+                  <For each={waitedOn()}>
+                    {(wait) => (
+                      <div data-testid="server-row" class={SERVER_ROW}>
+                        <span data-search-text>{wait.name}</span>
+                        <span class="text-muted">
+                          {` · ${wait.owner} · ${durationText(wait.end - wait.start)}`}
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </Section>
+              </Show>
+              <Show when={props.inspector.data()?.server?.awaits.length}>
+                <Section
+                  name="Awaited"
+                  open={!collapsed().has("Awaited")}
+                  forced={query() !== ""}
+                  onToggle={() => toggle("Awaited")}
+                  summary={awaits()
+                    .map((wait) => wait.name)
+                    .join(", ")}
+                >
+                  <For each={awaits()}>
+                    {(wait) => (
+                      <div data-testid="server-row" class={SERVER_ROW}>
+                        <span data-search-text>{wait.name}</span>{" "}
+                        <span class="text-muted">
+                          {durationText(wait.end - wait.start)}
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </Section>
+              </Show>
+              <Show when={props.inspector.data()?.server?.rendered.length}>
+                <Section
+                  name="Client components"
+                  open={!collapsed().has("Client components")}
+                  forced={query() !== ""}
+                  onToggle={() => toggle("Client components")}
+                  summary={clients()
+                    .map((client) => client.name)
+                    .join(", ")}
+                >
+                  <For each={clients()}>
+                    {(client) => (
+                      <div data-testid="server-row" class={SERVER_ROW}>
+                        <NodeButton
+                          tree={props.tree}
+                          id={client.id}
+                          name={client.name}
+                        />{" "}
+                        <span class="text-muted">{sizeText(client)}</span>
+                      </div>
+                    )}
+                  </For>
+                </Section>
+              </Show>
               {section("State", "state", props.inspector.data()?.state)}
               <Show when={hooksShow()}>
                 <Section
@@ -557,7 +701,7 @@ export function Inspector(props: {
                 </Section>
               </Show>
               {/* Reasons aren't keys or values: the search hides them. */}
-              <Show when={query() === ""}>
+              <Show when={query() === "" && !server()}>
                 <Section
                   name={WHY}
                   open={!collapsed().has(WHY)}
@@ -633,23 +777,12 @@ export function Inspector(props: {
                             {owner.name}
                           </span>
                         ) : (
-                          <button
-                            type="button"
-                            data-testid="owner"
-                            data-search-text
-                            class="text-accent hover:underline"
-                            onPointerEnter={() =>
-                              props.tree.hover(owner.id as number)
-                            }
-                            onPointerLeave={() => props.tree.hover(undefined)}
-                            onClick={() => {
-                              // Selecting replaces this list: no leave event.
-                              props.tree.hover(undefined)
-                              props.tree.reveal(owner.id as number)
-                            }}
-                          >
-                            {owner.name}
-                          </button>
+                          <NodeButton
+                            tree={props.tree}
+                            id={owner.id}
+                            name={owner.name}
+                            testid="owner"
+                          />
                         )}
                       </div>
                     )}
@@ -685,6 +818,32 @@ export function Inspector(props: {
         )}
       </Match>
     </Switch>
+  )
+}
+
+// A tree node by name: hovering highlights it on the page, a click selects it.
+function NodeButton(props: {
+  tree: TreeStore
+  id: number
+  name: string
+  testid?: string
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={props.testid}
+      data-search-text
+      class="text-accent hover:underline"
+      onPointerEnter={() => props.tree.hover(props.id)}
+      onPointerLeave={() => props.tree.hover(undefined)}
+      onClick={() => {
+        // Selecting replaces this list: no leave event.
+        props.tree.hover(undefined)
+        props.tree.reveal(props.id)
+      }}
+    >
+      {props.name}
+    </button>
   )
 }
 

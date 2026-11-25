@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
 import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
+import { outlines, recordShadows, untilOutlines } from "./shadows.ts"
 
 // Chrome only: the budgets are the spec's Chrome numbers, and Firefox's panel
 // runs in a process Puppeteer can't reach.
@@ -479,14 +480,75 @@ test("watching keeps a one-cell commit under 2x, all cells under +25%", {
     )
     await settle()
     const watched = { one: await median("one"), all: await median("all") }
+    // Outlines on: each commit schedules a frame.
+    await panel.click("[data-testid=outlines]")
+    await settle()
+    const outlined = { one: await median("one"), all: await median("all") }
     t.diagnostic(
-      `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} ms`,
+      `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} → ${outlined.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} → ${outlined.all.toFixed(1)} ms`,
     )
-    assert.ok(watched.one / before.one < 2, JSON.stringify({ before, watched }))
-    assert.ok(
-      watched.all / before.all < 1.25,
-      JSON.stringify({ before, watched }),
+    for (const after of [watched, outlined]) {
+      const times = JSON.stringify({ before, watched, outlined })
+      assert.ok(after.one / before.one < 2, times)
+      assert.ok(after.all / before.all < 1.25, times)
+    }
+  } finally {
+    await browser.close()
+  }
+})
+
+test("the 10k bench scrolls with 100 Suspense outlines and no long task", {
+  skip,
+}, async (t) => {
+  const { browser } = await launchWithExtension(name)
+  try {
+    const [page] = await browser.pages()
+    if (!page) throw new Error("no page")
+    await recordShadows(page)
+    await page.goto(`${BENCH}?waiting=100`)
+    await page.waitForFunction(
+      () => document.querySelectorAll("[data-testid=cell]").length === 10000,
+      { timeout: 10_000 },
     )
+    const panel = await openPanel(browser)
+    await panel.waitForSelector("[data-testid=outlines]")
+    await panel.click("[data-testid=outlines]")
+    await untilOutlines(page, (drawn) => drawn.length === 100, 10_000)
+    const run = await page.evaluate(async () => {
+      const frame = () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        )
+      const settle = () => new Promise((resolve) => setTimeout(resolve, 200))
+      const tasks: number[] = []
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) tasks.push(entry.duration)
+      }).observe({ type: "longtask" })
+      // Proves the observer sees long tasks, as in the tree scroll test.
+      await settle()
+      setTimeout(() => {
+        const start = performance.now()
+        while (performance.now() - start < 80);
+      })
+      await settle()
+      const observed = tasks.splice(0).length > 0
+      let steps = 0
+      for (let last = -1; window.scrollY !== last; steps++) {
+        last = window.scrollY
+        window.scrollBy(0, 50)
+        await frame()
+      }
+      await settle()
+      return { observed, tasks, steps }
+    })
+    t.diagnostic(JSON.stringify({ ...run, tasks: run.tasks.length }))
+    assert.ok(run.observed, "the long-task observer saw no planted task")
+    assert.ok(run.steps > 5, `${run.steps} scroll steps`)
+    assert.deepEqual(
+      run.tasks.filter((ms) => ms > 50),
+      [],
+    )
+    assert.equal((await outlines(page)).length, 100)
   } finally {
     await browser.close()
   }

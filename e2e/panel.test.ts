@@ -222,6 +222,65 @@ describe("fixture:19 tree page", {
   })
 })
 
+// Whether `expected` appears in `names` in order, other names between.
+const inOrder = (names: string[], expected: string[]) => {
+  let at = 0
+  for (const name of names) if (name === expected[at]) at++
+  return at === expected.length
+}
+
+describe("fixture:next /shop tree", {
+  skip:
+    process.env.E2E_FIXTURE !== undefined && process.env.E2E_FIXTURE !== "next",
+}, () => {
+  let stop: (() => void) | undefined
+  before(async () => (stop = await startFixture("fixture:next", 5220)))
+  after(() => stop?.())
+
+  test("server rows nest with client marks; Next.js internals hide until shown", async () => {
+    const { browser, panel } = await panelFor(
+      name,
+      "http://localhost:5220/shop",
+      "after",
+    )
+    try {
+      const names = (t: string) =>
+        parseCopies(t).find((c) => c.heading.includes("development"))?.names ??
+        []
+      const rows = [
+        ...["RootLayout", "server", "Shop", "server"],
+        ...["ProductDetails", "server", "AddToCart", "lazy", "client"],
+        ...["Reviews", "server", "Recommendations", "server"],
+        ...["CartCount", "lazy", "client"],
+      ]
+      // Next's own rows above the app, its metadata Suspense too, are hidden.
+      const listed = (t: string) =>
+        names(t)[0] === "RootLayout" &&
+        inOrder(names(t), rows) &&
+        !names(t).includes("AppRouter")
+      const text = await until(panel, listed, 15_000)
+      assert.ok(listed(text), text)
+      assert.match(text, /\d+ Next\.js components hidden/)
+      // The footer is no component, in whichever copy's text it ends.
+      assert.ok(
+        parseCopies(text).every((c) => !c.names.includes("Next.js")),
+        text,
+      )
+
+      await panel.press("Show")
+      const all = (t: string) =>
+        names(t).includes("AppRouter") && names(t).includes("ServerRoot")
+      const shown = await until(panel, all)
+      assert.ok(all(shown), shown)
+      await panel.press("Hide")
+      const hidden = await until(panel, (t) => !names(t).includes("AppRouter"))
+      assert.ok(!names(hidden).includes("AppRouter"), hidden)
+    } finally {
+      await browser.close()
+    }
+  })
+})
+
 describe("fixture:18 DOM elements filter", {
   skip:
     process.env.E2E_FIXTURE !== undefined && process.env.E2E_FIXTURE !== "18",
@@ -244,6 +303,7 @@ describe("fixture:18 DOM elements filter", {
         assert.equal(names(text), want, text)
       }
       await expectNames(["App", "Counter"])
+      assert.ok(!(await panel()).includes("Next.js components"))
       await panel.press("Show DOM elements")
       await expectNames(["App", "p", "Counter", "button"])
       await panel.press("Show DOM elements")

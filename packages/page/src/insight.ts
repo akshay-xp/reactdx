@@ -2,7 +2,7 @@
 // (docs/page.md, Render insight). Values stay as references: nothing is
 // serialized until the panel shows a record.
 
-import { MAX_HISTORY, MAX_TREE_STRING } from "@reactdx/messages"
+import { type Arrival, MAX_HISTORY, MAX_TREE_STRING } from "@reactdx/messages"
 import type { Fiber } from "./tree.ts"
 
 export type RenderKind =
@@ -65,6 +65,7 @@ export type CommitSummary = {
   renders: number
   // Renders only because the parent rendered.
   wasted: number
+  arrived?: Arrival[]
 }
 
 // A component whose update scheduled a commit, with the state it changed.
@@ -78,6 +79,7 @@ type Commit = {
   // Ids of the components among root.memoizedUpdaters (a root render lists
   // the root itself, which isn't one).
   updaters: number[]
+  arrived?: Arrival[]
 }
 
 // The buffer's bounds: past either, whole commits drop oldest first with the
@@ -361,6 +363,8 @@ export function createRecorder({
       // The fibers whose updates this commit rendered (root.memoizedUpdaters).
       updaters: Set<unknown>,
       walk: (visit: (fiber: Fiber, id: number) => void) => void,
+      // The boundaries whose data arrived in it (M7 #81), known after the walk.
+      arrivals?: () => Arrival[],
     ) {
       const records = new Map<number, RenderRecord>()
       const updaterIds: number[] = []
@@ -391,12 +395,14 @@ export function createRecorder({
           changed.add(id)
         }
       })
+      const arrived = arrivals?.() ?? []
       commits.push({
         seq: at,
         time,
         rootId,
         records,
         updaters: updaterIds,
+        ...(arrived.length && { arrived }),
       })
       held += records.size
       // The newest commit stays whole, however many it rendered.
@@ -438,13 +444,14 @@ export function createRecorder({
     summaries(after: number): CommitSummary[] {
       return commits
         .filter((commit) => commit.seq > after)
-        .map(({ seq, time, rootId, updaters, records }) => ({
+        .map(({ seq, time, rootId, updaters, records, arrived }) => ({
           seq,
           time,
           rootId,
           updaters,
           renders: records.size,
           wasted: [...records.values()].filter(isWasted).length,
+          ...(arrived && { arrived }),
         }))
     },
     rendered(seq: number) {

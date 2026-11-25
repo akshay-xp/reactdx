@@ -31,7 +31,7 @@ export function mirror() {
       } else if (op.op === "reorder") {
         const siblings = list(op.rootId, op.parentId)
         siblings.splice(0, siblings.length, ...op.children)
-      } else (nodes.get(op.id) as Node).name = op.name
+      } else if (op.op === "rename") (nodes.get(op.id) as Node).name = op.name
     }
   }
   const outline = (rootId?: number) => {

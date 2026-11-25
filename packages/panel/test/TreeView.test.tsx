@@ -249,3 +249,61 @@ test("a group row shows its size and wasted renders, and opens to its members", 
   fireEvent.click(group.querySelector("[data-toggle]") as Element)
   expect(nodes()).toHaveLength(7)
 })
+
+test("a Server Component row has a server badge and works like any row", () => {
+  const { tree, container, nodes } = view([
+    add(1, 0, "Shop", 0, "server"),
+    add(2, 1, "Cart"),
+  ])
+  expect(nodes().map((n) => n.textContent)).toEqual([
+    "Shop server",
+    "Cart client",
+  ])
+  const badge = () =>
+    nodes()[0]?.querySelector("[data-testid=badge]") as Element
+  expect(badge().className).toContain("text-server")
+  fireEvent.click(nodes()[0] as Element)
+  expect(tree.selected()).toBe(1)
+  expect(badge().className).toContain("text-fg")
+  expect(badge().className).not.toContain("text-server")
+  fireEvent.keyDown(container.querySelector("[data-testid=tree]") as Element, {
+    key: "ArrowDown",
+  })
+  expect(tree.selected()).toBe(2)
+  tree.setQuery("shop")
+  expect(tree.matches()).toEqual([1])
+})
+
+test("the first client component under a server row is marked client", () => {
+  const { nodes } = view([
+    add(1, 0, "Shop", 0, "server"),
+    add(2, 1, "AddToCart", 0, "lazy"),
+    add(3, 2, "Inner"),
+  ])
+  expect(nodes().map((n) => n.textContent)).toEqual([
+    "Shop server",
+    "AddToCart lazy client",
+    "Inner",
+  ])
+  const mark = nodes()[1]?.querySelector("[data-testid=client]") as Element
+  expect(mark.className).toContain("text-client")
+  fireEvent.click(nodes()[1] as Element)
+  expect(mark.className).toContain("text-fg")
+})
+
+test("a Suspense row says how long it has waited, then how long it took", () => {
+  const { tree, nodes } = view([add(1, 0, "Suspense", 0, "suspense")])
+  tree.apply(
+    treeBatch(2, [{ op: "suspense", id: 1, state: "waiting", ms: 1200 }]),
+  )
+  expect(nodes().map((n) => n.textContent)).toEqual(["Suspense waiting 1.2s"])
+  const chip = () => nodes()[0]?.querySelector("[data-testid=wait]") as Element
+  expect(chip().className).toContain("text-waiting")
+  tree.apply(
+    treeBatch(3, [{ op: "suspense", id: 1, state: "arrived", ms: 840 }]),
+  )
+  expect(nodes().map((n) => n.textContent)).toEqual([
+    "Suspense arrived in 840 ms",
+  ])
+  expect(chip().className).toContain("text-muted")
+})

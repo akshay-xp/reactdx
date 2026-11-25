@@ -469,3 +469,119 @@ test("a node's parent is the node above it, none at a root", () => {
   expect(tree.parentOf(1)).toBeUndefined()
   expect(tree.parentOf(99)).toBeUndefined()
 })
+
+test("a component right under a Server Component is where client code starts", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      add(1, 0, "Shop", 0, "server"),
+      add(2, 1, "Suspense", 0, "suspense"),
+      add(3, 2, "CartCount"),
+      add(4, 1, "div", 1, "host"),
+      add(5, 4, "AddToCart", 0, "lazy"),
+      add(6, 5, "Inner"),
+      add(7, 0, "App", 1),
+    ]),
+  )
+  expect(tree.rows(1).map((row) => [row.name, row.client])).toEqual([
+    ["Shop", false],
+    ["Suspense", false],
+    ["CartCount", true],
+    ["AddToCart", true],
+    ["Inner", false],
+    ["App", false],
+  ])
+})
+
+test("Next.js internals are hidden in a Next root until shown", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      add(1, 0, "HeadManagerContext", 0, "provider"),
+      add(2, 1, "AppRouter"),
+      add(3, 2, "ErrorBoundary"),
+      add(4, 3, "RootLayout", 0, "server"),
+      add(5, 4, "SegmentStateProvider"),
+      add(6, 5, "Context", 0, "provider"),
+      add(7, 6, "Page", 0, "server"),
+      add(8, 7, "Counter", 0, "lazy"),
+      add(9, 0, "App", 0, "function", 2),
+      add(10, 9, "ErrorBoundary", 0, "function", 2),
+    ]),
+  )
+  const shown = (rootId: number) =>
+    tree.rows(rootId).map((row) => `${row.depth} ${row.name}`)
+  expect(shown(1)).toEqual(["0 RootLayout", "1 Page", "2 Counter"])
+  expect(shown(2)).toEqual(["0 App", "1 ErrorBoundary"])
+  expect(tree.hiddenCount()).toBe(5)
+  tree.setQuery("AppRouter")
+  expect(tree.matches()).toEqual([])
+
+  tree.setShowInternals(true)
+  expect(tree.showInternals()).toBe(true)
+  expect(shown(1)).toHaveLength(8)
+  expect(tree.matches()).toEqual([2])
+  tree.select(3)
+  tree.setShowInternals(false)
+  expect(tree.selected()).toBeUndefined()
+
+  tree.apply(treeBatch(2, [{ op: "remove", id: 3 }]))
+  expect(tree.hiddenCount()).toBe(2)
+})
+
+test("a Next boundary's Suspense is hidden through a DOM element between", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      add(1, 0, "AppRouter"),
+      add(2, 1, "__next_metadata_boundary__", 0, "lazy"),
+      add(3, 2, "div", 0, "host"),
+      add(4, 3, "Suspense", 0, "suspense"),
+      add(5, 1, "Page", 1, "server"),
+    ]),
+  )
+  expect(tree.rows(1).map((row) => row.name)).toEqual(["Page"])
+})
+
+test("a Suspense wait keeps its node", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [{ op: "reset" }, add(1, 0, "Suspense", 0, "suspense")]),
+  )
+  expect(
+    tree.apply(
+      treeBatch(2, [{ op: "suspense", id: 1, state: "waiting", ms: 0 }]),
+    ),
+  ).toBe(false)
+  expect(tree.rows(1).map((row) => row.name)).toEqual(["Suspense"])
+})
+
+test("a boundary's wait ticks while it waits, and stays once it arrived", () => {
+  vi.useFakeTimers()
+  try {
+    const tree = createTreeStore()
+    tree.apply(
+      treeBatch(1, [
+        { op: "reset" },
+        add(1, 0, "Suspense", 0, "suspense"),
+        add(2, 0, "Other", 1, "suspense"),
+        { op: "suspense", id: 1, state: "waiting", ms: 1000 },
+      ]),
+    )
+    expect(tree.waitOf(2)).toBeUndefined()
+    vi.advanceTimersByTime(200)
+    expect(tree.waitOf(1)).toEqual({ waiting: true, ms: 1200 })
+    tree.apply(
+      treeBatch(2, [{ op: "suspense", id: 1, state: "arrived", ms: 840 }]),
+    )
+    expect(tree.waitOf(1)).toEqual({ waiting: false, ms: 840 })
+    expect(vi.getTimerCount()).toBe(0)
+    tree.apply(treeBatch(3, [{ op: "remove", id: 1 }]))
+    expect(tree.waitOf(1)).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})

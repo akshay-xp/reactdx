@@ -1,4 +1,4 @@
-import type { TreeKind } from "@reactdx/messages"
+import { durationText, type TreeKind } from "@reactdx/messages"
 import {
   createEffect,
   createMemo,
@@ -13,7 +13,12 @@ import type { TreeStore } from "./tree"
 import { ROW_HEIGHT, windowOf } from "./virtual"
 
 // Kinds worth a badge: the rest are plain components or DOM elements.
-export const BADGES = new Set<TreeKind>(["memo", "forwardRef", "lazy"])
+export const BADGES = new Set<TreeKind>([
+  "memo",
+  "forwardRef",
+  "lazy",
+  "server",
+])
 
 // A right-pointing CSS triangle: no text, so nothing for text readers to pick up.
 export const TRIANGLE = {
@@ -55,8 +60,10 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
     })
   })
   const selected = (id: number) => props.tree.selected() === id
-  // Dark muted on selected is 2.9:1 (docs/panel.md, Themes).
-  const muted = (id: number) => (selected(id) ? "text-fg" : "text-muted")
+  // A text color token, or fg on the selection: dark muted on selected is
+  // 2.9:1 (docs/panel.md, Themes).
+  const tint = (id: number, token: string) => (selected(id) ? "text-fg" : token)
+  const muted = (id: number) => tint(id, "text-muted")
   // One listener for every row: a toggle click on an expandable row toggles it,
   // any other click selects the row.
   const click = (event: MouseEvent) => {
@@ -147,6 +154,7 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
             {(row) => {
               const recent = () => props.tree.isRecent(row.id)
               const count = () => props.tree.countOf(row.id)
+              const wait = () => props.tree.waitOf(row.id)
               return (
                 <div
                   data-testid="node"
@@ -190,8 +198,24 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                   </span>
                   <Show when={BADGES.has(row.kind)}>
                     {" "}
-                    <span data-testid="badge" class={muted(row.id)}>
+                    <span
+                      data-testid="badge"
+                      class={
+                        row.kind === "server"
+                          ? tint(row.id, "text-server")
+                          : muted(row.id)
+                      }
+                    >
                       {row.kind}
+                    </span>
+                  </Show>
+                  <Show when={row.client}>
+                    {" "}
+                    <span
+                      data-testid="client"
+                      class={tint(row.id, "text-client")}
+                    >
+                      client
                     </span>
                   </Show>
                   <Show when={row.key !== null}>
@@ -199,6 +223,25 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                     <span data-testid="key" class={`truncate ${muted(row.id)}`}>
                       {`key="${row.key}"`}
                     </span>
+                  </Show>
+                  <Show when={wait()}>
+                    {(wait) => (
+                      <>
+                        {" "}
+                        <span
+                          data-testid="wait"
+                          class={
+                            wait().waiting
+                              ? tint(row.id, "text-waiting")
+                              : muted(row.id)
+                          }
+                        >
+                          {wait().waiting
+                            ? `waiting ${durationText(wait().ms)}`
+                            : `arrived in ${durationText(wait().ms)}`}
+                        </span>
+                      </>
+                    )}
                   </Show>
                   <Show when={row.group}>
                     {(group) => (

@@ -240,6 +240,10 @@ for (const { port } of fixtures.filter((f) => f.fixture === "next"))
       "after",
     )
     try {
+      // Next's own components make the tree wide: shown, not hidden (M7 #78).
+      await until(panel, (t) => t.includes("Next.js components hidden"))
+      await panel.press("Show")
+      await until(panel, (t) => t.includes("Next.js components shown"))
       await selectListed(panel, "Counter", (t) => t.includes("State: 0"))
       const layout = await panel.frame?.evaluate(() => {
         const pane = document.querySelector("[data-testid=trees]") as Element
@@ -249,7 +253,8 @@ for (const { port } of fixtures.filter((f) => f.fixture === "next"))
         const height = (el: Element) => el.getBoundingClientRect().height
         const rows = [
           ...document.querySelectorAll(
-            "[data-testid=inspector] [data-testid=value], [data-testid=inspector] [data-testid=owner]",
+            // Rows in sections: the header's and answers' links aren't rows.
+            "[data-testid=inspector] [data-testid=section] [data-testid=value], [data-testid=inspector] [data-testid=section] [data-testid=owner]",
           ),
         ].map(
           (el) =>
@@ -275,6 +280,47 @@ for (const { port } of fixtures.filter((f) => f.fixture === "next"))
         rows: true,
         short: 0,
       })
+    } finally {
+      await browser.close()
+    }
+  })
+
+if (fixtures.some((f) => f.fixture === "next"))
+  test("next: a Server Component and the props it passed, on /shop", async () => {
+    const { browser, page, panel } = await panelFor(
+      name,
+      "http://localhost:5220/shop",
+      "after",
+    )
+    try {
+      await page.waitForSelector("[data-testid=cart-count]", {
+        timeout: 15_000,
+      })
+      const server = await selectListed(
+        panel,
+        "ProductDetails",
+        (t) =>
+          t.includes("Ran on the server") &&
+          t.includes("Rendered at page.jsx:") &&
+          /getProduct \d+ ms/.test(t) &&
+          /AddToCart \d+\.\d KB/.test(t),
+      )
+      assert.ok(server.includes('id: "p-12"'), server)
+      assert.ok(server.includes("Rendered at page.jsx:"), server)
+      assert.match(server, /getProduct \d+ ms/)
+      assert.match(server, /AddToCart \d+\.\d KB/)
+      assert.ok(!server.includes("Force re-render"), server)
+      assert.ok(!/\bState\b/.test(server), server)
+
+      const client = await selectListed(panel, "AddToCart", (t) =>
+        t.includes("Props from ProductDetails"),
+      )
+      assert.ok(
+        client.includes("Server Component ProductDetails passed it 2 props"),
+        client,
+      )
+      assert.match(client, /product \d+\.\d KB/)
+      assert.ok(client.includes("mostly specs"), client)
     } finally {
       await browser.close()
     }

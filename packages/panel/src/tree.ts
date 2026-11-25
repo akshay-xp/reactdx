@@ -1,10 +1,12 @@
 import type {
   CountsMessage,
+  OutlineMode,
   RenderCount,
   TreeBatchMessage,
   TreeKind,
   TreeOp,
 } from "@reactdx/messages"
+import { nextInternal } from "@reactdx/messages"
 import { batch, createSignal } from "solid-js"
 
 export type Row = {
@@ -16,14 +18,28 @@ export type Row = {
   expandable: boolean
   expanded: boolean
   match: boolean
+  // A component whose nearest component ancestor is a Server Component: where
+  // client code starts.
+  client: boolean
   // A run of same-named siblings shown as one row (its id is minus the first
   // member's): how many.
   group?: { size: number }
 }
 
 const RECENT_MS = 1000
+const TICK_MS = 100
 // Consecutive siblings with the same name and kind that make a group row.
 const GROUP_MIN = 5
+
+// Kinds that are components (Suspense, providers and DOM elements aren't).
+const COMPONENT_KINDS = new Set<TreeKind>([
+  "function",
+  "class",
+  "forwardRef",
+  "memo",
+  "lazy",
+  "server",
+])
 
 type Node = {
   rootId: number
@@ -32,6 +48,11 @@ type Node = {
   name: string
   key: string | null
   children: number[]
+  // The nearest component kind at or above this node.
+  scope: TreeKind | undefined
+  client: boolean
+  // One of Next's own (src/next.ts); hidden only in a root that's Next's.
+  internal: boolean
 }
 
 export type TreeStore = ReturnType<typeof createTreeStore>
@@ -53,15 +74,45 @@ export function createTreeStore() {
   let recent = new Set<number>()
   let fade: ReturnType<typeof setTimeout> | undefined
   const [version, setVersion] = createSignal(0)
+  // Suspense waits by id (M7 #80): waiting or arrived, the ms the page sent and
+  // when it came. While any waits, a clock ticks so its time counts up.
+  const waits = new Map<number, { waiting: boolean; ms: number; at: number }>()
+  const [clock, setClock] = createSignal(Date.now())
+  let ticking: ReturnType<typeof setInterval> | undefined
+  const tick = () => {
+    const waiting = [...waits.values()].some((wait) => wait.waiting)
+    if (waiting && !ticking)
+      ticking = setInterval(() => setClock(Date.now()), TICK_MS)
+    else if (!waiting && ticking) {
+      clearInterval(ticking)
+      ticking = undefined
+    }
+  }
   const [selected, select] = createSignal<number>()
   const [showHosts, showHostsSignal] = createSignal(false)
+  const [showInternals, showInternalsSignal] = createSignal(false)
+  // Roots holding Next's AppRouter, and each root's count of internals: a
+  // Vite app's own Router or Head is never hidden.
+  const nextRoots = new Set<number>()
+  const internals = new Map<number, number>()
+  // Server nodes: the islands mode needs one.
+  let servers = 0
+  const countNode = (node: Node, by: number) => {
+    if (node.internal)
+      internals.set(node.rootId, (internals.get(node.rootId) ?? 0) + by)
+    if (node.kind === "server") servers += by
+  }
   const [query, querySignal] = createSignal("")
   // The row under the pointer: the page highlights it.
   const [hovered, hover] = createSignal<number>()
   const [picking, setPicking] = createSignal(false)
+  // The outlines drawn on the page, if any (docs/panel.md, Toolbar).
+  const [outlines, setOutlines] = createSignal<OutlineMode>()
   // Host (DOM element) nodes are rows only while "Show DOM elements" is on.
   const visible = (node: Node | undefined) =>
-    node !== undefined && (node.kind !== "host" || showHosts())
+    node !== undefined &&
+    (node.kind !== "host" || showHosts()) &&
+    !(node.internal && nextRoots.has(node.rootId) && !showInternals())
 
   const siblings = (rootId: number, parentId: number) => {
     if (parentId) return nodes.get(parentId)?.children
@@ -72,11 +123,26 @@ export function createTreeStore() {
     nodes.clear()
     tops.clear()
     counts.clear()
+    waits.clear()
+    tick()
+    nextRoots.clear()
+    internals.clear()
+    servers = 0
     setTally(tally() + 1)
   }
+  // The nearest node at or above this one that isn't a DOM element.
+  const outer = (node: Node | undefined) => {
+    let at = node
+    while (at?.kind === "host") at = nodes.get(at.parentId)
+    return at
+  }
   const forget = (id: number) => {
-    for (const child of nodes.get(id)?.children ?? []) forget(child)
+    const node = nodes.get(id)
+    if (!node) return
+    for (const child of node.children) forget(child)
+    countNode(node, -1)
     nodes.delete(id)
+    waits.delete(id)
   }
 
   // Applies one op; false when it names a node the mirror doesn't have.
@@ -89,7 +155,23 @@ export function createTreeStore() {
       const { id, rootId, parentId, kind, name, key, index } = op
       const list = siblings(rootId, parentId)
       if (!list) return false
-      nodes.set(id, { rootId, parentId, kind, name, key, children: [] })
+      const parent = nodes.get(parentId)
+      const above = parent?.scope
+      const component = COMPONENT_KINDS.has(kind)
+      const node: Node = {
+        rootId,
+        parentId,
+        kind,
+        name,
+        key,
+        children: [],
+        scope: component ? kind : above,
+        client: component && kind !== "server" && above === "server",
+        internal: nextInternal(name, kind, outer(parent)),
+      }
+      nodes.set(id, node)
+      countNode(node, 1)
+      if (kind === "function" && name === "AppRouter") nextRoots.add(rootId)
       list.splice(index, 0, id)
       return true
     }
@@ -100,8 +182,24 @@ export function createTreeStore() {
     }
     const node = nodes.get(op.id)
     if (!node) return false
-    if (op.op === "rename") node.name = op.name
-    else {
+    if (op.op === "suspense") {
+      waits.set(op.id, {
+        waiting: op.state === "waiting",
+        ms: op.ms,
+        at: Date.now(),
+      })
+      return true
+    }
+    if (op.op === "rename") {
+      countNode(node, -1)
+      node.name = op.name
+      node.internal = nextInternal(
+        node.name,
+        node.kind,
+        outer(nodes.get(node.parentId)),
+      )
+      countNode(node, 1)
+    } else {
       const list = siblings(node.rootId, node.parentId) ?? []
       list.splice(list.indexOf(op.id), 1)
       forget(op.id)
@@ -153,6 +251,7 @@ export function createTreeStore() {
         expandable: kids.length > 0,
         expanded,
         match: isMatch(node),
+        client: node.client,
       })
       if (expanded) visitAll(kids, depth + 1)
     }
@@ -170,6 +269,7 @@ export function createTreeStore() {
         expandable: true,
         expanded,
         match: false,
+        client: false,
         group: { size: members.length },
       })
       if (expanded) for (const member of members) visit(member, depth + 1)
@@ -264,6 +364,12 @@ export function createTreeStore() {
     return true
   }
 
+  // A filter change: a selection whose row went away is dropped.
+  const hideSelection = () => {
+    if (!visible(nodes.get(Math.abs(selected() ?? 0)))) select(undefined)
+    setVersion(version() + 1)
+  }
+
   return {
     // True when the panel must ask the page for a resync.
     apply(batch: TreeBatchMessage): boolean {
@@ -271,6 +377,7 @@ export function createTreeStore() {
       else if (stale) return false
       else if (batch.seq !== expected) stale = true
       if (!stale) stale = !batch.ops.every(applyOp)
+      tick()
       expected = batch.seq + 1
       // A group row's id is minus its first member's.
       if (!nodes.has(Math.abs(selected() ?? 0))) select(undefined)
@@ -279,6 +386,16 @@ export function createTreeStore() {
     },
 
     rows,
+    // A boundary's wait: still waiting (counting up), or how long it took.
+    waitOf(id: number) {
+      version()
+      clock()
+      const wait = waits.get(id)
+      if (!wait) return
+      return wait.waiting
+        ? { waiting: true, ms: wait.ms + Date.now() - wait.at }
+        : { waiting: false, ms: wait.ms }
+    },
     receiveCounts(message: CountsMessage) {
       for (const count of message.counts) counts.set(count.id, count)
       recent = new Set(message.counts.map((count) => count.id))
@@ -325,6 +442,8 @@ export function createTreeStore() {
     hovered,
     picking,
     setPicking: (on: boolean) => setPicking(on),
+    outlines,
+    setOutlines: (mode: OutlineMode | undefined) => setOutlines(mode),
     // The page's pick ends picking; an id the mirror has is selected and revealed.
     picked(id: number | null) {
       setPicking(false)
@@ -360,8 +479,23 @@ export function createTreeStore() {
     showHosts,
     setShowHosts(on: boolean) {
       showHostsSignal(on)
-      if (!visible(nodes.get(Math.abs(selected() ?? 0)))) select(undefined)
-      setVersion(version() + 1)
+      hideSelection()
+    },
+    showInternals,
+    setShowInternals(on: boolean) {
+      showInternalsSignal(on)
+      hideSelection()
+    },
+    hasServers() {
+      version()
+      return servers > 0
+    },
+    // Next's own components in Next roots, hidden or shown.
+    hiddenCount() {
+      version()
+      let count = 0
+      for (const rootId of nextRoots) count += internals.get(rootId) ?? 0
+      return count
     },
 
     clear() {

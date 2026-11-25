@@ -10,6 +10,7 @@ import {
   parseUpdaters,
   parseValueTarget,
   type RenderKind,
+  type Size,
   type Updater,
   type ValueKey,
   type ValueTarget,
@@ -111,6 +112,7 @@ export type TreeKind =
   | "profiler"
   | "activity"
   | "host"
+  | "server"
 
 // parentId 0 is the root's top level; removing a node removes its descendants.
 export type TreeOp =
@@ -128,6 +130,9 @@ export type TreeOp =
   | { op: "remove"; id: number }
   | { op: "reorder"; rootId: number; parentId: number; children: number[] }
   | { op: "rename"; id: number; name: string }
+  // A Suspense boundary (M7 #80): waiting so far at the commit, or how long it
+  // took once its content arrived, in ms.
+  | { op: "suspense"; id: number; state: "waiting" | "arrived"; ms: number }
 
 export type TreeBatchMessage = {
   source: "reactdx"
@@ -159,6 +164,7 @@ const TREE_KINDS = new Set<unknown>([
   "profiler",
   "activity",
   "host",
+  "server",
 ] satisfies TreeKind[])
 
 // Any invalid op drops the whole batch: a partial batch would desync the panel's mirror.
@@ -213,6 +219,12 @@ function parseTreeOp(data: unknown): TreeOp | undefined {
       if (!isId(id) || !isString(name, MAX_TREE_STRING)) return
       return { op: "rename", id, name }
     }
+    case "suspense": {
+      const { id, state, ms } = o
+      if (!isId(id) || (state !== "waiting" && state !== "arrived")) return
+      if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return
+      return { op: "suspense", id, state, ms }
+    }
   }
 }
 
@@ -264,6 +276,14 @@ export type HighlightMessage = { type: "highlight"; tabId: number; id: number }
 export type ClearHighlightMessage = { type: "clear-highlight"; tabId: number }
 // Panel to background: start or stop the element picker on the page.
 export type PickMessage = { type: "pick-start" | "pick-stop"; tabId: number }
+// What the page outlines (docs/page.md, Outlines).
+export type OutlineMode = "suspense" | "islands"
+// Panel to background: draw that mode's outlines on the page, or (null) stop.
+export type OutlinesMessage = {
+  type: "outlines"
+  tabId: number
+  mode: OutlineMode | null
+}
 // Panel to background: inspect a node (null: stop), or load one page of an object.
 export type InspectMessage = {
   type: "inspect"
@@ -418,6 +438,7 @@ export type TreeCommand =
   | { type: "clear-highlight" }
   | { type: "pick-start" }
   | { type: "pick-stop" }
+  | { type: "outlines"; mode: OutlineMode | null }
   | { type: "inspect"; id: number | null }
   | { type: "expand"; objectId: number; offset: number }
   | { type: "copy-value" | "store-value"; target: ValueTarget }
@@ -466,11 +487,17 @@ export function parseTreeCommand(data: unknown): TreeCommand | undefined {
     kind,
     on,
     seq,
+    mode,
   } = data as Record<string, unknown>
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
   if (type === "inspect" && (id === null || isId(id))) return { type, id }
   if (type === "rerender" && isId(id)) return { type, id }
+  if (
+    type === "outlines" &&
+    (mode === null || mode === "suspense" || mode === "islands")
+  )
+    return { type, mode }
   if (type === "reason" && isId(id) && isId(seq)) return { type, id, seq }
   if (type === "commit" && isId(seq)) return { type, seq }
   if (
@@ -579,3 +606,17 @@ export function toolbarState(renderers: RendererInfo[]): ToolbarState {
 }
 
 export * from "./inspect.ts"
+
+// A wait (the panel's text, the page's outline labels): whole milliseconds, seconds with one decimal from a second.
+export const durationText = (ms: number) =>
+  ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)}s`
+
+// A page-measured size: bytes under 1,000, else KB with one decimal; past the
+// page's caps, what was counted before it stopped.
+export function sizeText({ bytes, over }: Size) {
+  if (over) return `over ${Math.floor(bytes / 1024).toLocaleString("en-US")} KB`
+  return bytes < 1000 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
+}
+
+// Next.js App Router internals (the panel hides them, the page skips them).
+export { nextInternal } from "./next.ts"

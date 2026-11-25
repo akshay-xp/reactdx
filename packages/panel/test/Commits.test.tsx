@@ -299,3 +299,94 @@ test("what rendered nests under what rendered above it; repeated siblings fold",
     "2 Row State changed",
   ])
 })
+
+const arriving = (seq: number, ...names: string[]): CommitSummary => ({
+  ...summary(seq, 2000, 3),
+  arrived: names.map((name, i) => ({
+    boundary: seq * 10 + i,
+    name,
+    waited: 840,
+    awaits: [],
+  })),
+})
+
+test("an update that showed a boundary's content says its data arrived", () => {
+  const { timeline, rows } = setup()
+  timeline.receiveCommits(
+    commitsMessage(
+      [
+        arriving(1, "Reviews"),
+        arriving(2, "Reviews", "CartCount"),
+        summary(3, 2000, 1),
+      ],
+      1,
+      false,
+    ),
+  )
+  expect(rows().map((row) => row.split(" / ")[0])).toEqual([
+    "Root render",
+    "Data arrived · Reviews boundary · waited 840 ms +1",
+    "Data arrived · Reviews boundary · waited 840 ms",
+  ])
+})
+
+test("a waterfall reads as one row; open, its waits on one time axis and a hint", () => {
+  const { timeline, rows, container } = setup()
+  const awaited = (
+    seq: number,
+    name: string,
+    owner: string,
+    start: number,
+    end: number,
+  ) => ({
+    ...summary(seq, 2000, 1),
+    arrived: [
+      {
+        boundary: seq,
+        name: owner,
+        waited: end - start,
+        awaits: [{ name, owner, start, end }],
+      },
+    ],
+  })
+  timeline.receiveCommits(
+    commitsMessage(
+      [
+        awaited(1, "getReviews", "Reviews", 96, 1297),
+        summary(2, 2000, 1),
+        awaited(3, "getRecommendations", "Recommendations", 1300, 2102),
+      ],
+      1,
+      false,
+    ),
+  )
+  expect(rows()[0]).toBe(
+    "Waterfall · 2 waits, one after another · 2.0s / 2s ago",
+  )
+  const row = () =>
+    container.querySelector("[role=option][data-group='3']") as HTMLElement
+  fireEvent.click(row())
+  const bars = [
+    ...container.querySelectorAll<HTMLElement>("[data-testid=waterfall-bar]"),
+  ]
+  expect(bars).toHaveLength(2)
+  const percent = (value: string) => Number.parseFloat(value)
+  expect(percent(bars[0]?.style.left ?? "")).toBeCloseTo(0, 1)
+  expect(percent(bars[0]?.style.width ?? "")).toBeCloseTo(59.9, 1)
+  expect(percent(bars[1]?.style.left ?? "")).toBeCloseTo(60.0, 1)
+  expect(
+    [...container.querySelectorAll("[data-testid=waterfall-label]")].map(
+      (label) => label.textContent,
+    ),
+  ).toEqual([
+    "getReviews · Reviews · 1.2s",
+    "getRecommendations · Recommendations · 802 ms",
+  ])
+  expect(
+    container.querySelector("[data-testid=waterfall-hint]")?.textContent,
+  ).toBe(
+    "getRecommendations in Recommendations started only after getReviews ended. Starting it alongside would save up to 802 ms.",
+  )
+  fireEvent.click(row())
+  expect(container.querySelector("[data-testid=waterfall]")).toBeNull()
+})

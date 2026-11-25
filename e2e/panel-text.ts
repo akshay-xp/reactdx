@@ -24,6 +24,8 @@ export type PanelText = (() => Promise<string>) & {
   close(): Promise<void>
   press(name: string): Promise<void>
   pressed(name: string): Promise<boolean>
+  // Whether that button is disabled, and its description (its title).
+  described(name: string): Promise<{ disabled: boolean; description: string }>
   // Focuses the row (or the listbox) whose text or name includes `text` and
   // presses `key`.
   key(text: string, key: Key): Promise<void>
@@ -136,6 +138,10 @@ export async function openPanelText(
       (await frame.evaluate(
         `${button(name)}.getAttribute("aria-pressed") === "true"`,
       )) as boolean
+    const described = async (name: string) =>
+      (await frame.evaluate(
+        `(() => { const el = ${button(name)}; return { disabled: el.disabled, description: el.title } })()`,
+      )) as { disabled: boolean; description: string }
     const edit = async (row: string, text: string) => {
       const value = await frame.waitForFunction(
         (row) =>
@@ -201,6 +207,7 @@ export async function openPanelText(
       close,
       press,
       pressed,
+      described,
       key,
       tab,
       commits,
@@ -382,8 +389,19 @@ export async function openPanelText(
   const role = (name: string) => `Ci.nsIAccessibleRole.ROLE_${name}`
   const button = (name: string) =>
     `[${role("PUSHBUTTON")}, ${role("TOGGLE_BUTTON")}, ${role("CHECKBUTTON")}].includes(node.role) && node.name === ${json(name)}`
+  // Like tabs, a button can be missing from the mirror for a moment.
   const press = async (name: string) => {
-    await onAccessible(button(name), `node.doAction(0); return "ok"`)
+    for (const deadline = Date.now() + 5000; ; ) {
+      const done = await onAccessible(
+        button(name),
+        `node.doAction(0); return "ok"`,
+        false,
+      )
+      if (done) return
+      if (Date.now() > deadline) break
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    await onAccessible(button(name), `return "ok"`)
   }
   // The entry's editable text, which edits as typing does (input events fire).
   const type = async (label: string, text: string) => {
@@ -464,11 +482,20 @@ export async function openPanelText(
       }, 50))`,
     )
   }
+  // Firefox mirrors the panel's accessibility tree a moment late: after a
+  // navigation the tabs can be missing from it briefly, so it's tried again.
   const tab = async (name: string) => {
-    await onAccessible(
-      `node.role === ${role("PAGETAB")} && node.name === ${json(name)}`,
-      `node.doAction(0); return "ok"`,
-    )
+    const match = `node.role === ${role("PAGETAB")} && node.name === ${json(name)}`
+    for (const deadline = Date.now() + 5000; ; ) {
+      const done = await onAccessible(
+        match,
+        `node.doAction(0); return "ok"`,
+        false,
+      )
+      if (done || Date.now() > deadline) break
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    await onAccessible(match, `return "ok"`)
   }
   const commits = async () =>
     JSON.parse(
@@ -495,6 +522,18 @@ export async function openPanelText(
       node.getState(state, extra)
       return String((state.value & Ci.nsIAccessibleStates.STATE_PRESSED) !== 0)`,
     )) === "true"
+  const described = async (name: string) =>
+    JSON.parse(
+      (await onAccessible(
+        button(name),
+        `const state = {}, extra = {}
+        node.getState(state, extra)
+        return JSON.stringify({
+          disabled: (state.value & Ci.nsIAccessibleStates.STATE_UNAVAILABLE) !== 0,
+          description: node.description,
+        })`,
+      )) as string,
+    ) as { disabled: boolean; description: string }
   // The selected tree item's first text leaf: its name (the toggle has no text).
   const selected = async () =>
     (await onAccessible(
@@ -523,6 +562,7 @@ export async function openPanelText(
     close,
     press,
     pressed,
+    described,
     key,
     tab,
     commits,
@@ -539,10 +579,15 @@ export type Copy = { heading: string; commits: number[]; names: string[] }
 const HEADING = /React (\S+) (development|production) (\S+)/g
 const ROOT = /Root \d+ (\d+) updates/g
 const LEGEND = "Numbers: renders since DevTools opened"
+// The legend bar's hidden-internals count and toggle (Next pages).
+const HIDDEN = / · \d+ Next\.js components (hidden|shown) (Show|Hide)/
+// A Suspense row's wait chip (M7 #80): not a name.
+const WAIT = / (waiting|arrived in) \d+(\.\d)?( ms|s)/g
 
 // "React 18.3.1 development react-dom Root 1 3 commits App Counter 2 ..." into
 // copies: each root's commit count, and the component names listed under its
-// roots (not the rows' render counts, nor the legend under the trees).
+// roots (not the rows' render counts or Suspense waits, nor the legend and
+// hidden count under the trees).
 export function parseCopies(text: string): Copy[] {
   const headings = [...text.matchAll(HEADING)]
   return headings.map((match, i) => {
@@ -558,6 +603,8 @@ export function parseCopies(text: string): Copy[] {
       names: segment
         .replace(ROOT, " ")
         .replace(LEGEND, " ")
+        .replace(HIDDEN, " ")
+        .replace(WAIT, " ")
         .split(" ")
         .filter((name) => name && !/^\d+$/.test(name)),
     }

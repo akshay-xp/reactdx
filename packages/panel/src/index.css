@@ -20,6 +20,9 @@
   --color-syntax-string: var(--theme-syntax-string);
   --color-syntax-number: var(--theme-syntax-number);
   --color-highlight: var(--theme-highlight);
+  --color-server: var(--theme-server);
+  --color-client: var(--theme-client);
+  --color-waiting: var(--theme-waiting);
 }
 
 body {

@@ -13,6 +13,7 @@ import { afterEach, beforeAll, expect, test, vi } from "vitest"
 import { startAgent } from "../src/agent.ts"
 import { type HookRecord, installHook } from "../src/hook.ts"
 import { createTree } from "../src/tree.ts"
+import { react19, ServerChild, server, serverInfo } from "./server.ts"
 import { mirror } from "./tree-mirror.ts"
 import { windowLike } from "./window.ts"
 
@@ -389,7 +390,11 @@ test("suspended content is hidden from the tree until it shows", async () => {
   await render(h(Page))
   await watching(async (flush, _, tree) => {
     await React.act(() => setWaiting(true))
-    expect(summary(flush()[0])).toEqual(["remove", "add Spinner at 0"])
+    expect(summary(flush()[0])).toEqual([
+      "suspense",
+      "remove",
+      "add Spinner at 0",
+    ])
     expect(tree.outline()).toEqual([
       "Page function",
       "  Suspense suspense",
@@ -397,6 +402,7 @@ test("suspended content is hidden from the tree until it shows", async () => {
     ])
     await React.act(async () => resolve())
     expect(summary(flush()[0])).toEqual([
+      "suspense",
       "remove",
       "add Shown at 0",
       "add i at 0",
@@ -624,4 +630,484 @@ test("commit visits newly mounted subtrees", async () => {
   expect(visited).toContain(id("VisitAdded"))
   expect(visited).toContain(id("VisitAddedChild"))
   expect(new Set(visited).size).toBe(visited.length)
+})
+
+let setOnly: (show: boolean) => void = () => {}
+function OnlyChild() {
+  const [show, set] = React.useState(true)
+  setOnly = set
+  return h("main", null, show && h("p"))
+}
+
+test("a node's last child unmounting is removed", async () => {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() => root.render(h(OnlyChild)))
+  const fiberRoot = fiberRootOf(container)
+  const tree = createTree()
+  const ops: TreeOp[] = []
+  tree.full(fiberRoot, 1, ops)
+  const p = adds(ops).find((op) => op.name === "p")?.id
+  await React.act(() => setOnly(false))
+  const more: TreeOp[] = []
+  tree.commit(fiberRoot, 1, more)
+  expect(more).toEqual([{ op: "remove", id: p }])
+})
+
+async function serverTree(node: React.ReactNode) {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() => root.render(node))
+  const fiberRoot = fiberRootOf(container)
+  const forgot: number[] = []
+  const tree = createTree({ onForget: (id) => forgot.push(id) })
+  const ops: TreeOp[] = []
+  tree.full(fiberRoot, 1, ops)
+  const view = mirror()
+  view.apply(ops)
+  const id = (name: string) =>
+    adds(ops).find((op) => op.name === name)?.id as number
+  const commit = async (next: React.ReactNode) => {
+    await React.act(() => root.render(next))
+    const more: TreeOp[] = []
+    tree.commit(fiberRoot, 1, more)
+    view.apply(more)
+    return more
+  }
+  return { tree, ops, view, id, commit, forgot, fiberRoot, container }
+}
+
+test.skipIf(!react19)(
+  "a Server Component is a node holding what it rendered",
+  async () => {
+    const { tree, ops, view, id } = await serverTree(
+      server(serverInfo("Shop"), [
+        h("p", { key: "a" }),
+        h(ServerChild, { key: "b" }),
+      ]),
+    )
+    expect(view.outline()).toEqual([
+      "Shop server",
+      "  p host key=a",
+      "  ServerChild function key=b",
+      "    i host",
+    ])
+    const shop = adds(ops).find((op) => op.name === "Shop")
+    expect(shop).toMatchObject({ kind: "server", key: null, parentId: 0 })
+    expect(new Set(adds(ops).map((op) => op.id)).size).toBe(adds(ops).length)
+    expect(tree.fiber(id("Shop"))).toBeUndefined()
+  },
+)
+
+test.skipIf(!react19)(
+  "islands are the components right under server nodes, wrappers among them",
+  async () => {
+    function AddToCart() {
+      return h("button", null, h(Inner))
+    }
+    function Inner() {
+      return h("i")
+    }
+    function ThemeProvider({ children }: { children: React.ReactNode }) {
+      return h("div", null, children)
+    }
+    const shop = serverInfo("Shop")
+    const { tree, id } = await serverTree(
+      server(
+        shop,
+        h(
+          "main",
+          null,
+          server(serverInfo("Details"), h(AddToCart)),
+          h(ThemeProvider, null, server(serverInfo("Reviews"), h("ul"))),
+        ),
+      ),
+    )
+    expect(tree.islands()).toEqual([
+      {
+        id: id("AddToCart"),
+        name: "AddToCart",
+        kind: "function",
+        server: id("Details"),
+        wraps: false,
+      },
+      {
+        id: id("ThemeProvider"),
+        name: "ThemeProvider",
+        kind: "function",
+        server: id("Shop"),
+        wraps: true,
+      },
+    ])
+  },
+)
+
+test.skipIf(!react19)(
+  "nested Server Components nest by their chain and by position",
+  async () => {
+    const shop = serverInfo("Shop")
+    const reviews = serverInfo("Reviews")
+    const awaited = { awaited: { name: "getReviews", start: 0, end: 5 } }
+    const chained = await serverTree(
+      server(shop, server(reviews, h(ServerChild), [awaited])),
+    )
+    expect(chained.view.outline()).toEqual([
+      "Shop server",
+      "  Reviews server",
+      "    ServerChild function",
+      "      i host",
+    ])
+    const placed = await serverTree(
+      server(shop, h("main", null, server(reviews, h("section")))),
+    )
+    expect(placed.view.outline()).toEqual([
+      "Shop server",
+      "  main host",
+      "    Reviews server",
+      "      section host",
+    ])
+  },
+)
+
+test.skipIf(!react19)(
+  "a keyed Fragment's Server Component holds the Fragment's children",
+  async () => {
+    const { view } = await serverTree(
+      server(
+        serverInfo("Shop"),
+        h(React.Fragment, { key: "f" }, h("p"), h(ServerChild)),
+      ),
+    )
+    expect(view.outline()).toEqual([
+      "Shop server",
+      "  p host",
+      "  ServerChild function",
+      "    i host",
+    ])
+  },
+)
+
+let setServerCount: (n: number) => void = () => {}
+function ServerCounter() {
+  const [n, set] = React.useState(0)
+  setServerCount = set
+  return h("b", null, n)
+}
+
+test.skipIf(!react19)(
+  "a client re-render under a Server Component keeps its node",
+  async () => {
+    const { view, fiberRoot, tree } = await serverTree(
+      server(serverInfo("Shop"), h(ServerCounter)),
+    )
+    await React.act(() => setServerCount(1))
+    const ops: TreeOp[] = []
+    tree.commit(fiberRoot, 1, ops)
+    expect(ops).toEqual([])
+    view.apply(ops)
+    expect(view.outline()).toEqual([
+      "Shop server",
+      "  ServerCounter function",
+      "    b host",
+    ])
+  },
+)
+
+test.skipIf(!react19)(
+  "a Server Component leaves with its output and comes back with its id",
+  async () => {
+    const shop = server(serverInfo("Shop"), h("p"))
+    const page = (show: boolean) => h("main", null, show && shop)
+    const { id, commit, forgot } = await serverTree(page(true))
+    const shopId = id("Shop")
+    expect(await commit(page(false))).toEqual([{ op: "remove", id: shopId }])
+    expect(forgot).toEqual(expect.arrayContaining([shopId, id("p")]))
+    const back = adds(await commit(page(true)))
+    expect(back.find((op) => op.name === "Shop")?.id).toBe(shopId)
+  },
+)
+
+test.skipIf(!react19)(
+  "a new server payload for the same component keeps its id",
+  async () => {
+    const page = (name: string) =>
+      h("main", null, server(serverInfo(name), h("p")))
+    const { id, commit, view } = await serverTree(page("Shop"))
+    const shopId = id("Shop")
+    expect(await commit(page("Shop"))).toEqual([])
+    expect(view.outline()).toEqual(["main host", "  Shop server", "    p host"])
+    expect(view.nodes.get(shopId)?.name).toBe("Shop")
+
+    const ops = await commit(page("Cart"))
+    expect(ops).toContainEqual({ op: "remove", id: shopId })
+    expect(view.outline()).toEqual(["main host", "  Cart server", "    p host"])
+  },
+)
+
+test.skipIf(!react19)(
+  "one Server Component info never makes two nodes",
+  async () => {
+    const shop = serverInfo("Shop")
+    const { ops, view } = await serverTree(
+      h(
+        "div",
+        null,
+        server(shop, h("p")),
+        h("hr"),
+        server(shop, h("em")),
+        h("span", null, server(shop, h("b"))),
+      ),
+    )
+    expect(view.outline()).toEqual([
+      "div host",
+      "  Shop server",
+      "    p host",
+      "  hr host",
+      "  em host",
+      "  span host",
+      "    b host",
+    ])
+    expect(new Set(adds(ops).map((op) => op.id)).size).toBe(adds(ops).length)
+  },
+)
+
+test.skipIf(!react19)(
+  "a Server Component's DOM is its children's top elements",
+  async () => {
+    const output = server(
+      serverInfo("Shop"),
+      h(
+        "main",
+        null,
+        server(serverInfo("Reviews"), [
+          h("p", { key: "a" }),
+          h(ServerChild, { key: "b" }),
+        ]),
+      ),
+    )
+    const { tree, id, commit, container } = await serverTree(
+      h("div", null, output),
+    )
+    const main = container.querySelector("main")
+    expect(tree.find(id("Shop"))).toEqual({ name: "Shop", elements: [main] })
+    expect(tree.find(id("Reviews"))).toEqual({
+      name: "Reviews",
+      elements: [container.querySelector("p"), container.querySelector("i")],
+    })
+    await commit(h("div"))
+    expect(tree.find(id("Shop"))).toBeUndefined()
+  },
+)
+
+test.skipIf(!react19)(
+  "a Server Component node's info and the debug entries holding it",
+  async () => {
+    const shop = serverInfo("Shop")
+    const { tree, id, commit } = await serverTree(
+      h("div", null, server(shop, h("p"))),
+    )
+    const shopId = id("Shop")
+    const p = tree.fiber(id("p")) as { _debugInfo?: unknown }
+    expect(tree.server(shopId)?.info).toBe(shop)
+    expect(tree.server(shopId)?.entries).toBe(p._debugInfo)
+    expect(tree.serverId(shop)).toBe(shopId)
+
+    const cart = serverInfo("Cart")
+    await commit(
+      h("div", null, server(cart, h(React.Fragment, { key: "f" }, h("b")))),
+    )
+    const fragment = (
+      tree.fiber(id("div")) as { child: { _debugInfo?: unknown } }
+    ).child
+    expect(tree.server(tree.serverId(cart) as number)?.entries).toBe(
+      fragment._debugInfo,
+    )
+    expect(tree.server(shopId)).toBeUndefined()
+    expect(tree.serverId(shop)).toBeUndefined()
+  },
+)
+
+// Suspends until `release` settles it; `rearm` makes a new pending promise.
+let release = () => {}
+let pending: Promise<void>
+let settled = false
+const rearm = () => {
+  settled = false
+  pending = new Promise<void>((resolve) => (release = resolve))
+  pending.then(() => (settled = true))
+}
+rearm()
+function Thrower() {
+  if (!settled) throw pending
+  return h("p")
+}
+
+test("a Suspense boundary that waits is reported after its add", async () => {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() =>
+    root.render(h(React.Suspense, { fallback: h("i") }, h(Thrower))),
+  )
+  const tree = createTree({ now: () => 100 })
+  const ops: TreeOp[] = []
+  tree.full(fiberRootOf(container), 1, ops)
+  const boundary = adds(ops).find((op) => op.kind === "suspense")?.id
+  const at = ops.findIndex((op) => op.op === "add" && op.id === boundary)
+  expect(ops[at + 1]).toEqual({
+    op: "suspense",
+    id: boundary,
+    state: "waiting",
+    ms: 0,
+  })
+  await React.act(async () => release())
+})
+
+test("a dehydrated boundary has waited since navigation start", () => {
+  const node = (tag: number, memoizedState: unknown, child = null) => ({
+    tag,
+    key: null,
+    type: null,
+    elementType: null,
+    child,
+    sibling: null,
+    alternate: null,
+    return: null,
+    memoizedProps: {},
+    memoizedState,
+    stateNode: null,
+  })
+  const boundary = node(13, { dehydrated: {} })
+  const root = { current: node(3, null, boundary as never) }
+  const ops: TreeOp[] = []
+  createTree({ now: () => 500 }).full(root as never, 1, ops)
+  expect(ops.filter((op) => op.op === "suspense")).toEqual([
+    { op: "suspense", id: 2, state: "waiting", ms: 500 },
+  ])
+})
+
+test("waits lists each waiting boundary since when, until it arrives", async () => {
+  rearm()
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() =>
+    root.render(h(React.Suspense, { fallback: h("i") }, h(Thrower))),
+  )
+  const tree = createTree({ now: () => 500 })
+  const fiberRoot = fiberRootOf(container)
+  const ops: TreeOp[] = []
+  tree.full(fiberRoot, 1, ops)
+  const boundary = adds(ops).find((op) => op.kind === "suspense")?.id
+  expect([...tree.waits()]).toEqual([[boundary, { since: 500 }]])
+  await React.act(async () => release())
+  tree.commit(fiberRoot, 1, [])
+  expect([...tree.waits()]).toEqual([])
+})
+
+test("find gives a dehydrated boundary's server HTML elements, up to its end marker", () => {
+  const container = document.createElement("div")
+  container.innerHTML =
+    "<!--$?--><p></p><!--$--><span></span><!--/$--><div></div><!--/$--><footer></footer>"
+  const [p, span, div] = ["p", "span", "div"].map((tag) =>
+    container.querySelector(tag),
+  )
+  const node = (tag: number, memoizedState: unknown, child = null) => ({
+    tag,
+    key: null,
+    type: null,
+    elementType: null,
+    child,
+    sibling: null,
+    alternate: null,
+    return: null,
+    memoizedProps: {},
+    memoizedState,
+    stateNode: null,
+  })
+  const boundary = node(13, { dehydrated: container.firstChild })
+  const tree = createTree()
+  tree.full({ current: node(3, null, boundary as never) } as never, 1, [])
+  expect(tree.find(2)?.elements).toEqual([p, span, div])
+})
+
+test("a boundary showing its content reports no wait", async () => {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() =>
+    root.render(h(React.Suspense, { fallback: h("i") }, h("p"))),
+  )
+  const ops: TreeOp[] = []
+  createTree().full(fiberRootOf(container), 1, ops)
+  expect(ops.filter((op) => op.op === "suspense")).toEqual([])
+})
+
+let showThrower = (_: number) => {}
+function Rearmed() {
+  const [n, set] = React.useState(0)
+  showThrower = set
+  return h(
+    "div",
+    null,
+    h(React.Suspense, { fallback: h("i") }, h(Thrower, { key: n })),
+  )
+}
+
+test("a boundary's content arriving reports how long it waited, then waiting again", async () => {
+  rearm()
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() => root.render(h(Rearmed)))
+  const times = [100, 940, 1000, 1000]
+  const tree = createTree({ now: () => times.shift() ?? 2000 })
+  const fiberRoot = fiberRootOf(container)
+  const ops: TreeOp[] = []
+  tree.full(fiberRoot, 1, ops)
+  const boundary = adds(ops).find((op) => op.kind === "suspense")?.id
+  const waits = (list: TreeOp[]) => list.filter((op) => op.op === "suspense")
+
+  await React.act(async () => release())
+  const arrived: TreeOp[] = []
+  tree.commit(fiberRoot, 1, arrived)
+  expect(waits(arrived)).toEqual([
+    { op: "suspense", id: boundary, state: "arrived", ms: 840 },
+  ])
+
+  await React.act(() => root.render(h(Rearmed)))
+  const quiet: TreeOp[] = []
+  tree.commit(fiberRoot, 1, quiet)
+  expect(waits(quiet)).toEqual([])
+
+  rearm()
+  await React.act(() => showThrower(1))
+  const again: TreeOp[] = []
+  tree.commit(fiberRoot, 1, again)
+  expect(waits(again)).toEqual([
+    { op: "suspense", id: boundary, state: "waiting", ms: 0 },
+  ])
+  await React.act(async () => release())
+})
+
+test("a resync sends a boundary's wait again, counted from its start", async () => {
+  rearm()
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() =>
+    root.render(h(React.Suspense, { fallback: h("i") }, h(Thrower))),
+  )
+  const times = [100, 400]
+  const tree = createTree({ now: () => times.shift() ?? 0 })
+  const fiberRoot = fiberRootOf(container)
+  tree.full(fiberRoot, 1, [])
+  const again: TreeOp[] = []
+  tree.full(fiberRoot, 1, again)
+  expect(again.filter((op) => op.op === "suspense")).toEqual([
+    { op: "suspense", id: expect.any(Number), state: "waiting", ms: 300 },
+  ])
+  await React.act(async () => release())
 })

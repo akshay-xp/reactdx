@@ -47,6 +47,11 @@ test("extra keys on the batch and its ops are dropped", () => {
 const add = ops[1] as Extract<TreeOp, { op: "add" }>
 const batchWith = (op: unknown) => ({ ...treeBatch(1, []), ops: [op] })
 
+test("a Server Component node passes", () => {
+  const batch = batchWith({ ...add, kind: "server" })
+  expect(parseTreeBatch(batch)).toEqual(batch)
+})
+
 test.each<[string, unknown]>([
   ["null", null],
   ["a string", "tree"],
@@ -104,4 +109,23 @@ test("names and keys of 256 chars and 2,000 ops pass", () => {
   const long = { ...add, name: "a".repeat(256), key: "k".repeat(256) }
   const batch = treeBatch(1, Array(2000).fill(long))
   expect(parseTreeBatch(batch)).toEqual(batch)
+})
+
+test("a Suspense wait passes: waiting so far, or how long it took", () => {
+  for (const op of [
+    { op: "suspense", id: 3, state: "waiting", ms: 0 },
+    { op: "suspense", id: 3, state: "arrived", ms: 840.5 },
+  ]) {
+    const batch = batchWith(op)
+    expect(parseTreeBatch(batch)).toEqual(batch)
+  }
+  const wait = { op: "suspense", id: 3, state: "waiting", ms: 1 }
+  for (const bad of [
+    { ...wait, state: "done" },
+    { ...wait, ms: -1 },
+    { ...wait, ms: Number.POSITIVE_INFINITY },
+    { ...wait, ms: "1" },
+    { ...wait, id: 0 },
+  ])
+    expect(parseTreeBatch(batchWith(bad)), JSON.stringify(bad)).toBeUndefined()
 })

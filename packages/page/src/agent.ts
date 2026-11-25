@@ -11,12 +11,16 @@ import {
   type InspectedData,
   type InspectedMessage,
   inspected,
+  MAX_AWAITS,
   MAX_CHANGES,
   MAX_COPY,
   MAX_HISTORY,
   MAX_OPS,
   MAX_OWNERS,
+  MAX_RENDERED,
   MAX_TREE_STRING,
+  nextInternal,
+  type OutlineMode,
   type Owner,
   type PageMessage,
   type PickedMessage,
@@ -26,6 +30,7 @@ import {
   type RenderReason,
   type RootInfo,
   reasoned,
+  type Size,
   snapshotMessage,
   type TreeBatchMessage,
   type TreeOp,
@@ -57,11 +62,21 @@ import {
 } from "./hooks.ts"
 import { contextsOf, createRecorder, type RenderRecord } from "./insight.ts"
 import { copyText, createInspector } from "./inspect.ts"
+import {
+  createIslandOutlines,
+  createOutlineLayer,
+  createSuspenseOutlines,
+} from "./outlines.ts"
 import { createOverlay } from "./overlay.ts"
+import { awaitsOf, renderedAt } from "./server.ts"
+import { propSizes, sizeOf } from "./size.ts"
 import { sourceOf } from "./source.ts"
+import { causeOf, createSuspended, waitOf } from "./suspense.ts"
 import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
+// Function, class, forwardRef and memo components (a lazy one resolves to these).
+const COMPONENT_TAGS = new Set([0, 1, 11, 14, 15])
 const THROTTLE_MS = 100
 
 // The nearest provider of `context` above the fiber (ContextProvider, tag 10):
@@ -117,7 +132,38 @@ export function startAgent(
   }
 
   const recorder = createRecorder()
-  const tree = createTree({ onForget: recorder.forget })
+  const suspended = createSuspended()
+  // The boundaries whose data arrived in the commit being recorded.
+  const arrivals: { fiber: Fiber; id: number; ms: number }[] = []
+  const tree = createTree({
+    onForget: recorder.forget,
+    onArrive: (fiber, id, ms) => {
+      suspended.clear(fiber)
+      arrivals.push({ fiber, id, ms })
+      outlines?.arrived(id, ms)
+    },
+  })
+  // React 18's profiling hooks (who suspended), only while watching, and only
+  // when no other devtools is on the page: there's one slot, and RDT's Timeline
+  // uses it (docs/page.md, Suspense).
+  type Profiled = { injectProfilingHooks?: (hooks: unknown) => void }
+  const profiled = new Set<Profiled>()
+  const profile = () => {
+    if (Object.hasOwn(target, "__REACT_DEVTOOLS_GLOBAL_HOOK__")) return
+    const hook = (scope as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook })
+      .__REACT_DEVTOOLS_GLOBAL_HOOK__
+    for (const [id, renderer] of hook?.renderers ?? []) {
+      const inject = (renderer as Profiled).injectProfilingHooks
+      if (!inspectable(id) || typeof inject !== "function") continue
+      inject(suspended.hooks)
+      profiled.add(renderer as Profiled)
+    }
+  }
+  const unprofile = () => {
+    for (const renderer of profiled) renderer.injectProfilingHooks?.(null)
+    profiled.clear()
+    suspended.reset()
+  }
   // Production builds have minified names and aren't inspected.
   const inspectable = (rendererId: number) =>
     record.renderers.get(rendererId)?.bundleType === 1
@@ -134,6 +180,7 @@ export function startAgent(
   }
   const watch = () => {
     watching = true
+    profile()
     buffer.length = 0
     seq = 1
     const ops: TreeOp[] = [{ op: "reset" }]
@@ -177,6 +224,59 @@ export function startAgent(
   }
 
   let overlay: ReturnType<typeof createOverlay> | undefined
+  // Made on the panel's first outlines command (docs/page.md, Outlines); one
+  // mode draws at a time, on one layer.
+  let layer: ReturnType<typeof createOutlineLayer> | undefined
+  let outlines: ReturnType<typeof createSuspenseOutlines> | undefined
+  let islands: ReturnType<typeof createIslandOutlines> | undefined
+  // Props sizes by props object: a frame re-reads every island.
+  const sizes = new WeakMap<object, Size>()
+  const sizeOfProps = (props: unknown) => {
+    if (typeof props !== "object" || props === null) return sizeOf(props)
+    const size = sizes.get(props) ?? sizeOf(props)
+    sizes.set(props, size)
+    return size
+  }
+  const outline = (mode: OutlineMode | null) => {
+    if (mode !== "suspense") outlines?.off()
+    if (mode !== "islands") islands?.off()
+    if (!mode) return
+    layer ??= createOutlineLayer(document)
+    if (mode === "islands") {
+      islands ??= createIslandOutlines({
+        layer,
+        target,
+        islands: () =>
+          tree
+            .islands()
+            .filter(({ name, kind }) => !nextInternal(name, kind, undefined))
+            .map(({ id, name, server, wraps }) => ({
+              id,
+              name,
+              server: tree.find(server)?.name ?? "",
+              wraps,
+              size: sizeOfProps(tree.fiber(id)?.memoizedProps),
+            })),
+        find: (id) => tree.find(id),
+        frame: (callback) => requestAnimationFrame(callback),
+        onPick: (id) => post(picked(id)),
+      })
+      return islands.on()
+    }
+    outlines ??= createSuspenseOutlines({
+      layer,
+      target,
+      waits: () => tree.waits(),
+      find: (id) => tree.find(id),
+      causeFor: (id) => {
+        const fiber = tree.fiber(id)
+        return fiber && causeOf(fiber, suspended.causeFor(fiber))
+      },
+      now: () => performance.now(),
+      frame: (callback) => requestAnimationFrame(callback),
+    })
+    outlines.on()
+  }
   // The page can post this too; an id the tree doesn't know finds nothing.
   const highlight = (id: number) => {
     const found = tree.find(id)
@@ -287,23 +387,96 @@ export function startAgent(
   }
   // Who rendered the fiber, nearest first: tree nodes by id, Server Components
   // (React 19 ReactComponentInfo, not in the tree) by name.
-  const ownersOf = (fiber: Fiber) => {
+  const ownersOf = (fiber: Fiber) => ownersFrom(fiber._debugOwner)
+  // A Server Component owner (a ReactComponentInfo, not a fiber), by its
+  // server node's id once mounted.
+  const serverOwner = (owner: unknown): Owner | undefined => {
+    const info = owner as Record<string, unknown> | null | undefined
+    if (info && typeof info.tag !== "number" && typeof info.name === "string")
+      return {
+        id: tree.serverId(info) ?? null,
+        name: info.name.slice(0, MAX_TREE_STRING),
+      }
+  }
+  const ownersFrom = (first: unknown) => {
     const owners: Owner[] = []
-    let owner = fiber._debugOwner as Record<string, unknown> | null | undefined
+    let owner = first as Record<string, unknown> | null | undefined
     for (let i = 0; owner && i < MAX_OWNERS; i++) {
       if (typeof owner.tag === "number") {
         const node = tree.known(owner as unknown as Fiber)
         if (node) owners.push(node)
         owner = owner._debugOwner as typeof owner
       } else {
-        if (typeof owner.name === "string")
-          owners.push({ id: null, name: owner.name.slice(0, MAX_TREE_STRING) })
+        const server = serverOwner(owner)
+        if (server) owners.push(server)
         owner = owner.owner as typeof owner
       }
     }
     return owners
   }
+  // A Server Component: what the server sent about it. Nothing to edit or read
+  // from hooks; its props are the server's.
+  const describeServer = (
+    id: number,
+    info: Record<string, unknown>,
+    entries: unknown[],
+  ) => {
+    if (!selected) return null
+    selected.sent = { props: info, state: undefined, contexts: [] }
+    const data: InspectedData = {
+      props: selected.values.serialize(info.props ?? {}) as Value,
+      owners: ownersFrom(info.owner),
+    }
+    const source = renderedAt(info)
+    if (source) data.source = source
+    const rendered = tree
+      .clientsUnder(id)
+      .slice(0, MAX_RENDERED)
+      .map(({ id, fiber }) => ({
+        id,
+        name: tree.known(fiber)?.name ?? "Anonymous",
+        ...sizeOf(fiber.memoizedProps),
+      }))
+    data.server = { awaits: awaitsOf(info, entries), rendered }
+    return data
+  }
+  // An arrived boundary's waits: the awaits of the Server Components inside it.
+  const waitedOn = (id: number) =>
+    tree
+      .serversUnder(id)
+      .flatMap((serverId) => {
+        const found = tree.server(serverId)
+        if (!found) return []
+        const info = found.info as Record<string, unknown>
+        const owner = String(info.name).slice(0, MAX_TREE_STRING)
+        return awaitsOf(info, found.entries).map((wait) => ({ ...wait, owner }))
+      })
+      .slice(0, MAX_AWAITS)
+  // An arrived boundary, named by the first Server Component inside it, else
+  // the first component it shows (a lazy one resolved by now: Next's client
+  // components are lazy references).
+  const arrivalOf = ({ id, ms }: (typeof arrivals)[number]) => {
+    const [first] = tree.serversUnder(id)
+    const info = first === undefined ? undefined : tree.server(first)?.info
+    const [client] = tree.clientsUnder(id)
+    const name = info
+      ? String(info.name)
+      : ((client && tree.known(client.fiber)?.name) ?? "Suspense")
+    return {
+      boundary: id,
+      name: name.slice(0, MAX_TREE_STRING),
+      waited: ms,
+      awaits: waitedOn(id),
+    }
+  }
   const describe = (id: number): InspectedData | null => {
+    const found = tree.server(id)
+    if (found)
+      return describeServer(
+        id,
+        found.info as Record<string, unknown>,
+        found.entries,
+      )
     const fiber = tree.fiber(id)
     if (!fiber || !selected) return null
     const contexts = contextsOf(fiber)
@@ -322,8 +495,24 @@ export function startAgent(
     // Class components (tag 1) keep their state on the instance.
     if (fiber.tag === 1 && state != null) data.state = serialize(state) as Value
     data.owners = ownersOf(fiber)
+    // Rendered by a Server Component: its props came from the server.
+    // Only a component's props are passed to code (a Suspense's aren't).
+    const from = COMPONENT_TAGS.has(fiber.tag) && serverOwner(fiber._debugOwner)
+    if (from)
+      data.fromServer = { owner: from, props: propSizes(fiber.memoizedProps) }
     const source = sourceOf(fiber)
     if (source) data.source = source
+    if (waitOf(fiber))
+      data.suspense = {
+        cause: causeOf(
+          fiber,
+          profiled.size ? suspended.causeFor(fiber) : undefined,
+        ),
+      }
+    else if (fiber.tag === 13) {
+      const awaited = waitedOn(id)
+      if (awaited.length) data.suspense = { awaited }
+    }
     const boundaries = boundariesFor(fiber)
     if (boundaries) data.boundaries = boundaries
     if (contexts.length)
@@ -516,6 +705,12 @@ export function startAgent(
   const refresh = () => {
     if (!selected) return
     const { id, sent } = selected
+    // A server node changes only with a new payload: a new info object.
+    const server = tree.server(id)
+    if (server) {
+      if (server.info !== sent?.props) post(inspected(id, describe(id)))
+      return
+    }
     const fiber = tree.fiber(id)
     if (
       fiber &&
@@ -546,7 +741,11 @@ export function startAgent(
           (root as { memoizedUpdaters?: Set<unknown> }).memoizedUpdaters ?? [],
         ),
         (visit) => tree.commit(root, entry.id, buffer, visit),
+        () => arrivals.splice(0).map(arrivalOf),
       )
+    // Only schedules a frame: layout isn't read inside React's commit.
+    outlines?.changed()
+    islands?.changed()
     if (pending) return
     pending = true
     setTimeout(() => {
@@ -567,7 +766,10 @@ export function startAgent(
     else if (data.type === "clear-highlight") overlay?.hide()
     else if (data.type === "pick-start") startPicking()
     else if (data.type === "pick-stop") stopPicking()
-    else if (
+    else if (data.type === "outlines") {
+      const command = parseTreeCommand(data)
+      if (command?.type === "outlines") outline(command.mode)
+    } else if (
       data.type === "inspect" ||
       data.type === "expand" ||
       data.type === "reason" ||
@@ -674,8 +876,10 @@ export function startAgent(
       postCommits(true)
     } else if (data.type === "unwatch") {
       stopPicking()
+      outline(null)
       inspect(null)
       watching = false
+      unprofile()
       buffer.length = 0
       tree.clear()
       recorder.clear()
