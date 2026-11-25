@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { Suspense, useState } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 
@@ -13,10 +13,28 @@ function Cell({ index }) {
   return <span data-testid="cell">{value}</span>
 }
 
+// `?waiting=N`: N boundaries that never stop waiting, spread among the cells,
+// each starting a line, so the page scrolls (e2e/perf.test.ts, outlines).
+const WAITING = Number(new URLSearchParams(location.search).get("waiting")) || 0
+const never = new Promise(() => {})
+function Never() {
+  throw never
+}
+const every = Math.floor(CELLS / (WAITING || 1))
+
 // Built once, so toggling Extra leaves the cells alone (React bails out on them).
-const cells = Array.from({ length: CELLS }, (_, index) => (
-  <Cell key={index} index={index} />
-))
+const cells = Array.from({ length: CELLS }, (_, index) =>
+  WAITING && index % every === 0 ? (
+    <div key={index}>
+      <Suspense fallback={<span data-testid="waiting">waiting</span>}>
+        <Never />
+      </Suspense>
+      <Cell index={index} />
+    </div>
+  ) : (
+    <Cell key={index} index={index} />
+  ),
+)
 
 function Extra() {
   return <span data-testid="extra-on" />

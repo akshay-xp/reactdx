@@ -5,6 +5,19 @@ import { openPanelText, parseCopies, until } from "./panel-text.ts"
 
 type Shadows = Window & { __shadows: ShadowRoot[] }
 
+// Keeps a handle on every shadow root the page attaches, before its scripts run.
+export const recordShadows = (page: Page) =>
+  page.evaluateOnNewDocument(() => {
+    const shadows: ShadowRoot[] = []
+    ;(window as unknown as Shadows).__shadows = shadows
+    const attach = Element.prototype.attachShadow
+    Element.prototype.attachShadow = function (init) {
+      const root = attach.call(this, init)
+      shadows.push(root)
+      return root
+    }
+  })
+
 // The highlight overlay's shadow root is closed; the agent runs in the page's world,
 // so a wrapped attachShadow (as any page script could do) keeps a handle on it.
 // Opens the page with that preload, then the panel, and waits for the tree:
@@ -18,16 +31,7 @@ export async function overlayPage(
   const { browser } = await launchWithExtension(name)
   const [page] = await browser.pages()
   if (!page) throw new Error("no page")
-  await page.evaluateOnNewDocument(() => {
-    const shadows: ShadowRoot[] = []
-    ;(window as unknown as Shadows).__shadows = shadows
-    const attach = Element.prototype.attachShadow
-    Element.prototype.attachShadow = function (init) {
-      const root = attach.call(this, init)
-      shadows.push(root)
-      return root
-    }
-  })
+  await recordShadows(page)
   await page.goto(url)
   await page.waitForSelector(ready)
   const panel = await openPanelText(name, browser)
