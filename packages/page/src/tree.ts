@@ -94,7 +94,7 @@ function kindOf(fiber: Fiber): TreeKind | undefined {
 }
 
 // A component's own name, looking through forwardRef and memo wrappers.
-const typeName = (type: Named): string =>
+export const typeName = (type: Named): string =>
   type.displayName ||
   (type.render && typeName(type.render)) ||
   (type.type && typeName(type.type)) ||

@@ -62,6 +62,7 @@ import { createOverlay } from "./overlay.ts"
 import { awaitsOf, renderedAt } from "./server.ts"
 import { propSizes, sizeOf } from "./size.ts"
 import { sourceOf } from "./source.ts"
+import { causeOf, waitOf } from "./suspense.ts"
 import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
@@ -375,6 +376,7 @@ export function startAgent(
       data.fromServer = { owner: from, props: propSizes(fiber.memoizedProps) }
     const source = sourceOf(fiber)
     if (source) data.source = source
+    if (waitOf(fiber)) data.suspense = { cause: causeOf(fiber) }
     const boundaries = boundariesFor(fiber)
     if (boundaries) data.boundaries = boundaries
     if (contexts.length)
