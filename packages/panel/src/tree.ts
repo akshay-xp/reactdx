@@ -1,5 +1,6 @@
 import type {
   CountsMessage,
+  OutlineMode,
   RenderCount,
   TreeBatchMessage,
   TreeKind,
@@ -102,8 +103,8 @@ export function createTreeStore() {
   // The row under the pointer: the page highlights it.
   const [hovered, hover] = createSignal<number>()
   const [picking, setPicking] = createSignal(false)
-  // Suspense outlines drawn on the page (docs/panel.md, Toolbar).
-  const [outlines, setOutlines] = createSignal(false)
+  // The outlines drawn on the page, if any (docs/panel.md, Toolbar).
+  const [outlines, setOutlines] = createSignal<OutlineMode>()
   // Host (DOM element) nodes are rows only while "Show DOM elements" is on.
   const visible = (node: Node | undefined) =>
     node !== undefined &&
@@ -438,7 +439,7 @@ export function createTreeStore() {
     picking,
     setPicking: (on: boolean) => setPicking(on),
     outlines,
-    setOutlines: (on: boolean) => setOutlines(on),
+    setOutlines: (mode: OutlineMode | undefined) => setOutlines(mode),
     // The page's pick ends picking; an id the mirror has is selected and revealed.
     picked(id: number | null) {
       setPicking(false)

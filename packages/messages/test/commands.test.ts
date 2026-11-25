@@ -24,8 +24,9 @@ test.each([
   { type: "inspect", id: null },
   { type: "expand", objectId: 2, offset: 100 },
   { type: "expand", objectId: 2, offset: 0 },
-  { type: "outlines", on: true },
-  { type: "outlines", on: false },
+  { type: "outlines", mode: "suspense" },
+  { type: "outlines", mode: "islands" },
+  { type: "outlines", mode: null },
 ])("keeps %o", (command) => {
   expect(parseTreeCommand(command)).toEqual(command)
 })
@@ -37,8 +38,9 @@ test.each<[string, unknown]>([
   ["a fractional id", { type: "highlight", id: 1.5 }],
   ["an unsafe id", { type: "highlight", id: 2 ** 53 }],
   ["an unknown command", { type: "pick" }],
-  ["outlines without on", { type: "outlines" }],
-  ["outlines with a string on", { type: "outlines", on: "yes" }],
+  ["outlines without a mode", { type: "outlines" }],
+  ["outlines with an unknown mode", { type: "outlines", mode: "x" }],
+  ["outlines with on", { type: "outlines", on: true }],
   ["an inspect with a string id", { type: "inspect", id: "4" }],
   ["an inspect with id 0", { type: "inspect", id: 0 }],
   ["an inspect without an id", { type: "inspect" }],

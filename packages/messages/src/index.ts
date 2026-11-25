@@ -275,8 +275,14 @@ export type HighlightMessage = { type: "highlight"; tabId: number; id: number }
 export type ClearHighlightMessage = { type: "clear-highlight"; tabId: number }
 // Panel to background: start or stop the element picker on the page.
 export type PickMessage = { type: "pick-start" | "pick-stop"; tabId: number }
-// Panel to background: draw the Suspense outlines on the page, or stop.
-export type OutlinesMessage = { type: "outlines"; tabId: number; on: boolean }
+// What the page outlines (docs/page.md, Outlines).
+export type OutlineMode = "suspense" | "islands"
+// Panel to background: draw that mode's outlines on the page, or (null) stop.
+export type OutlinesMessage = {
+  type: "outlines"
+  tabId: number
+  mode: OutlineMode | null
+}
 // Panel to background: inspect a node (null: stop), or load one page of an object.
 export type InspectMessage = {
   type: "inspect"
@@ -431,7 +437,7 @@ export type TreeCommand =
   | { type: "clear-highlight" }
   | { type: "pick-start" }
   | { type: "pick-stop" }
-  | { type: "outlines"; on: boolean }
+  | { type: "outlines"; mode: OutlineMode | null }
   | { type: "inspect"; id: number | null }
   | { type: "expand"; objectId: number; offset: number }
   | { type: "copy-value" | "store-value"; target: ValueTarget }
@@ -480,12 +486,17 @@ export function parseTreeCommand(data: unknown): TreeCommand | undefined {
     kind,
     on,
     seq,
+    mode,
   } = data as Record<string, unknown>
   if (BARE_COMMANDS.has(type)) return { type } as TreeCommand
   if (type === "highlight" && isId(id)) return { type, id }
   if (type === "inspect" && (id === null || isId(id))) return { type, id }
   if (type === "rerender" && isId(id)) return { type, id }
-  if (type === "outlines" && typeof on === "boolean") return { type, on }
+  if (
+    type === "outlines" &&
+    (mode === null || mode === "suspense" || mode === "islands")
+  )
+    return { type, mode }
   if (type === "reason" && isId(id) && isId(seq)) return { type, id, seq }
   if (type === "commit" && isId(seq)) return { type, seq }
   if (

@@ -337,7 +337,7 @@ test("the outlines command outlines a waiting boundary, then its arrival, until 
     await flushed()
     expect(labels()).toEqual([])
 
-    send({ source: "reactdx-relay", type: "outlines", on: true })
+    send({ source: "reactdx-relay", type: "outlines", mode: "suspense" })
     await flushed()
     expect(labels()).toHaveLength(1)
     expect(labels()[0]).toMatch(/^waiting \d+ ms/)

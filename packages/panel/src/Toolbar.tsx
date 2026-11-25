@@ -41,8 +41,12 @@ export function Toolbar(props: { tree: TreeStore }) {
       <IconButton
         label="Outline Suspense on the page"
         testid="outlines"
-        pressed={props.tree.outlines()}
-        onClick={() => props.tree.setOutlines(!props.tree.outlines())}
+        pressed={props.tree.outlines() === "suspense"}
+        onClick={() =>
+          props.tree.setOutlines(
+            props.tree.outlines() === "suspense" ? undefined : "suspense",
+          )
+        }
       >
         <rect
           x="4"

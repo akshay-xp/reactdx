@@ -19,6 +19,7 @@ import {
   MAX_OWNERS,
   MAX_RENDERED,
   MAX_TREE_STRING,
+  type OutlineMode,
   type Owner,
   type PageMessage,
   type PickedMessage,
@@ -219,8 +220,8 @@ export function startAgent(
   let overlay: ReturnType<typeof createOverlay> | undefined
   // Made on the panel's first outlines command (docs/page.md, Outlines).
   let outlines: ReturnType<typeof createSuspenseOutlines> | undefined
-  const outline = (on: boolean) => {
-    if (!on) return outlines?.off()
+  const outline = (mode: OutlineMode | null) => {
+    if (mode !== "suspense") return outlines?.off()
     outlines ??= createSuspenseOutlines({
       layer: createOutlineLayer(document),
       target,
@@ -725,7 +726,7 @@ export function startAgent(
     else if (data.type === "pick-stop") stopPicking()
     else if (data.type === "outlines") {
       const command = parseTreeCommand(data)
-      if (command?.type === "outlines") outline(command.on)
+      if (command?.type === "outlines") outline(command.mode)
     } else if (
       data.type === "inspect" ||
       data.type === "expand" ||

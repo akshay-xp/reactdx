@@ -137,11 +137,12 @@ function connect() {
         // A new watch: the page sends its commits again after the tree.
         if (message.ops[0]?.op === "reset") timeline.reset()
         // A new document's agent starts with outlines off.
-        if (message.ops[0]?.op === "reset" && tree.outlines())
+        const mode = tree.outlines()
+        if (message.ops[0]?.op === "reset" && mode)
           next.postMessage({
             type: "outlines",
             tabId,
-            on: true,
+            mode,
           } satisfies OutlinesMessage)
         if (tree.apply(message))
           next.postMessage({ type: "resync", tabId } satisfies ResyncMessage)
@@ -209,11 +210,11 @@ render(() => {
   createEffect(
     on(
       tree.outlines,
-      (active) =>
+      (mode) =>
         port.postMessage({
           type: "outlines",
           tabId,
-          on: active,
+          mode: mode ?? null,
         } satisfies OutlinesMessage),
       { defer: true },
     ),
