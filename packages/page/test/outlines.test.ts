@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest"
-import { createOutlineLayer, type Outline } from "../src/outlines.ts"
+import { boxOf, createOutlineLayer, type Outline } from "../src/outlines.ts"
 
 const roots: ShadowRoot[] = []
 const attach = Element.prototype.attachShadow
@@ -63,4 +63,19 @@ test("the layer draws each outline at its rectangle, labeled, with a count of th
   layer.draw([], 0)
   expect(host.isConnected).toBe(false)
   expect(children()).toBe(before)
+})
+
+const element = (left: number, top: number, width: number, height: number) => {
+  const el = document.createElement("div")
+  el.getBoundingClientRect = () =>
+    ({ left, top, width, height }) as unknown as DOMRect
+  return el
+}
+
+test("a component's box is the union of its elements' rectangles, empty ones skipped", () => {
+  expect(
+    boxOf([element(10, 20, 30, 40), element(0, 50, 5, 5), element(0, 0, 0, 0)]),
+  ).toEqual({ left: 0, top: 20, width: 40, height: 40 })
+  expect(boxOf([])).toBeUndefined()
+  expect(boxOf([element(3, 3, 0, 0)])).toBeUndefined()
 })

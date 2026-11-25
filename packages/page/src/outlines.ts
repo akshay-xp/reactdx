@@ -1,12 +1,29 @@
 // Suspense outlines on the page (docs/page.md, Outlines).
 
-export type Outline = {
-  left: number
-  top: number
-  width: number
-  height: number
+export type Outline = Box & {
   label: string
   style: "waiting" | "arrived"
+}
+
+type Box = { left: number; top: number; width: number; height: number }
+
+// One rectangle per component: the union of its top elements' (docs/m7-findings.md,
+// spike 2), leaving out empty ones (display: none).
+export function boxOf(elements: Element[]): Box | undefined {
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  for (const el of elements) {
+    const rect = el.getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) continue
+    left = Math.min(left, rect.left)
+    top = Math.min(top, rect.top)
+    right = Math.max(right, rect.left + rect.width)
+    bottom = Math.max(bottom, rect.top + rect.height)
+  }
+  if (left === Infinity) return
+  return { left, top, width: right - left, height: bottom - top }
 }
 
 // The panel theme's light values (waiting, success): the page doesn't know
