@@ -240,6 +240,10 @@ for (const { port } of fixtures.filter((f) => f.fixture === "next"))
       "after",
     )
     try {
+      // Next's own components make the tree wide: shown, not hidden (M7 #78).
+      await until(panel, (t) => t.includes("Next.js components hidden"))
+      await panel.press("Show")
+      await until(panel, (t) => t.includes("Next.js components shown"))
       await selectListed(panel, "Counter", (t) => t.includes("State: 0"))
       const layout = await panel.frame?.evaluate(() => {
         const pane = document.querySelector("[data-testid=trees]") as Element
@@ -249,7 +253,8 @@ for (const { port } of fixtures.filter((f) => f.fixture === "next"))
         const height = (el: Element) => el.getBoundingClientRect().height
         const rows = [
           ...document.querySelectorAll(
-            "[data-testid=inspector] [data-testid=value], [data-testid=inspector] [data-testid=owner]",
+            // Rows in sections: the header's and answers' links aren't rows.
+            "[data-testid=inspector] [data-testid=section] [data-testid=value], [data-testid=inspector] [data-testid=section] [data-testid=owner]",
           ),
         ].map(
           (el) =>
