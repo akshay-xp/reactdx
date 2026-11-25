@@ -59,6 +59,7 @@ import {
 } from "./hooks.ts"
 import { contextsOf, createRecorder, type RenderRecord } from "./insight.ts"
 import { copyText, createInspector } from "./inspect.ts"
+import { createOutlineLayer, createSuspenseOutlines } from "./outlines.ts"
 import { createOverlay } from "./overlay.ts"
 import { awaitsOf, renderedAt } from "./server.ts"
 import { propSizes, sizeOf } from "./size.ts"
@@ -132,6 +133,7 @@ export function startAgent(
     onArrive: (fiber, id, ms) => {
       suspended.clear(fiber)
       arrivals.push({ fiber, id, ms })
+      outlines?.arrived(id, ms)
     },
   })
   // React 18's profiling hooks (who suspended), only while watching, and only
@@ -215,6 +217,24 @@ export function startAgent(
   }
 
   let overlay: ReturnType<typeof createOverlay> | undefined
+  // Made on the panel's first outlines command (docs/page.md, Outlines).
+  let outlines: ReturnType<typeof createSuspenseOutlines> | undefined
+  const outline = (on: boolean) => {
+    if (!on) return outlines?.off()
+    outlines ??= createSuspenseOutlines({
+      layer: createOutlineLayer(document),
+      target,
+      waits: () => tree.waits(),
+      find: (id) => tree.find(id),
+      causeFor: (id) => {
+        const fiber = tree.fiber(id)
+        return fiber && causeOf(fiber, suspended.causeFor(fiber))
+      },
+      now: () => performance.now(),
+      frame: (callback) => requestAnimationFrame(callback),
+    })
+    outlines.on()
+  }
   // The page can post this too; an id the tree doesn't know finds nothing.
   const highlight = (id: number) => {
     const found = tree.find(id)
@@ -681,6 +701,8 @@ export function startAgent(
         (visit) => tree.commit(root, entry.id, buffer, visit),
         () => arrivals.splice(0).map(arrivalOf),
       )
+    // Only schedules a frame: layout isn't read inside React's commit.
+    outlines?.changed()
     if (pending) return
     pending = true
     setTimeout(() => {
@@ -701,7 +723,10 @@ export function startAgent(
     else if (data.type === "clear-highlight") overlay?.hide()
     else if (data.type === "pick-start") startPicking()
     else if (data.type === "pick-stop") stopPicking()
-    else if (
+    else if (data.type === "outlines") {
+      const command = parseTreeCommand(data)
+      if (command?.type === "outlines") outline(command.on)
+    } else if (
       data.type === "inspect" ||
       data.type === "expand" ||
       data.type === "reason" ||
@@ -808,6 +833,7 @@ export function startAgent(
       postCommits(true)
     } else if (data.type === "unwatch") {
       stopPicking()
+      outlines?.off()
       inspect(null)
       watching = false
       unprofile()

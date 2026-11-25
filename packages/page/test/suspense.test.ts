@@ -301,3 +301,57 @@ test.skipIf(!react19)(
     expect(lastArrived().at(-1)).toMatchObject({ name: "CartCount" })
   },
 )
+
+test("the outlines command outlines a waiting boundary, then its arrival, until unwatched", async () => {
+  vi.stubGlobal("requestAnimationFrame", (callback: () => void) =>
+    setTimeout(callback),
+  )
+  const rect = vi
+    .spyOn(Element.prototype, "getBoundingClientRect")
+    .mockReturnValue({ left: 1, top: 2, width: 3, height: 4 } as DOMRect)
+  const roots: ShadowRoot[] = []
+  const attach = Element.prototype.attachShadow
+  const shadow = vi
+    .spyOn(Element.prototype, "attachShadow")
+    .mockImplementation(function (this: Element, init) {
+      const root = attach.call(this, init)
+      roots.push(root)
+      return root
+    })
+  const labels = () =>
+    roots
+      .filter((root) => root.host.isConnected)
+      .flatMap((root) => [...root.querySelectorAll("[data-outline]")])
+      .map((outline) => outline.textContent)
+  try {
+    let settle = () => {}
+    let done = false
+    const promise = new Promise<void>((resolve) => (settle = resolve))
+    function Later() {
+      if (!done) throw promise
+      return h("p")
+    }
+    await mount(null)
+    await mount(boundary(h(Later)))
+    send({ source: "reactdx-relay", type: "watch" })
+    await flushed()
+    expect(labels()).toEqual([])
+
+    send({ source: "reactdx-relay", type: "outlines", on: true })
+    await flushed()
+    expect(labels()).toHaveLength(1)
+    expect(labels()[0]).toMatch(/^waiting \d+ ms/)
+
+    done = true
+    await React.act(async () => settle())
+    await flushed()
+    expect(labels()).toEqual([expect.stringMatching(/^arrived in \d+ ms$/)])
+
+    send(UNWATCH)
+    expect(labels()).toEqual([])
+  } finally {
+    vi.unstubAllGlobals()
+    rect.mockRestore()
+    shadow.mockRestore()
+  }
+})
