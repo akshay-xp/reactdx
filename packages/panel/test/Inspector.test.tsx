@@ -2088,3 +2088,40 @@ test("the header says where the component sits: its nearest two owners", () => {
   fireEvent.click(within(header()).getByRole("button", { name: "Layout" }))
   expect(tree.selected()).toBe(4)
 })
+
+test("a Server Component ran on the server: read-only props, rendered at", async () => {
+  const pageAt = { file: "/app/shop/page.jsx", line: 50, column: 9 }
+  const { container, inspector, select, getByRole, queryByRole } = setup(
+    "server",
+    null,
+    resolving(pageAt),
+    createSettings(),
+    [],
+  )
+  select()
+  inspector.receive(
+    inspected(3, {
+      props: object({ id: "p-12" }),
+      source: { url: "file:///app/.next/chunk.js", line: 221, column: 514 },
+      server: { awaits: [], rendered: [] },
+    }),
+  )
+  await settled()
+  expect(container.querySelector("[data-testid=answer]")?.textContent).toBe(
+    "Ran on the server.",
+  )
+  const row = rowOf(container, 'id: "p-12"')
+  const value = row.querySelector("[data-value]") as HTMLElement
+  expect(value.classList.contains("editable-value")).toBe(false)
+  fireEvent.click(value)
+  expect(container.querySelector("[data-testid=value-input]")).toBeNull()
+  expect(queryByRole("button", { name: "Force re-render" })).toBeNull()
+  expect(sections(container)).not.toContain("Renders")
+  expect(container.querySelector("[data-testid=hint]")).toBeNull()
+  expect(
+    container
+      .querySelector("[data-testid=source]")
+      ?.textContent?.startsWith("Rendered at page.jsx:50"),
+  ).toBe(true)
+  expect(getByRole("button", { name: "Open in editor" })).toBeTruthy()
+})

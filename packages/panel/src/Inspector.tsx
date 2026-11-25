@@ -235,6 +235,8 @@ export function Inspector(props: {
     entriesOf(value).entries.some((entry) =>
       entryShows(props.inspector, entry, query()),
     )
+  // A Server Component (M7 #79): run on the server, nothing to edit or re-render.
+  const server = () => info()?.kind === "server"
   const section = (name: string, root: PathRoot, value: Value | undefined) => (
     <Show when={shown(value) && (value as Container)}>
       {(container) => (
@@ -251,7 +253,7 @@ export function Inspector(props: {
             path={{ root, keys: [] }}
             depth={0}
             query={query()}
-            editable={isPlain(container())}
+            editable={!server() && isPlain(container())}
             onMenu={onMenu}
           />
         </Section>
@@ -307,6 +309,7 @@ export function Inspector(props: {
   }
   // The answer for the render shown (the latest, or the pinned commit's).
   const answer = (): Part[] => {
+    if (server()) return ["Ran on the server."]
     const inspector = props.inspector
     if (inspector.absent()) return ["Didn't render in this update."]
     const render = inspector.render()
@@ -324,6 +327,7 @@ export function Inspector(props: {
     })
   }
   const hint = () => {
+    if (server()) return
     const render = props.inspector.render()
     const node = info()
     const id = props.tree.selected()
@@ -421,7 +425,7 @@ export function Inspector(props: {
                     </IconButton>
                   )}
                 </For>
-                <Show when={node().kind !== "host"}>
+                <Show when={node().kind !== "host" && !server()}>
                   <IconButton
                     label="Force re-render"
                     onClick={() => props.inspector.rerender()}
@@ -468,7 +472,7 @@ export function Inspector(props: {
                     class="flex h-7 shrink-0 items-center gap-2 border-border border-b px-2 font-mono text-muted"
                   >
                     <span class="truncate" title={locationText(at())}>
-                      {label(at())}
+                      {server() ? `Rendered at ${label(at())}` : label(at())}
                     </span>
                     <button
                       type="button"
@@ -557,7 +561,7 @@ export function Inspector(props: {
                 </Section>
               </Show>
               {/* Reasons aren't keys or values: the search hides them. */}
-              <Show when={query() === ""}>
+              <Show when={query() === "" && !server()}>
                 <Section
                   name={WHY}
                   open={!collapsed().has(WHY)}
