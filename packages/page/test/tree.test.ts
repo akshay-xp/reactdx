@@ -390,7 +390,11 @@ test("suspended content is hidden from the tree until it shows", async () => {
   await render(h(Page))
   await watching(async (flush, _, tree) => {
     await React.act(() => setWaiting(true))
-    expect(summary(flush()[0])).toEqual(["remove", "add Spinner at 0"])
+    expect(summary(flush()[0])).toEqual([
+      "suspense",
+      "remove",
+      "add Spinner at 0",
+    ])
     expect(tree.outline()).toEqual([
       "Page function",
       "  Suspense suspense",
@@ -880,3 +884,69 @@ test.skipIf(!react19)(
     expect(tree.serverId(shop)).toBeUndefined()
   },
 )
+
+// Suspends until `release` settles it.
+let release = () => {}
+const pending = new Promise<void>((resolve) => (release = resolve))
+let settled = false
+pending.then(() => (settled = true))
+function Thrower() {
+  if (!settled) throw pending
+  return h("p")
+}
+
+test("a Suspense boundary that waits is reported after its add", async () => {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() =>
+    root.render(h(React.Suspense, { fallback: h("i") }, h(Thrower))),
+  )
+  const tree = createTree({ now: () => 100 })
+  const ops: TreeOp[] = []
+  tree.full(fiberRootOf(container), 1, ops)
+  const boundary = adds(ops).find((op) => op.kind === "suspense")?.id
+  const at = ops.findIndex((op) => op.op === "add" && op.id === boundary)
+  expect(ops[at + 1]).toEqual({
+    op: "suspense",
+    id: boundary,
+    state: "waiting",
+    ms: 0,
+  })
+  await React.act(async () => release())
+})
+
+test("a dehydrated boundary has waited since navigation start", () => {
+  const node = (tag: number, memoizedState: unknown, child = null) => ({
+    tag,
+    key: null,
+    type: null,
+    elementType: null,
+    child,
+    sibling: null,
+    alternate: null,
+    return: null,
+    memoizedProps: {},
+    memoizedState,
+    stateNode: null,
+  })
+  const boundary = node(13, { dehydrated: {} })
+  const root = { current: node(3, null, boundary as never) }
+  const ops: TreeOp[] = []
+  createTree({ now: () => 500 }).full(root as never, 1, ops)
+  expect(ops.filter((op) => op.op === "suspense")).toEqual([
+    { op: "suspense", id: 2, state: "waiting", ms: 500 },
+  ])
+})
+
+test("a boundary showing its content reports no wait", async () => {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() =>
+    root.render(h(React.Suspense, { fallback: h("i") }, h("p"))),
+  )
+  const ops: TreeOp[] = []
+  createTree().full(fiberRootOf(container), 1, ops)
+  expect(ops.filter((op) => op.op === "suspense")).toEqual([])
+})

@@ -1,5 +1,6 @@
 import { MAX_TREE_STRING, type TreeKind, type TreeOp } from "@reactdx/messages"
 import type { FiberRoot } from "./hook.ts"
+import { waitOf } from "./suspense.ts"
 
 // The fields of React's Fiber that the tree reads (same in React 18 and 19).
 export type Fiber = {
@@ -118,8 +119,11 @@ const bounded = (value: string) => value.slice(0, MAX_TREE_STRING)
 // every update, so both carry the id. `onForget` hears each id an unmount drops.
 export function createTree({
   onForget,
+  now = () => performance.now(),
 }: {
   onForget?: (id: number) => void
+  // The page's clock, for Suspense waits.
+  now?: () => number
 } = {}) {
   const ids = new WeakMap<Fiber, number>()
   let nextId = 1
@@ -160,6 +164,16 @@ export function createTree({
       }) ?? nextId++
     serverIds.set(info, id)
     return id
+  }
+  // Waiting boundaries by id, since when (performance time; a dehydrated one has
+  // waited since navigation start, 0).
+  const waits = new Map<number, { since: number }>()
+  const track = (fiber: Fiber, id: number, ops: TreeOp[]) => {
+    const wait = waitOf(fiber)
+    if (!wait || waits.has(id)) return
+    const since = wait === "dehydrated" ? 0 : now()
+    waits.set(id, { since })
+    ops.push({ op: "suspense", id, state: "waiting", ms: now() - since })
   }
   const childId = (child: Child) => (isServer(child) ? child.id : idOf(child))
 
@@ -306,6 +320,7 @@ export function createTree({
       key: fiber.key === null ? null : bounded(fiber.key),
       index,
     })
+    track(fiber, id, ops)
     addChildren(kidsOf(fiber, id), id, id, rootId, ops)
   }
 
@@ -330,6 +345,7 @@ export function createTree({
     names.delete(id)
     fibers.delete(id)
     servers.delete(id)
+    waits.delete(id)
     onForget?.(id)
   }
 
@@ -387,6 +403,7 @@ export function createTree({
         }
         // A stale kid's subtree is unchanged, like a bailed-out one's.
         if (stale.has(kid)) return
+        track(kid, id, ops)
         visit(kid, id)
         update(kid, id, id, rootId, ops)
       } else {
@@ -412,6 +429,7 @@ export function createTree({
       names.clear()
       fibers.clear()
       servers.clear()
+      waits.clear()
     },
     // The nearest mounted component (never a host) owning a DOM element, found
     // through the fiber React keeps on each of its elements.
