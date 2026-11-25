@@ -702,6 +702,49 @@ test.skipIf(!react19)(
 )
 
 test.skipIf(!react19)(
+  "islands are the components right under server nodes, wrappers among them",
+  async () => {
+    function AddToCart() {
+      return h("button", null, h(Inner))
+    }
+    function Inner() {
+      return h("i")
+    }
+    function ThemeProvider({ children }: { children: React.ReactNode }) {
+      return h("div", null, children)
+    }
+    const shop = serverInfo("Shop")
+    const { tree, id } = await serverTree(
+      server(
+        shop,
+        h(
+          "main",
+          null,
+          server(serverInfo("Details"), h(AddToCart)),
+          h(ThemeProvider, null, server(serverInfo("Reviews"), h("ul"))),
+        ),
+      ),
+    )
+    expect(tree.islands()).toEqual([
+      {
+        id: id("AddToCart"),
+        name: "AddToCart",
+        kind: "function",
+        server: id("Details"),
+        wraps: false,
+      },
+      {
+        id: id("ThemeProvider"),
+        name: "ThemeProvider",
+        kind: "function",
+        server: id("Shop"),
+        wraps: true,
+      },
+    ])
+  },
+)
+
+test.skipIf(!react19)(
   "nested Server Components nest by their chain and by position",
   async () => {
     const shop = serverInfo("Shop")

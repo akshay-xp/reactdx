@@ -530,6 +530,54 @@ export function createTree({
       walk(id)
       return out
     },
+    // Client islands (M7 #83): each component whose nearest component
+    // ancestor is a server node, in tree order, with that node, and whether
+    // server nodes render under it (a client wrapper around server children).
+    islands() {
+      const out: {
+        id: number
+        name: string
+        kind: TreeKind
+        server: number
+        wraps: boolean
+      }[] = []
+      const nested = new Set<number>()
+      const hasServer = (at: number): boolean =>
+        (children.get(at) ?? []).some(
+          (child) => servers.has(child) || hasServer(child),
+        )
+      const walk = (
+        at: number,
+        server: number | undefined,
+        collect: boolean,
+      ) => {
+        for (const child of children.get(at) ?? []) {
+          if (servers.has(child)) {
+            nested.add(child)
+            walk(child, child, collect)
+            continue
+          }
+          const fiber = fibers.get(child)
+          const kind = fiber && kindOf(fiber)
+          if (!kind || !COMPONENT_KINDS.has(kind)) {
+            walk(child, server, collect)
+            continue
+          }
+          if (collect && server !== undefined)
+            out.push({
+              id: child,
+              name: names.get(child) ?? "",
+              kind,
+              server,
+              wraps: hasServer(child),
+            })
+          walk(child, undefined, collect)
+        }
+      }
+      for (const id of servers.keys()) walk(id, id, false)
+      for (const id of servers.keys()) if (!nested.has(id)) walk(id, id, true)
+      return out
+    },
     // The server nodes under a node, nearest first, not inside another
     // Suspense boundary (what that one waited on is its own).
     serversUnder(id: number) {
