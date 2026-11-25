@@ -108,7 +108,7 @@ Background to the relay's tree port. Everything the relay acts on passes through
 | `{ type: "clear-highlight" }`                     | `CLEAR_HIGHLIGHT`                                                     |
 | `{ type: "pick-start" }`                          | `PICK_START`                                                          |
 | `{ type: "pick-stop" }`                           | `PICK_STOP`                                                           |
-| `{ type: "outlines", on }`                        | `{ source: "reactdx-relay", type: "outlines", on }`                   |
+| `{ type: "outlines", mode }`                      | `{ source: "reactdx-relay", type: "outlines", mode }`                 |
 | `{ type: "inspect", id }`                         | `{ source: "reactdx-relay", type: "inspect", id }`                    |
 | `{ type: "expand", objectId, offset }`            | `{ source: "reactdx-relay", type: "expand", objectId, offset }`       |
 | `{ type: "copy-value" \| "store-value", target }` | `{ source: "reactdx-relay", type, target }`                           |
@@ -116,7 +116,8 @@ Background to the relay's tree port. Everything the relay acts on passes through
 - The relay posts every command but `resync` as `{ source: "reactdx-relay", ...command }`: what `parseTreeCommand` returns has only the known fields.
 - `inspect`'s `id` may be `null`; `expand`'s `objectId` is a positive safe integer and `offset` a non-negative one.
 - `edit` (`EditMessage` from the panel, with `tabId`; M5 #50): `{ id, root, path, value }`. `id` positive. `root` (`parseEditRoot`): `"props"`, `"state"`, `{ hook }` (1 to 8 non-negative safe integers) or `{ context }` (non-negative safe integer). `path` (`parseEditPath`): at most 32 keys, each a non-negative safe integer or a string up to 1,000 chars. `value` (`parseEditValue`, a fresh copy): an `EditValue`: strings up to 100,000 chars, finite numbers, booleans, `null`, arrays, `{ type: "object", props }` (keys up to 1,000 chars), `{ type: "undefined" }`, `{ type: "number", value: "NaN" | "Infinity" | "-Infinity" | "-0" }`; nested at most 16 deep, at most 10,000 values. Objects are tagged so a user's `{ type: "undefined" }` is an object, not the marker. Only known fields are kept, inside `root` and values too. The agent parses what it receives the same way (a page can post to it directly).
-- `outlines` (`OutlinesMessage` from the panel, with `tabId`; M7 #82): `on` a boolean. The page draws or removes its Suspense outlines (`docs/page.md`, Outlines).
+- `outlines` (`OutlinesMessage` from the panel, with `tabId`; M7 #82, #83): `mode` an `OutlineMode` (`"suspense"` or `"islands"`) or `null` (off); anything else is dropped. The page draws that mode's outlines (`docs/page.md`, Outlines).
+- `nextInternal(name, kind, parent)` (`src/next.ts`, M7 #83, moved from the panel): whether a node is one of Next.js's own (the panel hides them, the page leaves them out of client islands). `sizeText(size)` (moved too): "999 B", "14.3 KB", "over 1,024 KB".
 - `durationText(ms)` (M7 #82, moved from the panel): whole ms under a second ("840 ms"), else seconds with one decimal ("1.2s"); the panel's wait text and the page's outline labels.
 - `rerender` (`RerenderMessage` from the panel, with `tabId`; M5 #55): `{ id }`, a positive safe integer.
 - `delete-path` / `rename-path` (`DeletePathMessage`, `RenamePathMessage` from the panel, with `tabId`; M5 #53): `{ id, root, path }` and `{ id, root, path, to }`, the same `id`, root and path checks as `edit`, with at least one key (they name a key); `to` a non-empty string up to 1,000 chars. Adding a key or item is an `edit` at a new path.
