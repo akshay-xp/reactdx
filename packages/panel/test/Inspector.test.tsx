@@ -2245,3 +2245,67 @@ test("props a Server Component passed: the answer, a size per prop, a hint", () 
   expect(text("server-answer")).toEqual([])
   expect(text("size-hint")).toEqual([])
 })
+
+test("a waiting boundary says how long and what it waits on; an arrived one, what it waited on", () => {
+  vi.useFakeTimers()
+  try {
+    const { container, inspector, select, tree } = setup(
+      "suspense",
+      null,
+      noSources,
+      createSettings(),
+      [],
+    )
+    select()
+    const answer = () =>
+      container.querySelector("[data-testid=answer]")?.textContent
+    tree.apply(
+      treeBatch(2, [{ op: "suspense", id: 3, state: "waiting", ms: 1200 }]),
+    )
+    const said = (cause: object) => {
+      inspector.receive(
+        inspected(3, { props: object({}), suspense: { cause } } as never),
+      )
+      return answer()
+    }
+    const lead = "Showing its fallback for 1.2s, "
+    expect(said({ kind: "server", name: "Reviews" })).toBe(
+      `${lead}waiting on Reviews (server)`,
+    )
+    expect(said({ kind: "thrown", name: "Comments", count: 1 })).toBe(
+      `${lead}waiting on 1 promise thrown by Comments`,
+    )
+    expect(said({ kind: "thrown", name: "Comments", count: 2 })).toBe(
+      `${lead}waiting on 2 promises thrown by Comments`,
+    )
+    expect(said({ kind: "inside", name: "Comments" })).toBe(
+      `${lead}waiting inside Comments`,
+    )
+    expect(said({ kind: "lazy" })).toBe(`${lead}loading a lazy() component`)
+    expect(said({ kind: "promise" })).toBe(`${lead}waiting on a promise`)
+    vi.advanceTimersByTime(300)
+    expect(answer()).toBe("Showing its fallback for 1.5s, waiting on a promise")
+
+    tree.apply(
+      treeBatch(3, [{ op: "suspense", id: 3, state: "arrived", ms: 1201 }]),
+    )
+    inspector.receive(
+      inspected(3, {
+        props: object({}),
+        suspense: {
+          awaited: [
+            { name: "getReviews", owner: "Reviews", start: 96, end: 1297 },
+          ],
+        },
+      } as never),
+    )
+    expect(answer()).toBe("No renders since DevTools opened.")
+    expect(
+      [...container.querySelectorAll("[data-testid=server-row]")].map(
+        (row) => row.textContent,
+      ),
+    ).toEqual(["getReviews · Reviews · 1.2s"])
+  } finally {
+    vi.useRealTimers()
+  }
+})

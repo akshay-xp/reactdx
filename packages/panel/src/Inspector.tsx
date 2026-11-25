@@ -22,7 +22,13 @@ import {
   Switch,
 } from "solid-js"
 import { ago } from "./ago"
-import { answerOf, fromServerOf, hintOf, type Part } from "./answer"
+import {
+  answerOf,
+  fromServerOf,
+  hintOf,
+  type Part,
+  suspenseAnswer,
+} from "./answer"
 import { Empty, EmptyAction } from "./Empty"
 import type { InspectorStore } from "./inspection"
 import { type PathRoot, pathKey } from "./paths"
@@ -243,6 +249,7 @@ export function Inspector(props: {
   const server = () => info()?.kind === "server"
   const awaits = () => props.inspector.data()?.server?.awaits ?? []
   const clients = () => props.inspector.data()?.server?.rendered ?? []
+  const waitedOn = () => props.inspector.data()?.suspense?.awaited ?? []
   const fromServer = () => {
     const from = props.inspector.data()?.fromServer
     const name = info()?.name
@@ -321,8 +328,18 @@ export function Inspector(props: {
     return `${count.renders} since DevTools opened${wasted}`
   }
   // The answer for the render shown (the latest, or the pinned commit's).
+  // A Suspense boundary's wait, from the tree (it ticks while waiting).
+  const wait = () => {
+    const id = props.tree.selected()
+    return id !== undefined && info()?.kind === "suspense"
+      ? props.tree.waitOf(id)
+      : undefined
+  }
   const answer = (): Part[] => {
     if (server()) return ["Ran on the server."]
+    const waiting = wait()
+    if (waiting?.waiting)
+      return suspenseAnswer(props.inspector.data()?.suspense?.cause, waiting.ms)
     const inspector = props.inspector
     if (inspector.absent()) return ["Didn't render in this update."]
     const render = inspector.render()
@@ -578,6 +595,28 @@ export function Inspector(props: {
                     </For>
                   </Section>
                 )}
+              </Show>
+              <Show when={waitedOn().length}>
+                <Section
+                  name="Waited on"
+                  open={!collapsed().has("Waited on")}
+                  forced={query() !== ""}
+                  onToggle={() => toggle("Waited on")}
+                  summary={waitedOn()
+                    .map((wait) => wait.name)
+                    .join(", ")}
+                >
+                  <For each={waitedOn()}>
+                    {(wait) => (
+                      <div data-testid="server-row" class={SERVER_ROW}>
+                        <span data-search-text>{wait.name}</span>
+                        <span class="text-muted">
+                          {` · ${wait.owner} · ${durationText(wait.end - wait.start)}`}
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </Section>
               </Show>
               <Show when={props.inspector.data()?.server?.awaits.length}>
                 <Section

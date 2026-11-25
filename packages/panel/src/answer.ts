@@ -4,9 +4,10 @@ import type {
   RenderCount,
   RenderReason,
   Size,
+  SuspenseCause,
   Value,
 } from "@reactdx/messages"
-import { sizeText } from "./size"
+import { durationText, sizeText } from "./size"
 import { previewText } from "./value"
 
 // A sentence in pieces (docs/panel.md, Inspector): text, a name in code, or a
@@ -190,4 +191,30 @@ export function fromServerOf(from: FromServer, name: string) {
       : [],
   )
   return { answer, hints }
+}
+
+// A waiting boundary (M7 #80): how long, and what it waits on as far as the
+// page could tell.
+export function suspenseAnswer(
+  cause: SuspenseCause | undefined,
+  ms: number,
+): Part[] {
+  const lead = `Showing its fallback for ${durationText(ms)}, `
+  switch (cause?.kind) {
+    case "server":
+      return [`${lead}waiting on `, { code: cause.name }, " (server)"]
+    case "thrown": {
+      const promises = cause.count === 1 ? "promise" : "promises"
+      return [
+        `${lead}waiting on ${cause.count} ${promises} thrown by `,
+        { code: cause.name },
+      ]
+    }
+    case "inside":
+      return [`${lead}waiting inside `, { code: cause.name }]
+    case "lazy":
+      return [`${lead}loading a lazy() component`]
+    default:
+      return [`${lead}waiting on a promise`]
+  }
 }
