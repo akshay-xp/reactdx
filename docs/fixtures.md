@@ -22,6 +22,7 @@ All but `fixture:prod` are development builds. `fixture:prod` builds into `fixtu
 - Every root renders `data-testid="react-version"` (text: `React.version`) and `data-testid="counter"` (text `Count: N`, +1 per click).
 - On `fixtures/vite` and `fixtures/next`, `Counter` takes a `label` prop (`"Count"`, from `App` and `app/page.jsx`) and renders `{label}: {count}`, so the inspector e2e has a prop to show and a button whose `children` change on a click.
 - `fixtures/next` also renders `data-testid="server"` from the Server Component (`app/page.jsx`); the counter and version come from the client component (`app/Counter.jsx`).
+- `fixtures/next` `/shop` (`app/shop/`, M7 #78): Server Components and Suspense with fixed delays (`data.js`). `Shop` renders three Suspense boundaries: async `ProductDetails id="p-12"` (`getProduct`, 300 ms) rendering the client `AddToCart` (gets the whole `product`, its `specs` over 10 KB as JSON, and `price`); async `Reviews` (`getReviews`, 1.2 s) with a nested Suspense around async `Recommendations` (`getRecommendations`, 800 ms, started only after Reviews' data arrives: a waterfall); and the client `CartCount`, which `use()`s `getCart()` (1.5 s) passed from the server. Test ids: `product` ("Trail shoe"), `add-to-cart`, `reviews`, `reviews-fallback`, `recommendations`, `cart-count` ("Cart (2)").
 - `fixtures/multi` puts each root in `data-testid="root-18"` or `data-testid="root-19"`.
 
 ## Clicked

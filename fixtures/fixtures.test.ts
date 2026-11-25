@@ -167,6 +167,27 @@ describe("fixture:next", () => {
     await expectCounter(page, "body")
     await page.close()
   })
+
+  test("/shop streams its product, reviews, recommendations and cart", async () => {
+    const page = await browser.newPage()
+    await page.goto("http://localhost:5220/shop")
+    const shows = (selector: string, content?: string) =>
+      page.waitForFunction(
+        (s, c) => {
+          const el = document.querySelector(s)
+          return el !== null && (c === null || el.textContent === c)
+        },
+        { timeout: 10_000 },
+        selector,
+        content ?? null,
+      )
+    await shows("[data-testid=product]", "Trail shoe")
+    assert.ok(await page.$("button[data-testid=add-to-cart]"))
+    await shows("[data-testid=reviews]")
+    await shows("[data-testid=recommendations]")
+    await shows("[data-testid=cart-count]", "Cart (2)")
+    await page.close()
+  })
 })
 
 describe("fixture:multi", () => {
