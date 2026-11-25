@@ -5,25 +5,30 @@ import { onCleanup } from "solid-js"
 // (by `data-path`) holds it, else the first; arrow keys move focus, and open
 // and close rows by their `aria-expanded` and toggle.
 export function keyboardRows(root: HTMLElement) {
-  let focused: string | undefined
+  // The row last focused (a removed one keeps its path).
+  let focused: HTMLElement | undefined
   // A row had focus and it hasn't gone elsewhere: a re-render that replaces the
-  // row (a re-send) gives it to the row with the same path.
+  // row (a re-send) gives it to the row with the same path. Only a replaced
+  // row: when a row's editor closes because focus is leaving (Firefox runs its
+  // blur before focus lands), pulling focus back would override the move.
   let holding = false
   const rows = () => [...root.querySelectorAll<HTMLElement>("[role=treeitem]")]
   const sync = () => {
     const all = rows()
-    const stop = all.find((row) => row.dataset.path === focused) ?? all[0]
+    const path = focused?.dataset.path
+    const stop = all.find((row) => row.dataset.path === path) ?? all[0]
     for (const row of all) row.tabIndex = row === stop ? 0 : -1
     const lost =
       !document.activeElement || document.activeElement === document.body
-    if (holding && lost && stop?.dataset.path === focused) stop?.focus()
+    if (holding && lost && !focused?.isConnected && stop?.dataset.path === path)
+      stop?.focus()
   }
   const onFocusIn = (event: FocusEvent) => {
     const row = (event.target as Element).closest<HTMLElement>(
       "[role=treeitem]",
     )
     if (!row) return
-    focused = row.dataset.path
+    focused = row
     holding = true
     sync()
   }
