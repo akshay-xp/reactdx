@@ -106,6 +106,12 @@ export function createTreeStore() {
     internals.clear()
     setTally(tally() + 1)
   }
+  // The nearest node at or above this one that isn't a DOM element.
+  const outer = (node: Node | undefined) => {
+    let at = node
+    while (at?.kind === "host") at = nodes.get(at.parentId)
+    return at
+  }
   const forget = (id: number) => {
     const node = nodes.get(id)
     if (!node) return
@@ -136,7 +142,7 @@ export function createTreeStore() {
         children: [],
         scope: component ? kind : above,
         client: component && kind !== "server" && above === "server",
-        internal: nextInternal(name, kind, parent),
+        internal: nextInternal(name, kind, outer(parent)),
       }
       nodes.set(id, node)
       countInternal(node, 1)
@@ -157,7 +163,7 @@ export function createTreeStore() {
       node.internal = nextInternal(
         node.name,
         node.kind,
-        nodes.get(node.parentId),
+        outer(nodes.get(node.parentId)),
       )
       countInternal(node, 1)
     } else {

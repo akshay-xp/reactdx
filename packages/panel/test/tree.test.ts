@@ -530,3 +530,18 @@ test("Next.js internals are hidden in a Next root until shown", () => {
   tree.apply(treeBatch(2, [{ op: "remove", id: 3 }]))
   expect(tree.hiddenCount()).toBe(2)
 })
+
+test("a Next boundary's Suspense is hidden through a DOM element between", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      add(1, 0, "AppRouter"),
+      add(2, 1, "__next_metadata_boundary__", 0, "lazy"),
+      add(3, 2, "div", 0, "host"),
+      add(4, 3, "Suspense", 0, "suspense"),
+      add(5, 1, "Page", 1, "server"),
+    ]),
+  )
+  expect(tree.rows(1).map((row) => row.name)).toEqual(["Page"])
+})
