@@ -26,6 +26,7 @@ export type Row = {
 }
 
 const RECENT_MS = 1000
+const TICK_MS = 100
 // Consecutive siblings with the same name and kind that make a group row.
 const GROUP_MIN = 5
 
@@ -72,6 +73,20 @@ export function createTreeStore() {
   let recent = new Set<number>()
   let fade: ReturnType<typeof setTimeout> | undefined
   const [version, setVersion] = createSignal(0)
+  // Suspense waits by id (M7 #80): waiting or arrived, the ms the page sent and
+  // when it came. While any waits, a clock ticks so its time counts up.
+  const waits = new Map<number, { waiting: boolean; ms: number; at: number }>()
+  const [clock, setClock] = createSignal(Date.now())
+  let ticking: ReturnType<typeof setInterval> | undefined
+  const tick = () => {
+    const waiting = [...waits.values()].some((wait) => wait.waiting)
+    if (waiting && !ticking)
+      ticking = setInterval(() => setClock(Date.now()), TICK_MS)
+    else if (!waiting && ticking) {
+      clearInterval(ticking)
+      ticking = undefined
+    }
+  }
   const [selected, select] = createSignal<number>()
   const [showHosts, showHostsSignal] = createSignal(false)
   const [showInternals, showInternalsSignal] = createSignal(false)
@@ -102,6 +117,8 @@ export function createTreeStore() {
     nodes.clear()
     tops.clear()
     counts.clear()
+    waits.clear()
+    tick()
     nextRoots.clear()
     internals.clear()
     setTally(tally() + 1)
@@ -118,6 +135,7 @@ export function createTreeStore() {
     for (const child of node.children) forget(child)
     countInternal(node, -1)
     nodes.delete(id)
+    waits.delete(id)
   }
 
   // Applies one op; false when it names a node the mirror doesn't have.
@@ -157,7 +175,14 @@ export function createTreeStore() {
     }
     const node = nodes.get(op.id)
     if (!node) return false
-    if (op.op === "suspense") return true
+    if (op.op === "suspense") {
+      waits.set(op.id, {
+        waiting: op.state === "waiting",
+        ms: op.ms,
+        at: Date.now(),
+      })
+      return true
+    }
     if (op.op === "rename") {
       countInternal(node, -1)
       node.name = op.name
@@ -345,6 +370,7 @@ export function createTreeStore() {
       else if (stale) return false
       else if (batch.seq !== expected) stale = true
       if (!stale) stale = !batch.ops.every(applyOp)
+      tick()
       expected = batch.seq + 1
       // A group row's id is minus its first member's.
       if (!nodes.has(Math.abs(selected() ?? 0))) select(undefined)
@@ -353,6 +379,16 @@ export function createTreeStore() {
     },
 
     rows,
+    // A boundary's wait: still waiting (counting up), or how long it took.
+    waitOf(id: number) {
+      version()
+      clock()
+      const wait = waits.get(id)
+      if (!wait) return
+      return wait.waiting
+        ? { waiting: true, ms: wait.ms + Date.now() - wait.at }
+        : { waiting: false, ms: wait.ms }
+    },
     receiveCounts(message: CountsMessage) {
       for (const count of message.counts) counts.set(count.id, count)
       recent = new Set(message.counts.map((count) => count.id))

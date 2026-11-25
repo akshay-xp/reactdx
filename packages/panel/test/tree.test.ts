@@ -558,3 +558,30 @@ test("a Suspense wait keeps its node", () => {
   ).toBe(false)
   expect(tree.rows(1).map((row) => row.name)).toEqual(["Suspense"])
 })
+
+test("a boundary's wait ticks while it waits, and stays once it arrived", () => {
+  vi.useFakeTimers()
+  try {
+    const tree = createTreeStore()
+    tree.apply(
+      treeBatch(1, [
+        { op: "reset" },
+        add(1, 0, "Suspense", 0, "suspense"),
+        add(2, 0, "Other", 1, "suspense"),
+        { op: "suspense", id: 1, state: "waiting", ms: 1000 },
+      ]),
+    )
+    expect(tree.waitOf(2)).toBeUndefined()
+    vi.advanceTimersByTime(200)
+    expect(tree.waitOf(1)).toEqual({ waiting: true, ms: 1200 })
+    tree.apply(
+      treeBatch(2, [{ op: "suspense", id: 1, state: "arrived", ms: 840 }]),
+    )
+    expect(tree.waitOf(1)).toEqual({ waiting: false, ms: 840 })
+    expect(vi.getTimerCount()).toBe(0)
+    tree.apply(treeBatch(3, [{ op: "remove", id: 1 }]))
+    expect(tree.waitOf(1)).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
