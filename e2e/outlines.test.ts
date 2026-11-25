@@ -8,6 +8,7 @@ import {
   outlines,
   overlayPage,
   rectOf,
+  summary,
   untilOutlines,
 } from "./shadows.ts"
 
@@ -163,6 +164,62 @@ for (const { port } of fixtures.filter((f) => f.fixture === "19"))
       await page.click("[data-testid=grow]")
       const moved = await outlinedAt(page, fallback, 500)
       assert.ok(moved.top > scrolled.top + 100, JSON.stringify(moved))
+    } finally {
+      await browser.close()
+    }
+  })
+
+if (fixtures.some((f) => f.fixture === "next"))
+  test("next: client islands on /shop are lit, the wrapper dashed, hovered and picked", async () => {
+    const { browser, page, panel } = await overlayPage(
+      name,
+      "http://localhost:5220/shop",
+      "[data-testid=recommendations]",
+      "Shop",
+    )
+    try {
+      await panel.press("Light client islands")
+      const drawn = await untilOutlines(
+        page,
+        (d) =>
+          d.some((o) => /^AddToCart · \d+\.\d KB$/.test(o.label)) &&
+          d.some((o) => o.label.startsWith("CartCount · ")) &&
+          d.some((o) => o.style === "wrapper"),
+        10_000,
+      )
+      assert.deepEqual(
+        drawn.map((o) => [o.style, o.label.split(" · ")[0]]).sort(),
+        [
+          ["island", "AddToCart"],
+          ["island", "CartCount"],
+          ["wrapper", "ThemeProvider"],
+        ],
+      )
+      assert.match(
+        drawn.find((o) => o.style === "wrapper")?.label ?? "",
+        /^ThemeProvider · .* · wraps server content$/,
+      )
+      const { text, dim } = await summary(page)
+      assert.match(text ?? "", /^3 client islands · \d+\.\d KB of props$/)
+      assert.ok(dim)
+
+      const cart = drawn.find((o) => o.label.startsWith("AddToCart")) as {
+        left: number
+        top: number
+        width: number
+        height: number
+      }
+      const x = cart.left + cart.width / 2
+      const y = cart.top + cart.height / 2
+      await page.mouse.move(x, y)
+      await untilOutlines(page, (d) =>
+        d.some((o) => /^AddToCart · .* · from ProductDetails$/.test(o.label)),
+      )
+      await page.mouse.click(x, y)
+      const deadline = Date.now() + 5000
+      while ((await panel.selected()) !== "AddToCart" && Date.now() < deadline)
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      assert.equal(await panel.selected(), "AddToCart")
     } finally {
       await browser.close()
     }

@@ -153,3 +153,17 @@ export const covers = (
   (["left", "top", "width", "height"] as const).every(
     (side) => Math.abs(outline[side] - rect[side]) <= 1,
   )
+
+// The outline layer's summary and whether it dims the page.
+export const summary = (page: Page) =>
+  page.evaluate(() => {
+    const roots = (window as unknown as Shadows).__shadows.filter(
+      (root) => root.host.isConnected,
+    )
+    return {
+      text: roots
+        .map((root) => root.querySelector("[data-summary]")?.textContent)
+        .find((text) => text !== undefined),
+      dim: roots.some((root) => root.querySelector("[data-dim]") !== null),
+    }
+  })
