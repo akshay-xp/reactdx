@@ -674,7 +674,17 @@ export async function selectListed(
       await panel.end()
       return panel()
     }, listed)
-    await panel.select(component)
+    // The row can go between that read and the click: right after a
+    // navigation, Firefox's tree showed the row, cleared, then showed it again
+    // (#68). Look again.
+    const missed = await panel.select(component).then(
+      () => undefined,
+      (error: Error) => error.message,
+    )
+    if (missed) {
+      text = missed
+      continue
+    }
     const lost = (t: string) => t.startsWith("Select a component")
     text = await until(
       panel.inspector,
