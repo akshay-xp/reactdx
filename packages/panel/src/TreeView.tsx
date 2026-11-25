@@ -60,8 +60,10 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
     })
   })
   const selected = (id: number) => props.tree.selected() === id
-  // Dark muted on selected is 2.9:1 (docs/panel.md, Themes).
-  const muted = (id: number) => (selected(id) ? "text-fg" : "text-muted")
+  // A text color token, or fg on the selection: dark muted on selected is
+  // 2.9:1 (docs/panel.md, Themes).
+  const tint = (id: number, token: string) => (selected(id) ? "text-fg" : token)
+  const muted = (id: number) => tint(id, "text-muted")
   // One listener for every row: a toggle click on an expandable row toggles it,
   // any other click selects the row.
   const click = (event: MouseEvent) => {
@@ -198,12 +200,21 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
                     <span
                       data-testid="badge"
                       class={
-                        row.kind === "server" && !selected(row.id)
-                          ? "text-server"
+                        row.kind === "server"
+                          ? tint(row.id, "text-server")
                           : muted(row.id)
                       }
                     >
                       {row.kind}
+                    </span>
+                  </Show>
+                  <Show when={row.client}>
+                    {" "}
+                    <span
+                      data-testid="client"
+                      class={tint(row.id, "text-client")}
+                    >
+                      client
                     </span>
                   </Show>
                   <Show when={row.key !== null}>

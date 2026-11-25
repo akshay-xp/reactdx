@@ -16,6 +16,9 @@ export type Row = {
   expandable: boolean
   expanded: boolean
   match: boolean
+  // A component whose nearest component ancestor is a Server Component: where
+  // client code starts.
+  client: boolean
   // A run of same-named siblings shown as one row (its id is minus the first
   // member's): how many.
   group?: { size: number }
@@ -25,6 +28,16 @@ const RECENT_MS = 1000
 // Consecutive siblings with the same name and kind that make a group row.
 const GROUP_MIN = 5
 
+// Kinds that are components (Suspense, providers and DOM elements aren't).
+const COMPONENT_KINDS = new Set<TreeKind>([
+  "function",
+  "class",
+  "forwardRef",
+  "memo",
+  "lazy",
+  "server",
+])
+
 type Node = {
   rootId: number
   parentId: number
@@ -32,6 +45,9 @@ type Node = {
   name: string
   key: string | null
   children: number[]
+  // The nearest component kind at or above this node.
+  scope: TreeKind | undefined
+  client: boolean
 }
 
 export type TreeStore = ReturnType<typeof createTreeStore>
@@ -89,7 +105,18 @@ export function createTreeStore() {
       const { id, rootId, parentId, kind, name, key, index } = op
       const list = siblings(rootId, parentId)
       if (!list) return false
-      nodes.set(id, { rootId, parentId, kind, name, key, children: [] })
+      const above = nodes.get(parentId)?.scope
+      const component = COMPONENT_KINDS.has(kind)
+      nodes.set(id, {
+        rootId,
+        parentId,
+        kind,
+        name,
+        key,
+        children: [],
+        scope: component ? kind : above,
+        client: component && kind !== "server" && above === "server",
+      })
       list.splice(index, 0, id)
       return true
     }
@@ -153,6 +180,7 @@ export function createTreeStore() {
         expandable: kids.length > 0,
         expanded,
         match: isMatch(node),
+        client: node.client,
       })
       if (expanded) visitAll(kids, depth + 1)
     }
@@ -170,6 +198,7 @@ export function createTreeStore() {
         expandable: true,
         expanded,
         match: false,
+        client: false,
         group: { size: members.length },
       })
       if (expanded) for (const member of members) visit(member, depth + 1)

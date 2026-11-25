@@ -469,3 +469,27 @@ test("a node's parent is the node above it, none at a root", () => {
   expect(tree.parentOf(1)).toBeUndefined()
   expect(tree.parentOf(99)).toBeUndefined()
 })
+
+test("a component right under a Server Component is where client code starts", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      add(1, 0, "Shop", 0, "server"),
+      add(2, 1, "Suspense", 0, "suspense"),
+      add(3, 2, "CartCount"),
+      add(4, 1, "div", 1, "host"),
+      add(5, 4, "AddToCart", 0, "lazy"),
+      add(6, 5, "Inner"),
+      add(7, 0, "App", 1),
+    ]),
+  )
+  expect(tree.rows(1).map((row) => [row.name, row.client])).toEqual([
+    ["Shop", false],
+    ["Suspense", false],
+    ["CartCount", true],
+    ["AddToCart", true],
+    ["Inner", false],
+    ["App", false],
+  ])
+})

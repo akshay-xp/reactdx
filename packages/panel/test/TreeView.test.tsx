@@ -255,7 +255,10 @@ test("a Server Component row has a server badge and works like any row", () => {
     add(1, 0, "Shop", 0, "server"),
     add(2, 1, "Cart"),
   ])
-  expect(nodes().map((n) => n.textContent)).toEqual(["Shop server", "Cart"])
+  expect(nodes().map((n) => n.textContent)).toEqual([
+    "Shop server",
+    "Cart client",
+  ])
   const badge = () =>
     nodes()[0]?.querySelector("[data-testid=badge]") as Element
   expect(badge().className).toContain("text-server")
@@ -269,4 +272,21 @@ test("a Server Component row has a server badge and works like any row", () => {
   expect(tree.selected()).toBe(2)
   tree.setQuery("shop")
   expect(tree.matches()).toEqual([1])
+})
+
+test("the first client component under a server row is marked client", () => {
+  const { nodes } = view([
+    add(1, 0, "Shop", 0, "server"),
+    add(2, 1, "AddToCart", 0, "lazy"),
+    add(3, 2, "Inner"),
+  ])
+  expect(nodes().map((n) => n.textContent)).toEqual([
+    "Shop server",
+    "AddToCart lazy client",
+    "Inner",
+  ])
+  const mark = nodes()[1]?.querySelector("[data-testid=client]") as Element
+  expect(mark.className).toContain("text-client")
+  fireEvent.click(nodes()[1] as Element)
+  expect(mark.className).toContain("text-fg")
 })
