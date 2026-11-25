@@ -1,3 +1,5 @@
+import { durationText, type SuspenseCause } from "@reactdx/messages"
+
 // Suspense outlines on the page (docs/page.md, Outlines).
 
 export type Outline = Box & {
@@ -70,5 +72,86 @@ export function createOutlineLayer(doc: Document) {
       root.replaceChildren(...boxes)
       if (!host.isConnected) doc.documentElement.append(host)
     },
+  }
+}
+
+const MAX_OUTLINES = 100
+
+// What a waiting boundary's label says it waits on, when that's known.
+const causeText = (cause: SuspenseCause | undefined) =>
+  cause?.kind === "server"
+    ? ` · ${cause.name} (server)`
+    : cause?.kind === "thrown"
+      ? ` · thrown by ${cause.name}`
+      : cause?.kind === "inside"
+        ? ` · in ${cause.name}`
+        : ""
+
+// Which boundaries to outline, and when to measure them: on the next frame
+// after a change, never inside React's commit (docs/m7-findings.md, spike 2).
+export function createSuspenseOutlines({
+  layer,
+  waits,
+  find,
+  causeFor,
+  now,
+  frame,
+}: {
+  layer: { draw(outlines: Outline[], more: number): void }
+  target: EventTarget
+  waits: () => ReadonlyMap<number, { since: number }>
+  find: (id: number) => { elements: Element[] } | undefined
+  causeFor: (id: number) => SuspenseCause | undefined
+  now: () => number
+  frame: (callback: () => void) => void
+}) {
+  let active = false
+  let scheduled = false
+  // The last frame's measurements, which labels are drawn from.
+  let measured: (Box & { since: number; cause: string })[] = []
+  let more = 0
+
+  const render = () => {
+    const at = now()
+    layer.draw(
+      measured.map(({ since, cause, ...box }) => ({
+        ...box,
+        style: "waiting",
+        label: `waiting ${durationText(at - since)}${cause}`,
+      })),
+      more,
+    )
+  }
+  const measure = () => {
+    scheduled = false
+    if (!active) return
+    const all = [...waits()]
+    const shown = all.slice(0, MAX_OUTLINES)
+    more = all.length - shown.length
+    measured = []
+    for (const [id, { since }] of shown) {
+      const box = boxOf(find(id)?.elements ?? [])
+      if (box) measured.push({ ...box, since, cause: causeText(causeFor(id)) })
+    }
+    render()
+  }
+  const changed = () => {
+    if (!active || scheduled) return
+    scheduled = true
+    frame(measure)
+  }
+
+  return {
+    on() {
+      active = true
+      changed()
+    },
+    off() {
+      active = false
+      measured = []
+      more = 0
+      layer.draw([], 0)
+    },
+    changed,
   }
 }
