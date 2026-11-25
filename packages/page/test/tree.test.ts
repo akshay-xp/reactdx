@@ -626,6 +626,29 @@ test("commit visits newly mounted subtrees", async () => {
   expect(new Set(visited).size).toBe(visited.length)
 })
 
+let setOnly: (show: boolean) => void = () => {}
+function OnlyChild() {
+  const [show, set] = React.useState(true)
+  setOnly = set
+  return h("main", null, show && h("p"))
+}
+
+test("a node's last child unmounting is removed", async () => {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() => root.render(h(OnlyChild)))
+  const fiberRoot = fiberRootOf(container)
+  const tree = createTree()
+  const ops: TreeOp[] = []
+  tree.full(fiberRoot, 1, ops)
+  const p = adds(ops).find((op) => op.name === "p")?.id
+  await React.act(() => setOnly(false))
+  const more: TreeOp[] = []
+  tree.commit(fiberRoot, 1, more)
+  expect(more).toEqual([{ op: "remove", id: p }])
+})
+
 // Server Components: Flight sends each one's output wrapped in a lazy whose
 // _debugInfo names it; React 19 copies that chain onto the fibers it creates.
 const react19 = React.version.startsWith("19.")

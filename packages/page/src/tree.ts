@@ -143,9 +143,13 @@ export function createTree({
   }
   const childId = (child: Child) => (isServer(child) ? child.id : idOf(child))
 
-  // A bailed-out fiber keeps its child fibers: nothing below it changed.
+  // A bailed-out fiber keeps its child fibers: nothing below it changed. Not
+  // when both are null: React clears the alternate's child once the last
+  // child unmounts.
   const bailedOut = (fiber: Fiber) =>
-    fiber.alternate !== null && fiber.child === fiber.alternate.child
+    fiber.child !== null &&
+    fiber.alternate !== null &&
+    fiber.child === fiber.alternate.child
 
   // Skipped fibers (fragments, text, modes...) pass their children up. Kids
   // under a skipped fiber that bailed out go in `stale` too: React didn't
