@@ -31,6 +31,9 @@ const textTokens: ColorToken[] = [
   "syntax-key",
   "syntax-string",
   "syntax-number",
+  "server",
+  "client",
+  "waiting",
 ]
 
 describe("themes", () => {
@@ -54,6 +57,9 @@ describe("themes", () => {
       "syntax-string",
       "syntax-number",
       "highlight",
+      "server",
+      "client",
+      "waiting",
     ])
     expect(defaultTheme("light").colors).toEqual({
       bg: "#ffffff",
@@ -69,6 +75,9 @@ describe("themes", () => {
       "syntax-string": "#a8461b",
       "syntax-number": "#6a3fb8",
       highlight: "#fde293",
+      server: "#8430ce",
+      client: "#a04f00",
+      waiting: "#8a5a00",
     })
     expect(defaultTheme("dark").colors).toEqual({
       bg: "#282828",
@@ -84,6 +93,9 @@ describe("themes", () => {
       "syntax-string": "#f2a275",
       "syntax-number": "#b39dff",
       highlight: "#594500",
+      server: "#d7aefb",
+      client: "#f9ab68",
+      waiting: "#fdd663",
     })
   })
 

@@ -15,6 +15,10 @@ export const colorTokens = [
   "syntax-number",
   // Search matches' background (::highlight(reactdx-search)), under fg text.
   "highlight",
+  // M7: Server Component rows, where client code starts, and Suspense waits.
+  "server",
+  "client",
+  "waiting",
 ] as const
 
 export type ColorToken = (typeof colorTokens)[number]
@@ -31,7 +35,8 @@ export type Theme = {
 // cdt-base-container, fg on-surface, muted token-subtle (dark only; the light
 // value fails 4.5:1 on surface), selected tonal-container, error error. The
 // rest are SnapQL's own: border is softer than DevTools' divider, and surface,
-// accent, success and syntax-* have no DevTools counterpart.
+// accent, success and syntax-* have no DevTools counterpart. server, client
+// and waiting are ReactDX's (M7), each at least 4.5:1 on bg and surface.
 export const themes: Theme[] = [
   {
     id: "devtools-light",
@@ -51,6 +56,9 @@ export const themes: Theme[] = [
       "syntax-string": "#a8461b",
       "syntax-number": "#6a3fb8",
       highlight: "#fde293",
+      server: "#8430ce",
+      client: "#a04f00",
+      waiting: "#8a5a00",
     },
   },
   {
@@ -71,6 +79,9 @@ export const themes: Theme[] = [
       "syntax-string": "#f2a275",
       "syntax-number": "#b39dff",
       highlight: "#594500",
+      server: "#d7aefb",
+      client: "#f9ab68",
+      waiting: "#fdd663",
     },
   },
 ]
