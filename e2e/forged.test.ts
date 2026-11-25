@@ -290,6 +290,12 @@ function forgeInspect({ id, valid }: { id: number; valid: boolean }) {
   commits([summary(9001)], { oldest: 0 })
   commits([summary(9001)], { dropped: "yes" })
   commits([{ ...summary(9001), wasted: 2 }])
+  // Arrivals (M7 #81): a bad one drops the whole message.
+  const arrival = { boundary: 1, name: "Forged", waited: 1, awaits: [] }
+  commits([{ ...summary(9001), arrived: [{ ...arrival, boundary: 0 }] }])
+  commits([{ ...summary(9001), arrived: [{ ...arrival, waited: -1 }] }])
+  commits([{ ...summary(9001), arrived: "x" }])
+  commits([{ ...summary(9001), arrived: Array(51).fill(arrival) }])
   const forgedCommitted = (fields: Record<string, unknown>) =>
     post({ source: "reactdx", type: "committed", seq: 1, ...fields })
   forgedCommitted({ renders: Array(2001).fill({ id: 1, kinds: ["state"] }) })
