@@ -433,6 +433,32 @@ export function createTree({
     },
     // The node's fiber as of the last commit.
     fiber: (id: number) => fibers.get(id),
+    // A mounted server node's info, and the _debugInfo array holding it (its
+    // awaits follow it there): on its first fiber, or an ancestor of that fiber
+    // React put it on instead (a keyed Fragment).
+    server(id: number) {
+      const info = servers.get(id)?.info
+      if (!info) return
+      const first = (at: number): Fiber | undefined => {
+        const fiber = fibers.get(at)
+        if (fiber) return fiber
+        for (const child of children.get(at) ?? []) {
+          const found = first(child)
+          if (found) return found
+        }
+      }
+      for (let at = first(id) ?? null; at; at = at.return) {
+        const entries = at._debugInfo
+        if (Array.isArray(entries) && entries.includes(info))
+          return { info, entries: entries as unknown[] }
+      }
+      return { info, entries: [] as unknown[] }
+    },
+    // The mounted server node an info is, if any.
+    serverId(info: object) {
+      const id = serverIds.get(info)
+      return id !== undefined && servers.has(id) ? id : undefined
+    },
     // A node's name and its top-level DOM elements (itself, for a host node).
     // A server node's are its children's, in order.
     find(id: number) {

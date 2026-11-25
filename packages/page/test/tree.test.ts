@@ -852,3 +852,31 @@ test.skipIf(!react19)(
     expect(tree.find(id("Shop"))).toBeUndefined()
   },
 )
+
+test.skipIf(!react19)(
+  "a Server Component node's info and the debug entries holding it",
+  async () => {
+    const shop = serverInfo("Shop")
+    const { tree, id, commit } = await serverTree(
+      h("div", null, server(shop, h("p"))),
+    )
+    const shopId = id("Shop")
+    const p = tree.fiber(id("p")) as { _debugInfo?: unknown }
+    expect(tree.server(shopId)?.info).toBe(shop)
+    expect(tree.server(shopId)?.entries).toBe(p._debugInfo)
+    expect(tree.serverId(shop)).toBe(shopId)
+
+    const cart = serverInfo("Cart")
+    await commit(
+      h("div", null, server(cart, h(React.Fragment, { key: "f" }, h("b")))),
+    )
+    const fragment = (
+      tree.fiber(id("div")) as { child: { _debugInfo?: unknown } }
+    ).child
+    expect(tree.server(tree.serverId(cart) as number)?.entries).toBe(
+      fragment._debugInfo,
+    )
+    expect(tree.server(shopId)).toBeUndefined()
+    expect(tree.serverId(shop)).toBeUndefined()
+  },
+)
