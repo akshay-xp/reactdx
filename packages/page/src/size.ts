@@ -1,4 +1,4 @@
-export type Size = { bytes: number; over?: true }
+import type { Size } from "@reactdx/messages"
 
 // How much JSON a value would be (docs/page.md, Sizes), without running app
 // code: getters and toJSON (but Date's) aren't called. Counting stops, `over`,

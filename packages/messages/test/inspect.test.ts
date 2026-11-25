@@ -688,3 +688,61 @@ test("a summary says how many renders were wasted and what changed", () => {
     parseCommits(list([{ ...summary, change: { hook: -1, old: 1, new: 2 } }])),
   ).toBeUndefined()
 })
+
+test("a Server Component's details and the props one passed, with sizes", () => {
+  const server = {
+    awaits: [{ name: "getProduct", start: 95.7, end: 397.2 }],
+    rendered: [
+      { id: 4, name: "AddToCart", bytes: 14643 },
+      { id: 5, name: "Huge", bytes: 1048576, over: true },
+    ],
+  }
+  const fromServer = {
+    owner: { id: 2, name: "ProductDetails" },
+    props: [
+      {
+        key: "product",
+        bytes: 14643,
+        fields: [
+          { key: "specs", bytes: 14233 },
+          { key: "name", bytes: 12 },
+          { key: "id", bytes: 6 },
+        ],
+      },
+      { key: "price", bytes: 2 },
+    ],
+  }
+  const data = { props: 1, server, fromServer }
+  expect(parseInspected(inspected(3, data as never))?.data).toEqual(data)
+  const field = { key: "f", bytes: 1 }
+  const prop = (extra: object) => ({
+    props: 1,
+    fromServer: { ...fromServer, props: [{ key: "p", bytes: 1, ...extra }] },
+  })
+  const awaited = (extra: object) => ({
+    props: 1,
+    server: { ...server, awaits: [{ name: "a", start: 1, end: 2, ...extra }] },
+  })
+  for (const bad of [
+    prop({ bytes: -1 }),
+    prop({ over: false }),
+    prop({ fields: [field, field, field, field] }),
+    prop({ key: "k".repeat(257) }),
+    awaited({ end: 0 }),
+    awaited({ start: -1, end: 2 }),
+    awaited({ name: "n".repeat(257) }),
+    {
+      props: 1,
+      server: { ...server, awaits: Array(51).fill(server.awaits[0]) },
+    },
+    {
+      props: 1,
+      server: { ...server, rendered: [{ id: 0, name: "A", bytes: 1 }] },
+    },
+    { props: 1, fromServer: { ...fromServer, owner: { id: 0, name: "P" } } },
+  ])
+    expect(
+      parseInspected(inspected(3, bad as never)),
+      JSON.stringify(bad),
+    ).toBeUndefined()
+})

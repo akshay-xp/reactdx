@@ -109,6 +109,10 @@ export type InspectedData = {
   render?: RenderReason
   // The commits (seqs) of the node's recorded renders, oldest first (M6 #66).
   history?: number[]
+  // A Server Component (M7 #79).
+  server?: ServerDetails
+  // A component a Server Component rendered (M7 #79).
+  fromServer?: FromServer
 }
 // Commits per `commits` message, and seqs per node's history.
 export const MAX_HISTORY = 100
@@ -174,6 +178,29 @@ export const MAX_CHANGES = 1000
 // node, by tree id, and whether the panel forced each (M5 #56).
 export type Boundary = { id: number; on: boolean }
 export type Boundaries = { fallback?: Boundary; error?: Boundary }
+
+// A value's JSON length, measured on the page; `over` once measuring stopped
+// at its caps (docs/page.md, Sizes).
+export type Size = { bytes: number; over?: true }
+// What a Server Component awaited (named by the await's call site), on the
+// page's performance clock, and the client components it rendered (M7 #79).
+export type ServerAwait = { name: string; start: number; end: number }
+export type RenderedClient = Size & { id: number; name: string }
+export type ServerDetails = {
+  awaits: ServerAwait[]
+  rendered: RenderedClient[]
+}
+// The props a Server Component passed a client component: each one's size,
+// and a big one's largest fields.
+export type PropSize = Size & {
+  key: string
+  fields?: (Size & { key: string })[]
+}
+export type FromServer = { owner: Owner; props: PropSize[] }
+export const MAX_AWAITS = 50
+export const MAX_RENDERED = 200
+export const MAX_PROP_SIZES = 100
+export const MAX_FIELDS = 3
 
 const MAX_CONTEXTS = 50
 export const MAX_OWNERS = 50
@@ -678,6 +705,8 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     boundaries,
     render,
     history,
+    server,
+    fromServer,
   } = message.data as Record<string, unknown>
   const budget = { left: MAX_VALUES }
   const parsed: InspectedData = { props: null }
@@ -740,6 +769,16 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     )
       return
     parsed.history = [...history]
+  }
+  if (server !== undefined) {
+    const details = parseServer(server)
+    if (!details) return
+    parsed.server = details
+  }
+  if (fromServer !== undefined) {
+    const from = parseFromServer(fromServer)
+    if (!from) return
+    parsed.fromServer = from
   }
   return inspected(message.id, parsed)
 }
@@ -904,6 +943,54 @@ function parseBoundaries(data: unknown): Boundaries | undefined {
     out[kind] = { id, on }
   }
   return out
+}
+
+const isTime = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+
+// A Size and `extra` from the same object, or undefined.
+function parseSize<T extends object>(
+  item: Record<string, unknown>,
+  extra: T | undefined,
+): (Size & T) | undefined {
+  const { bytes, over } = item
+  if (!extra || !isCount(bytes) || (over !== undefined && over !== true)) return
+  return over ? { ...extra, bytes, over } : { ...extra, bytes }
+}
+
+function parseServer(data: unknown): ServerDetails | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { awaits, rendered } = data as Record<string, unknown>
+  const waits = parseList(awaits, MAX_AWAITS, ({ name, start, end }) =>
+    isName(name) && isTime(start) && isTime(end) && end >= start
+      ? { name, start, end }
+      : undefined,
+  )
+  const clients = parseList(rendered, MAX_RENDERED, (item) =>
+    parseSize(
+      item,
+      isId(item.id) && isName(item.name)
+        ? { id: item.id, name: item.name }
+        : undefined,
+    ),
+  )
+  if (waits && clients) return { awaits: waits, rendered: clients }
+}
+
+function parseFromServer(data: unknown): FromServer | undefined {
+  if (typeof data !== "object" || data === null) return
+  const { owner, props } = data as Record<string, unknown>
+  const { id, name } = (owner ?? {}) as Record<string, unknown>
+  if (!isName(name) || (id !== null && !isId(id))) return
+  const keyed = (item: Record<string, unknown>) =>
+    parseSize(item, isName(item.key) ? { key: item.key } : undefined)
+  const sizes = parseList(props, MAX_PROP_SIZES, (item) => {
+    const size = keyed(item)
+    if (!size || item.fields === undefined) return size
+    const fields = parseList(item.fields, MAX_FIELDS, keyed)
+    return fields && { ...size, fields }
+  })
+  if (sizes) return { owner: { id, name }, props: sizes }
 }
 
 function parseSource(data: unknown): SourceRef | undefined {
