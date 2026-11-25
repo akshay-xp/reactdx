@@ -71,6 +71,19 @@ for (const [script, port, version] of [
       await page.close()
     })
 
+    test("serves the suspense page: a thrown promise and a lazy component, each waiting", async () => {
+      const page = await browser.newPage()
+      const errors: string[] = []
+      page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
+      await page.goto(`http://localhost:${port}/suspense.html`)
+      await page.waitForSelector("[data-testid=comments-fallback]")
+      await page.waitForSelector("[data-testid=details-fallback]")
+      await page.waitForSelector("[data-testid=details]", { timeout: 3000 })
+      await page.waitForSelector("[data-testid=comments]", { timeout: 6000 })
+      assert.deepEqual(errors, [])
+      await page.close()
+    })
+
     test("serves the insight page: a button per render reason", async () => {
       const page = await browser.newPage()
       const errors: string[] = []
@@ -165,6 +178,23 @@ describe("fixture:next", () => {
     )
     assert.match(await text(page, "[data-testid=react-version]"), /^19\./)
     await expectCounter(page, "body")
+    await page.close()
+  })
+
+  test("Slow shop navigates client-side to a boundary that waits", async () => {
+    const page = await browser.newPage()
+    await page.goto("http://localhost:5220")
+    await page.waitForSelector("[data-testid=react-version]")
+    await page.evaluate(() => {
+      ;(window as { stayed?: boolean }).stayed = true
+    })
+    await page.click("a[href='/shop/slow']")
+    await page.waitForSelector("[data-testid=reviews-fallback]")
+    await page.waitForSelector("[data-testid=reviews]", { timeout: 10_000 })
+    assert.equal(
+      await page.evaluate(() => (window as { stayed?: boolean }).stayed),
+      true,
+    )
     await page.close()
   })
 

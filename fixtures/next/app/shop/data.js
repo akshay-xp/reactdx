@@ -15,8 +15,8 @@ export async function getProduct(id) {
   }
 }
 
-export async function getReviews() {
-  await sleep(1200)
+export async function getReviews(_id, wait = 1200) {
+  await sleep(wait)
   return ["Great grip", "Runs small"]
 }
 
