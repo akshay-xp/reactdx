@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from "vitest"
 import {
   boxOf,
   createOutlineLayer,
+  createScheduler,
   createSuspenseOutlines,
   type Outline,
 } from "../src/outlines.ts"
@@ -287,4 +288,35 @@ test("scrolls and resizes measure again once per frame; labels count up without 
   } finally {
     vi.useRealTimers()
   }
+})
+
+test("the scheduler measures once per frame after changes, scrolls and resizes, while started", () => {
+  const frames: (() => void)[] = []
+  const target = new EventTarget()
+  let measured = 0
+  const scheduler = createScheduler({
+    target,
+    frame: (callback) => frames.push(callback),
+    measure: () => measured++,
+  })
+  const run = () => {
+    for (const callback of frames.splice(0)) callback()
+  }
+  scheduler.changed()
+  expect(frames).toHaveLength(0)
+  scheduler.start()
+  scheduler.changed()
+  scheduler.changed()
+  target.dispatchEvent(new Event("scroll"))
+  target.dispatchEvent(new Event("resize"))
+  expect(frames).toHaveLength(1)
+  run()
+  expect(measured).toBe(1)
+  scheduler.changed()
+  scheduler.stop()
+  run()
+  expect(measured).toBe(1)
+  scheduler.changed()
+  target.dispatchEvent(new Event("scroll"))
+  expect(frames).toHaveLength(0)
 })

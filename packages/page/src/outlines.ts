@@ -81,6 +81,45 @@ const TICK_MS = 100
 // Scroll doesn't bubble: capturing on the window hears every scroller.
 const LISTEN = { capture: true, passive: true }
 
+// When to measure: on the next frame after a change (one frame per burst), a
+// scroll or a resize, never inside React's commit (docs/m7-findings.md, spike
+// 2), and only while started.
+export function createScheduler({
+  target,
+  frame,
+  measure,
+}: {
+  target: EventTarget
+  frame: (callback: () => void) => void
+  measure: () => void
+}) {
+  let active = false
+  let scheduled = false
+  const run = () => {
+    scheduled = false
+    if (active) measure()
+  }
+  const changed = () => {
+    if (!active || scheduled) return
+    scheduled = true
+    frame(run)
+  }
+  return {
+    active: () => active,
+    start() {
+      active = true
+      target.addEventListener("scroll", changed, LISTEN)
+      target.addEventListener("resize", changed)
+    },
+    stop() {
+      active = false
+      target.removeEventListener("scroll", changed, LISTEN)
+      target.removeEventListener("resize", changed)
+    },
+    changed,
+  }
+}
+
 // What a waiting boundary's label says it waits on, when that's known.
 const causeText = (cause: SuspenseCause | undefined) =>
   cause?.kind === "server"
@@ -91,8 +130,7 @@ const causeText = (cause: SuspenseCause | undefined) =>
         ? ` · in ${cause.name}`
         : ""
 
-// Which boundaries to outline, and when to measure them: on the next frame
-// after a change, never inside React's commit (docs/m7-findings.md, spike 2).
+// Which boundaries to outline, measured as `createScheduler` says.
 export function createSuspenseOutlines({
   layer,
   target,
@@ -110,8 +148,6 @@ export function createSuspenseOutlines({
   now: () => number
   frame: (callback: () => void) => void
 }) {
-  let active = false
-  let scheduled = false
   // Boundaries that just arrived, by id: how long they waited, and the timer
   // that drops them.
   const arrivals = new Map<number, { ms: number; timer: number }>()
@@ -140,8 +176,6 @@ export function createSuspenseOutlines({
     )
   }
   const measure = () => {
-    scheduled = false
-    if (!active) return
     const all = [
       ...[...waits()].map(([id, { since }]) => ({
         id,
@@ -168,23 +202,16 @@ export function createSuspenseOutlines({
     if (!measured.some((outline) => outline.style === "waiting")) stopTick()
     else tick ??= setInterval(render, TICK_MS)
   }
-  const changed = () => {
-    if (!active || scheduled) return
-    scheduled = true
-    frame(measure)
-  }
+  const scheduler = createScheduler({ target, frame, measure })
+  const { changed } = scheduler
 
   return {
     on() {
-      active = true
-      target.addEventListener("scroll", changed, LISTEN)
-      target.addEventListener("resize", changed)
+      scheduler.start()
       changed()
     },
     off() {
-      active = false
-      target.removeEventListener("scroll", changed, LISTEN)
-      target.removeEventListener("resize", changed)
+      scheduler.stop()
       stopTick()
       for (const { timer } of arrivals.values()) clearTimeout(timer)
       arrivals.clear()
@@ -195,7 +222,7 @@ export function createSuspenseOutlines({
     changed,
     // A waiting boundary's content arrived, after `ms`: outlined for 2 s.
     arrived(id: number, ms: number) {
-      if (!active) return
+      if (!scheduler.active()) return
       clearTimeout(arrivals.get(id)?.timer)
       const timer = setTimeout(() => {
         arrivals.delete(id)
