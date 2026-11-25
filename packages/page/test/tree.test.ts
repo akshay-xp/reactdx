@@ -792,3 +792,17 @@ test.skipIf(!react19)(
     ])
   },
 )
+
+test.skipIf(!react19)(
+  "a Server Component leaves with its output and comes back with its id",
+  async () => {
+    const shop = server(serverInfo("Shop"), h("p"))
+    const page = (show: boolean) => h("main", null, show && shop)
+    const { id, commit, forgot } = await serverTree(page(true))
+    const shopId = id("Shop")
+    expect(await commit(page(false))).toEqual([{ op: "remove", id: shopId }])
+    expect(forgot).toEqual(expect.arrayContaining([shopId, id("p")]))
+    const back = adds(await commit(page(true)))
+    expect(back.find((op) => op.name === "Shop")?.id).toBe(shopId)
+  },
+)
