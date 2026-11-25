@@ -490,3 +490,45 @@ test("an update walks the tree once: no throwaway copies of the tabs", () => {
   tree.receiveCounts(countsMessage([{ id: 2, renders: 1, wasted: 0 }]))
   expect(walks).toBe(1)
 })
+
+test("a Next root's hidden internals are counted under the trees, with a toggle", () => {
+  const listed = (names: string[]) => {
+    const tree = createTreeStore()
+    tree.apply(
+      treeBatch(1, [
+        { op: "reset" },
+        ...names.map((name, i) => ({
+          op: "add" as const,
+          id: i + 1,
+          parentId: i,
+          rootId: 1,
+          kind: "function" as const,
+          name,
+          key: null,
+          index: 0,
+        })),
+      ]),
+    )
+    const { container, unmount } = render(() => (
+      <ConnectionList
+        tree={tree}
+        inspector={inspection()}
+        sources={sources}
+        settings={settings}
+        renderers={[copy(1, "19.3.1", 1, [{ id: 1, commits: 1 }])]}
+      />
+    ))
+    return { tree, container, unmount }
+  }
+  const next = listed(["AppRouter", "Router", "Page"])
+  expect(screen.getByText("2 Next.js components hidden")).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: "Show" }))
+  expect(next.tree.showInternals()).toBe(true)
+  expect(screen.getByText("2 Next.js components shown")).toBeTruthy()
+  fireEvent.click(screen.getByRole("button", { name: "Hide" }))
+  expect(next.tree.showInternals()).toBe(false)
+  next.unmount()
+
+  const plain = listed(["App", "Router"])
+  expect(plain.container.textContent).not.toContain("Next.js")
+})

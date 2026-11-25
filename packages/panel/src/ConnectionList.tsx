@@ -88,6 +88,22 @@ export function ConnectionList(props: {
         </div>
         <p class="border-border border-t px-2 leading-6 text-muted">
           Numbers: renders since DevTools opened
+          <Show when={props.tree.hiddenCount() > 0}>
+            {" · "}
+            <span data-testid="hidden-count">
+              {props.tree.hiddenCount()} Next.js components{" "}
+              {props.tree.showInternals() ? "shown" : "hidden"}
+            </span>{" "}
+            <button
+              type="button"
+              class="cursor-pointer text-accent hover:underline"
+              onClick={() =>
+                props.tree.setShowInternals(!props.tree.showInternals())
+              }
+            >
+              {props.tree.showInternals() ? "Hide" : "Show"}
+            </button>
+          </Show>
         </p>
       </div>
       <aside
