@@ -320,3 +320,35 @@ test("the scheduler measures once per frame after changes, scrolls and resizes, 
   target.dispatchEvent(new Event("scroll"))
   expect(frames).toHaveLength(0)
 })
+
+test("the layer lights islands, dashes wrappers, dims the rest and shows a summary", () => {
+  const layer = createOutlineLayer(document)
+  const island: Outline = { ...outline("waiting"), style: "island" }
+  const wrapper: Outline = {
+    left: 0,
+    top: 0,
+    width: 100,
+    height: 100,
+    label: "ThemeProvider",
+    style: "wrapper",
+  }
+  layer.draw([island, wrapper], 0, {
+    dim: true,
+    summary: "2 client islands · 1.0 KB of props",
+  })
+  const root = roots.at(-1) as ShadowRoot
+  const drawn = [...root.querySelectorAll<HTMLElement>("[data-outline]")]
+  expect(drawn.map((el) => el.dataset.style)).toEqual(["island", "wrapper"])
+  expect(drawn[1]?.style.outline).toContain("dashed")
+  const path = root.querySelector("[data-dim] path")
+  expect(path).not.toBeNull()
+  expect(path?.getAttribute("fill-rule")).toBe("evenodd")
+  expect(path?.getAttribute("d")?.match(/M/g)).toHaveLength(2)
+  expect(root.querySelector("[data-summary]")?.textContent).toBe(
+    "2 client islands · 1.0 KB of props",
+  )
+  layer.draw([island], 0)
+  expect(root.querySelector("[data-dim]")).toBeNull()
+  expect(root.querySelector("[data-summary]")).toBeNull()
+  layer.draw([], 0)
+})

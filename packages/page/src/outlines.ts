@@ -4,7 +4,7 @@ import { durationText, type SuspenseCause } from "@reactdx/messages"
 
 export type Outline = Box & {
   label: string
-  style: "waiting" | "arrived"
+  style: "waiting" | "arrived" | "island" | "wrapper"
 }
 
 type Box = { left: number; top: number; width: number; height: number }
@@ -28,9 +28,15 @@ export function boxOf(elements: Element[]): Box | undefined {
   return { left, top, width: right - left, height: bottom - top }
 }
 
-// The panel theme's light values (waiting, success): the page doesn't know
-// the panel's theme.
-const COLORS = { waiting: "#8a5a00", arrived: "#188038" }
+// The panel theme's light values (waiting, success, client): the page doesn't
+// know the panel's theme.
+const COLORS = {
+  waiting: "#8a5a00",
+  arrived: "#188038",
+  island: "#a04f00",
+  wrapper: "#a04f00",
+}
+const SVG = "http://www.w3.org/2000/svg"
 
 // Its own host beside the hover overlay's, so a hover doesn't wipe them; the
 // same closed shadow root and click-through host.
@@ -44,8 +50,43 @@ export function createOutlineLayer(doc: Document) {
     return el
   }
 
+  // The viewport with a hole per island (evenodd), shaded.
+  const dim = (outlines: Outline[]) => {
+    const svg = doc.createElementNS(SVG, "svg")
+    svg.dataset.dim = ""
+    svg.setAttribute(
+      "style",
+      "position: absolute; inset: 0; width: 100%; height: 100%",
+    )
+    const path = doc.createElementNS(SVG, "path")
+    const rect = ({ left, top, width, height }: Box) =>
+      `M${left} ${top}h${width}v${height}h${-width}z`
+    const view = doc.defaultView
+    path.setAttribute(
+      "d",
+      [
+        rect({
+          left: 0,
+          top: 0,
+          width: view?.innerWidth ?? 0,
+          height: view?.innerHeight ?? 0,
+        }),
+        ...outlines.filter((o) => o.style === "island").map(rect),
+      ].join(""),
+    )
+    path.setAttribute("fill-rule", "evenodd")
+    path.setAttribute("fill", "rgba(0, 0, 0, 0.4)")
+    svg.append(path)
+    return svg
+  }
+
   return {
-    draw(outlines: Outline[], more: number) {
+    // `dim`: shade the page but the islands; `summary`: a note at the top right.
+    draw(
+      outlines: Outline[],
+      more: number,
+      extra: { dim?: boolean; summary?: string } = {},
+    ) {
       if (outlines.length === 0) return host?.remove()
       if (!host || !root) {
         host = doc.createElement("div")
@@ -53,22 +94,32 @@ export function createOutlineLayer(doc: Document) {
           "position: fixed; inset: 0; pointer-events: none; z-index: 2147483647"
         root = host.attachShadow({ mode: "closed" })
       }
-      const boxes = outlines.map(({ left, top, width, height, ...rest }) => {
-        const color = COLORS[rest.style]
-        const box = doc.createElement("div")
-        box.dataset.outline = ""
-        box.dataset.style = rest.style
-        // An outline, not a border: the box's rectangle stays the element's.
-        box.style.cssText = `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; outline: 2px solid ${color}`
-        box.append(label(rest.label, color))
-        return box
-      })
+      const boxes: Element[] = outlines.map(
+        ({ left, top, width, height, ...rest }) => {
+          const color = COLORS[rest.style]
+          const box = doc.createElement("div")
+          box.dataset.outline = ""
+          box.dataset.style = rest.style
+          // An outline, not a border: the box's rectangle stays the element's.
+          const line = rest.style === "wrapper" ? "dashed" : "solid"
+          box.style.cssText = `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; outline: 2px ${line} ${color}`
+          box.append(label(rest.label, color))
+          return box
+        },
+      )
       if (more > 0) {
         const note = label(`${more} more outlines`, COLORS.waiting)
         note.dataset.more = ""
         note.style.inset = "auto 0 0 auto"
         boxes.push(note)
       }
+      if (extra.summary) {
+        const note = label(extra.summary, COLORS.island)
+        note.dataset.summary = ""
+        note.style.inset = "0 0 auto auto"
+        boxes.push(note)
+      }
+      if (extra.dim) boxes.unshift(dim(outlines))
       root.replaceChildren(...boxes)
       if (!host.isConnected) doc.documentElement.append(host)
     },
