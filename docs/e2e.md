@@ -17,6 +17,14 @@ Both browsers run **headed** (DevTools, and so the devtools page, doesn't exist 
 - Chrome for Testing 157.0.8103.50 (Puppeteer's pinned Chrome): `enableExtensions: [.output/chrome-mv3]`, `devtools: true`, `pipe: true`.
 - Firefox `stable_159.0.1` (Puppeteer's pinned Firefox; Puppeteer drives only that build): `-devtools`, then `browser.installExtension(.output/firefox-mv3)` over WebDriver BiDi. `.puppeteerrc.cjs` sets `firefox.skipDownload: false` so `pnpm install` downloads it.
 
+## Flakes found and fixed (#68)
+
+Each was traced by logging, not retried around:
+
+- **Firefox, an edit reopened the previous row's editor** (`no editor for label: "Count"`). A focus log inside the panel (published through an accessible's name, since the panel runs in another process) showed focus never reaching the label row: Firefox runs the open editor's blur, which removes it, before focus lands, and `keyboardRows` restored focus to the edited row. Fixed in the panel (`docs/panel.md`, Keyboard): a real keyboard bug too.
+- **Firefox, Show fallback did nothing on the first press.** Recording the page's commands showed no `force` sent, and `inspect` for the last row, then the wanted one. `selectListed` pressed End (which selects the last row) even with the row listed, and Firefox could deliver it after the select, replacing the Inspector under the press. End is pressed only while the row isn't listed.
+- **Chrome, `Node is either not clickable or not an Element`** from `select`: finding a row and clicking it were separate round trips, and a batch could replace the row in between (2 of 20 instrumented runs caught it detached). `select` finds and clicks in one `frame.evaluate`; the tree selects on a click anywhere in the row.
+
 ## What's checked
 
 | Check                                                                       | Chrome                                                                      | Firefox        |
