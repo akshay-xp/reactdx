@@ -302,11 +302,23 @@ export function createTree({
     rootId: number,
     ops: TreeOp[],
   ) => {
-    const prev = children.get(key)
-    if (prev && bailedOut(fiber)) return
+    if (children.has(key) && bailedOut(fiber)) return
     const stale = new Set<Fiber>()
-    const kids = visible(fiber, [], stale)
-    const next = kids.map(idOf)
+    reconcile(kidsOf(fiber, stale), stale, key, parentId, rootId, ops)
+  }
+
+  // A server node's kids come from its parent fiber's walk, so it reconciles
+  // them here rather than through a fiber of its own.
+  const reconcile = (
+    kids: Child[],
+    stale: Set<Fiber>,
+    key: number,
+    parentId: number,
+    rootId: number,
+    ops: TreeOp[],
+  ) => {
+    const prev = children.get(key)
+    const next = kids.map(childId)
     // The same children in the same order (a parent of 10,000 cells, one of
     // them updated): no removes, adds or reorder to work out.
     const same =
@@ -323,6 +335,10 @@ export function createTree({
     kids.forEach((kid, index) => {
       const id = next[index] as number
       if (same || known?.has(id)) {
+        if (isServer(kid)) {
+          reconcile(kid.kids, stale, id, id, rootId, ops)
+          return
+        }
         fibers.set(id, kid)
         const name = label(kid)
         if (name !== names.get(id)) {

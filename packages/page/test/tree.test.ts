@@ -743,3 +743,29 @@ test.skipIf(!react19)(
     ])
   },
 )
+
+let setServerCount: (n: number) => void = () => {}
+function ServerCounter() {
+  const [n, set] = React.useState(0)
+  setServerCount = set
+  return h("b", null, n)
+}
+
+test.skipIf(!react19)(
+  "a client re-render under a Server Component keeps its node",
+  async () => {
+    const { view, fiberRoot, tree } = await serverTree(
+      server(serverInfo("Shop"), h(ServerCounter)),
+    )
+    await React.act(() => setServerCount(1))
+    const ops: TreeOp[] = []
+    tree.commit(fiberRoot, 1, ops)
+    expect(ops).toEqual([])
+    view.apply(ops)
+    expect(view.outline()).toEqual([
+      "Shop server",
+      "  ServerCounter function",
+      "    b host",
+    ])
+  },
+)
