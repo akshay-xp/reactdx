@@ -63,6 +63,16 @@ The agent tracks the component tree only between `WATCH` and `UNWATCH` message e
 - `hide()`: removes the host. Page elements' styles and layout are never touched (`e2e/highlight.test.ts` compares every computed style).
 - Not repositioned on scroll or resize while shown.
 
+## Outlines (`src/outlines.ts`; M7 #82)
+
+Suspense outlines on the page, off until the panel's `outlines { on }` command (`unwatch` turns them off). Cost rules from `docs/m7-findings.md`, spike 2.
+
+- `createOutlineLayer(doc).draw(outlines, more)`: its own host beside the hover overlay's (a hover doesn't wipe them), the same fixed, click-through, closed-shadow host on `documentElement`. Each `Outline` `{ left, top, width, height, label, style }` is a `[data-outline]` div (`data-style` `waiting` or `arrived`) with a 2px `outline` (not a border, so its rect is the element's) and its label above it; `more` > 0 adds `[data-more]` "N more outlines". `draw([], 0)` removes the host. Colors are the panel theme's light values (the page doesn't know the panel's theme): waiting `#8a5a00`, arrived (`success`) `#188038`, white label text.
+- `boxOf(elements)`: one rectangle per component, the union of its top elements' rects (`tree.find(id).elements`), skipping empty ones (`display: none`); undefined when none.
+- `createSuspenseOutlines({ layer, target, waits, find, causeFor, now, frame })` `{ on, off, changed, arrived }`: measures on the next animation frame after `changed()` (one frame per burst), never inside the commit hook: the agent's commit listener only calls `changed()`. `on()` adds a capture, passive `scroll` listener (every scroller) and `resize` on the window, both calling `changed()`. Each frame measures at most 100 (`MAX_OUTLINES`) of the tree's waits (`tree.waits()`), then the arrivals, and counts the rest as `more`. Labels: "waiting 1.2s" (`durationText`) plus the cause (`causeOf` with React 18's record): " · Reviews (server)", " · thrown by Comments", " · in Comments" (React 19's child element); a lazy or promise adds nothing. `arrived(id, ms)` (from `onArrive`): "arrived in 840 ms" in the arrived style for 2 s, then gone. While a waiting outline shows, a 100 ms interval redraws the labels from the last frame's boxes without measuring.
+- A dehydrated boundary (streamed, not hydrated) has no child fibers: `tree.find` gives its server HTML, the elements between its `<!--$?-->` (or `$`, `$!`) comment (`memoizedState.dehydrated`) and the matching `<!--/$-->`, nested markers counted. The hover highlight gets them too.
+- Not done: a layout shift with no commit, scroll or resize (no `ResizeObserver`), which spike 2 left untested.
+
 ## Picker (`src/agent.ts`; M3 #29)
 
 - `tree.owner(element)`: walks DOM parents to the first element with a `__reactFiber$…` key, then `fiber.return` to the nearest fiber with a kind that isn't `host`, whose id the tree still has (mounted and emitted). So a pick is always a component, with a row even when DOM elements are hidden. `undefined` outside React.
@@ -156,6 +166,7 @@ One file per React scenario, because react-dom registers with the hook only once
 - `test/rdt-first.test.ts`: an RDT-like hook defined first with a getter.
 - `test/define-later.test.ts`: a hook defined with `defineProperty` after ours.
 - `test/assign-later.test.ts`: a hook set by plain assignment after ours.
+- `test/outlines.test.ts` (M7 #82): the layer, `boxOf`, and the controller over a fake layer and frame queue (labels, the 100 cap, arrivals for 2 s, scroll and resize, the label tick). `test/suspense.test.ts` drives the agent: the command, a wait, its arrival, unwatch.
 - `test/tree.test.ts`: kinds and names, watch/unwatch, splitting, mounts, unmounts, reorders, renames and Suspense (fake timers drive the flush). `test/tree-mirror.ts` applies ops like the panel and prints an outline.
 - `test/inspect.test.ts`, `test/inspect-agent.test.ts`: values and inspection (above). `test/context.test.ts`: contexts (React 19's `use` too), re-send on a context change, owners. `test/source.test.ts`: stack formats, React 18 `__source` and React 19 stacks (a marker Error on the element's line). `test/inspecting.ts`: the shared hook, agent and root for the inspection tests.
 - `test/agent.test.ts`: the agent's first snapshot, 100 ms batching, `get-snapshot`, unmount, a second start (fake timers).

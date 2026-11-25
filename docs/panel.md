@@ -127,7 +127,8 @@ Laid out like SnapQL's search bar (`~/Code/snapql/apps/extension/src/panel/searc
 - Search field: a rounded `bg-surface` label filling the bar (search icon, accent focus ring) around the input (`[data-testid=search]`, `aria-label="Search components"`, bound to `query()`, native cancel button hidden): input sets the query; Enter steps to the next match, Shift+Enter to the previous.
 - Inside the field, only while there's a query: the counter (`[data-testid=search-count]`, `<position> of <matches>`: "1 of 3" after typing, "0 of 0" with no matches) and a `Clear search` icon button.
 - `Show DOM elements` icon button (`[data-testid=show-dom]`, `</>` icon, the name as `aria-label` and `title`, `aria-pressed`, accent when on): `setShowHosts`. An icon rather than a labelled pill, so the search field keeps the bar's width.
-- `test/Toolbar.test.tsx`: counter, Enter and Shift+Enter, no matches, clearing, the DOM toggle, the picker button.
+- `Outline Suspense on the page` icon button (M7 #82, `[data-testid=outlines]`, dashed rectangle, `aria-pressed` from `tree.outlines()`, off by default): `setOutlines`. `main.tsx` posts `OutlinesMessage { on }` on each change, and `on: true` again on a batch starting with `reset` while pressed: a new document's agent (a reload) starts with outlines off. Closing the panel unwatches, which turns them off on the page.
+- `test/Toolbar.test.tsx`: counter, Enter and Shift+Enter, no matches, clearing, the DOM toggle, the picker button, the outlines toggle.
 
 ## Themes (`src/themes.ts`, `src/index.css`)
 
