@@ -172,3 +172,17 @@ test.skipIf(!react19)(
     expect(plain).not.toHaveProperty("fromServer")
   },
 )
+
+test.skipIf(!react19)(
+  "a Suspense boundary a Server Component rendered has no props from the server",
+  async () => {
+    const data = await inspect(
+      server(
+        product,
+        ownedBy(product, React.Suspense, { fallback: null, children: "x" }),
+      ),
+      "Suspense",
+    )
+    expect(data).not.toHaveProperty("fromServer")
+  },
+)

@@ -67,6 +67,8 @@ import { causeOf, createSuspended, waitOf } from "./suspense.ts"
 import { createTree, type Fiber } from "./tree.ts"
 
 const AGENT = Symbol.for("reactdx.agent")
+// Function, class, forwardRef and memo components (a lazy one resolves to these).
+const COMPONENT_TAGS = new Set([0, 1, 11, 14, 15])
 const THROTTLE_MS = 100
 
 // The nearest provider of `context` above the fiber (ContextProvider, tag 10):
@@ -410,7 +412,8 @@ export function startAgent(
     if (fiber.tag === 1 && state != null) data.state = serialize(state) as Value
     data.owners = ownersOf(fiber)
     // Rendered by a Server Component: its props came from the server.
-    const from = serverOwner(fiber._debugOwner)
+    // Only a component's props are passed to code (a Suspense's aren't).
+    const from = COMPONENT_TAGS.has(fiber.tag) && serverOwner(fiber._debugOwner)
     if (from)
       data.fromServer = { owner: from, props: propSizes(fiber.memoizedProps) }
     const source = sourceOf(fiber)
