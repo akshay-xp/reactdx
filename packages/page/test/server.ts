@@ -6,12 +6,17 @@ const h = React.createElement
 // _debugInfo names it; React 19 copies that chain onto the fibers it creates.
 export const react19 = React.version.startsWith("19.")
 
-export const serverInfo = (name: string, key: string | null = null) => ({
+export const serverInfo = (
+  name: string,
+  key: string | null = null,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> => ({
   name,
   env: "Server",
   key,
   owner: null,
   props: {},
+  ...extra,
 })
 
 export const server = (

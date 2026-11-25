@@ -58,6 +58,7 @@ import {
 import { contextsOf, createRecorder, type RenderRecord } from "./insight.ts"
 import { copyText, createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
+import { awaitsOf, renderedAt } from "./server.ts"
 import { sourceOf } from "./source.ts"
 import { createTree, type Fiber } from "./tree.ts"
 
@@ -287,9 +288,10 @@ export function startAgent(
   }
   // Who rendered the fiber, nearest first: tree nodes by id, Server Components
   // (React 19 ReactComponentInfo, not in the tree) by name.
-  const ownersOf = (fiber: Fiber) => {
+  const ownersOf = (fiber: Fiber) => ownersFrom(fiber._debugOwner)
+  const ownersFrom = (first: unknown) => {
     const owners: Owner[] = []
-    let owner = fiber._debugOwner as Record<string, unknown> | null | undefined
+    let owner = first as Record<string, unknown> | null | undefined
     for (let i = 0; owner && i < MAX_OWNERS; i++) {
       if (typeof owner.tag === "number") {
         const node = tree.known(owner as unknown as Fiber)
@@ -297,13 +299,39 @@ export function startAgent(
         owner = owner._debugOwner as typeof owner
       } else {
         if (typeof owner.name === "string")
-          owners.push({ id: null, name: owner.name.slice(0, MAX_TREE_STRING) })
+          owners.push({
+            id: tree.serverId(owner) ?? null,
+            name: owner.name.slice(0, MAX_TREE_STRING),
+          })
         owner = owner.owner as typeof owner
       }
     }
     return owners
   }
+  // A Server Component: what the server sent about it. Nothing to edit or read
+  // from hooks; its props are the server's.
+  const describeServer = (
+    info: Record<string, unknown>,
+    entries: unknown[],
+  ) => {
+    if (!selected) return null
+    selected.sent = { props: info, state: undefined, contexts: [] }
+    const data: InspectedData = {
+      props: selected.values.serialize(info.props ?? {}) as Value,
+      owners: ownersFrom(info.owner),
+    }
+    const source = renderedAt(info)
+    if (source) data.source = source
+    data.server = { awaits: awaitsOf(info, entries), rendered: [] }
+    return data
+  }
   const describe = (id: number): InspectedData | null => {
+    const found = tree.server(id)
+    if (found)
+      return describeServer(
+        found.info as Record<string, unknown>,
+        found.entries,
+      )
     const fiber = tree.fiber(id)
     if (!fiber || !selected) return null
     const contexts = contextsOf(fiber)
