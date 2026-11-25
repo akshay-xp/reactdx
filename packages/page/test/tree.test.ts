@@ -625,3 +625,76 @@ test("commit visits newly mounted subtrees", async () => {
   expect(visited).toContain(id("VisitAddedChild"))
   expect(new Set(visited).size).toBe(visited.length)
 })
+
+// Server Components: Flight sends each one's output wrapped in a lazy whose
+// _debugInfo names it; React 19 copies that chain onto the fibers it creates.
+const react19 = React.version.startsWith("19.")
+const serverInfo = (name: string, key: string | null = null) => ({
+  name,
+  env: "Server",
+  key,
+  owner: null,
+  props: {},
+})
+const server = (
+  info: object,
+  node: React.ReactNode,
+  extra: object[] = [],
+): React.ReactNode =>
+  ({
+    $$typeof: Symbol.for("react.lazy"),
+    _payload: node,
+    _init: (n: unknown) => n,
+    _debugInfo: [{ time: 0 }, ...extra, info],
+  }) as unknown as React.ReactNode
+
+function ServerChild() {
+  return h("i")
+}
+
+async function serverTree(node: React.ReactNode) {
+  const container = document.createElement("div")
+  const root = createRoot(container)
+  roots.push(root)
+  await React.act(() => root.render(node))
+  const fiberRoot = fiberRootOf(container)
+  const forgot: number[] = []
+  const tree = createTree({ onForget: (id) => forgot.push(id) })
+  const ops: TreeOp[] = []
+  tree.full(fiberRoot, 1, ops)
+  const view = mirror()
+  view.apply(ops)
+  const id = (name: string) =>
+    adds(ops).find((op) => op.name === name)?.id as number
+  const commit = async (next: React.ReactNode) => {
+    await React.act(() => root.render(next))
+    const more: TreeOp[] = []
+    tree.commit(fiberRoot, 1, more)
+    view.apply(more)
+    return more
+  }
+  return { tree, ops, view, id, commit, forgot, fiberRoot }
+}
+
+test.skipIf(!react19)(
+  "a Server Component is a node holding what it rendered",
+  async () => {
+    const { tree, ops, view, id } = await serverTree(
+      server(serverInfo("Shop"), [
+        h("p", { key: "a" }),
+        h(ServerChild, { key: "b" }),
+      ]),
+    )
+    expect(view.outline()).toEqual([
+      "Shop server",
+      "  p host key=a",
+      "  ServerChild function key=b",
+      "    i host",
+    ])
+    const shop = adds(ops).find((op) => op.name === "Shop")
+    expect(shop).toMatchObject({ kind: "server", key: null, parentId: 0 })
+    expect(new Set(adds(ops).map((op) => op.id)).size).toBe(adds(ops).length)
+    expect(tree.fiber(id("Shop"))).toBeUndefined()
+    expect(tree.find(id("Shop"))).toBeUndefined()
+  },
+)
