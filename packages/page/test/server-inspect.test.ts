@@ -2,7 +2,7 @@ import { parseInspected } from "@reactdx/messages"
 import React from "react"
 import { expect, test } from "vitest"
 import { inspecting } from "./inspecting.ts"
-import { react19, ServerChild, server, serverInfo } from "./server.ts"
+import { ownedBy, react19, ServerChild, server, serverInfo } from "./server.ts"
 
 const h = React.createElement
 const { inspect, idOf, replies, mount } = inspecting()
@@ -135,5 +135,40 @@ test.skipIf(!react19)(
       },
       { id: idOf("Other"), name: "Other", bytes: 2 },
     ])
+  },
+)
+
+test.skipIf(!react19)(
+  "a client component a Server Component rendered has the props it passed, sized",
+  async () => {
+    const specs = Array.from({ length: 200 }, (_, i) => ({
+      label: `Spec ${i}, a long description of the trail shoe`,
+    }))
+    const big = { id: "p-12", name: "Trail shoe", specs }
+    const data = await inspect(
+      server(product, ownedBy(product, AddToCart, { product: big, price: 89 })),
+      "AddToCart",
+    )
+    const size = (value: unknown) => JSON.stringify(value).length
+    expect(data?.fromServer).toEqual({
+      owner: { id: idOf("ProductDetails"), name: "ProductDetails" },
+      props: [
+        {
+          key: "product",
+          bytes: size(big),
+          fields: [
+            { key: "specs", bytes: size(specs) },
+            { key: "name", bytes: size("Trail shoe") },
+            { key: "id", bytes: size("p-12") },
+          ],
+        },
+        { key: "price", bytes: 2 },
+      ],
+    })
+    const plain = await inspect(
+      h(AddToCart, { product: big, price: 1 }),
+      "AddToCart",
+    )
+    expect(plain).not.toHaveProperty("fromServer")
   },
 )

@@ -34,3 +34,19 @@ export const server = (
 export function ServerChild() {
   return h("i")
 }
+
+// An element a Server Component created, as Flight builds it: its owner is the
+// component's info (React freezes createElement's elements, so it's built here).
+export const ownedBy = (
+  info: object,
+  type: React.ElementType,
+  props: Record<string, unknown>,
+): React.ReactNode =>
+  ({
+    $$typeof: Symbol.for("react.transitional.element"),
+    type,
+    key: null,
+    props,
+    _owner: info,
+    _store: {},
+  }) as unknown as React.ReactNode

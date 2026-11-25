@@ -60,7 +60,7 @@ import { contextsOf, createRecorder, type RenderRecord } from "./insight.ts"
 import { copyText, createInspector } from "./inspect.ts"
 import { createOverlay } from "./overlay.ts"
 import { awaitsOf, renderedAt } from "./server.ts"
-import { sizeOf } from "./size.ts"
+import { propSizes, sizeOf } from "./size.ts"
 import { sourceOf } from "./source.ts"
 import { createTree, type Fiber } from "./tree.ts"
 
@@ -291,6 +291,16 @@ export function startAgent(
   // Who rendered the fiber, nearest first: tree nodes by id, Server Components
   // (React 19 ReactComponentInfo, not in the tree) by name.
   const ownersOf = (fiber: Fiber) => ownersFrom(fiber._debugOwner)
+  // A Server Component owner (a ReactComponentInfo, not a fiber), by its
+  // server node's id once mounted.
+  const serverOwner = (owner: unknown): Owner | undefined => {
+    const info = owner as Record<string, unknown> | null | undefined
+    if (info && typeof info.tag !== "number" && typeof info.name === "string")
+      return {
+        id: tree.serverId(info) ?? null,
+        name: info.name.slice(0, MAX_TREE_STRING),
+      }
+  }
   const ownersFrom = (first: unknown) => {
     const owners: Owner[] = []
     let owner = first as Record<string, unknown> | null | undefined
@@ -300,11 +310,8 @@ export function startAgent(
         if (node) owners.push(node)
         owner = owner._debugOwner as typeof owner
       } else {
-        if (typeof owner.name === "string")
-          owners.push({
-            id: tree.serverId(owner) ?? null,
-            name: owner.name.slice(0, MAX_TREE_STRING),
-          })
+        const server = serverOwner(owner)
+        if (server) owners.push(server)
         owner = owner.owner as typeof owner
       }
     }
@@ -362,6 +369,10 @@ export function startAgent(
     // Class components (tag 1) keep their state on the instance.
     if (fiber.tag === 1 && state != null) data.state = serialize(state) as Value
     data.owners = ownersOf(fiber)
+    // Rendered by a Server Component: its props came from the server.
+    const from = serverOwner(fiber._debugOwner)
+    if (from)
+      data.fromServer = { owner: from, props: propSizes(fiber.memoizedProps) }
     const source = sourceOf(fiber)
     if (source) data.source = source
     const boundaries = boundariesFor(fiber)

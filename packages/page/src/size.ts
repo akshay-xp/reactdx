@@ -1,4 +1,10 @@
-import type { Size } from "@reactdx/messages"
+import {
+  MAX_FIELDS,
+  MAX_NAME,
+  MAX_PROP_SIZES,
+  type PropSize,
+  type Size,
+} from "@reactdx/messages"
 
 // How much JSON a value would be (docs/page.md, Sizes), without running app
 // code: getters and toJSON (but Date's) aren't called. Counting stops, `over`,
@@ -93,4 +99,31 @@ export function largestFields(value: unknown, count = 3) {
     if (field) fields.push({ key, ...sizeOf(field.value) })
   }
   return fields.sort((a, b) => b.bytes - a.bytes).slice(0, count)
+}
+
+// A prop this big earns a hint naming its largest fields.
+const HINT_BYTES = 10 * 1024
+
+// Each prop's size, in key order; a big one with its largest fields.
+export function propSizes(props: unknown): PropSize[] {
+  if (typeof props !== "object" || props === null) return []
+  const sizes: PropSize[] = []
+  for (const key of Object.keys(props).slice(0, MAX_PROP_SIZES)) {
+    const field = fieldValue(props, key)
+    if (!field) continue
+    const size: PropSize = {
+      key: key.slice(0, MAX_NAME),
+      ...sizeOf(field.value),
+    }
+    if (size.bytes > HINT_BYTES) {
+      const fields = largestFields(field.value, MAX_FIELDS)
+      if (fields.length)
+        size.fields = fields.map((f) => ({
+          ...f,
+          key: f.key.slice(0, MAX_NAME),
+        }))
+    }
+    sizes.push(size)
+  }
+  return sizes
 }
