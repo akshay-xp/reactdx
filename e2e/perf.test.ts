@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
+import type { Page } from "puppeteer"
 import { startFixture } from "../fixtures/start.ts"
 import { type BrowserName, launchWithExtension, openPanel } from "./launch.ts"
 import { outlines, recordShadows, untilOutlines } from "./shadows.ts"
@@ -12,22 +13,39 @@ const skip =
   (process.env.E2E_FIXTURE !== undefined && process.env.E2E_FIXTURE !== "19")
 const BENCH = "http://localhost:5219/bench.html"
 
+type Bench = Window & { __bench: (mode: string, n: number) => number[] }
+
 let stop: (() => void) | undefined
 before(async () => {
   if (!skip) stop = await startFixture("fixture:19", 5219)
 })
 after(() => stop?.())
 
+const cellsLoaded = (page: Page) =>
+  page.waitForFunction(
+    () => document.querySelectorAll("[data-testid=cell]").length === 10000,
+    { timeout: 10_000 },
+  )
+
 // The bench page loaded, then the panel opened, showing the tree's first row.
+// Latency budgets are this machine's (a 100 ms all-cells commit) and scale with
+// the runner's: CI's edits took 0.24 to 0.29x its commit, as here (#85).
+// Measured before the panel opens, then reloaded: the tests expect State: 0.
 async function benchPanel() {
   const { browser } = await launchWithExtension(name)
   const [page] = await browser.pages()
   if (!page) throw new Error("no page")
   await page.goto(BENCH)
-  await page.waitForFunction(
-    () => document.querySelectorAll("[data-testid=cell]").length === 10000,
-    { timeout: 10_000 },
-  )
+  await cellsLoaded(page)
+  const commit = await page.evaluate(() => {
+    const { __bench } = window as unknown as Bench
+    __bench("all", 1)
+    return Math.min(...__bench("all", 5))
+  })
+  const scale = Math.max(1, commit / 100)
+  const budget = (ms: number) => ms * scale
+  await page.reload()
+  await cellsLoaded(page)
   const panel = await openPanel(browser)
   await panel.waitForFunction(
     () =>
@@ -54,11 +72,11 @@ async function benchPanel() {
     },
     { timeout: 10_000, polling: 100 },
   )
-  return { browser, page, panel }
+  return { browser, page, panel, budget }
 }
 
 test("the first rows show within 500 ms of subscribe", { skip }, async (t) => {
-  const { browser, panel } = await benchPanel()
+  const { browser, panel, budget } = await benchPanel()
   try {
     const marks = await panel.evaluate(() =>
       performance
@@ -74,8 +92,8 @@ test("the first rows show within 500 ms of subscribe", { skip }, async (t) => {
       .at(-1)
     assert.ok(subscribe, `no reactdx:subscribe mark: ${JSON.stringify(marks)}`)
     const elapsed = rows.startTime - subscribe.startTime
-    t.diagnostic(`${elapsed.toFixed(0)} ms`)
-    assert.ok(elapsed < 500, `${elapsed} ms`)
+    t.diagnostic(`${elapsed.toFixed(0)} ms, budget ${budget(500).toFixed(0)}`)
+    assert.ok(elapsed < budget(500), `${elapsed} ms`)
   } finally {
     await browser.close()
   }
@@ -83,12 +101,11 @@ test("the first rows show within 500 ms of subscribe", { skip }, async (t) => {
 
 type Timed = Window & { reactdxAt?: number[] }
 
-// The median of five mounts: one timing on a shared CI runner ranged from 70 to
-// over 130 ms, on main too.
+// The median of five mounts.
 test("a mounted component's row shows within 100 ms of its batch", {
   skip,
 }, async (t) => {
-  const { browser, page, panel } = await benchPanel()
+  const { browser, page, panel, budget } = await benchPanel()
   try {
     // Each batch that adds Extra, and each time its row appears in the panel.
     await page.evaluate(() => {
@@ -141,8 +158,10 @@ test("a mounted component's row shows within 100 ms of its batch", {
     assert.equal(shown.length, 5)
     const delays = shown.map((at, i) => at - (posted[i] as number))
     const median = [...delays].sort((a, b) => a - b)[2] as number
-    t.diagnostic(`median ${median} ms of ${delays.join(", ")}`)
-    assert.ok(median < 100, `${median} ms (${delays.join(", ")})`)
+    t.diagnostic(
+      `median ${median} ms of ${delays.join(", ")}, budget ${budget(100).toFixed(0)}`,
+    )
+    assert.ok(median < budget(100), `${median} ms (${delays.join(", ")})`)
   } finally {
     await browser.close()
   }
@@ -309,10 +328,9 @@ const selectCell = (
     key,
   )
 
-// The median of five selections: one timing on a shared CI runner varies from
-// tens to over a hundred ms.
+// The median of five selections.
 test("a selected Cell's hooks show within 100 ms", { skip }, async (t) => {
-  const { browser, panel } = await benchPanel()
+  const { browser, panel, budget } = await benchPanel()
   try {
     const times: number[] = []
     for (const key of [0, 1, 2, 3, 4]) {
@@ -322,9 +340,9 @@ test("a selected Cell's hooks show within 100 ms", { skip }, async (t) => {
     }
     const median = [...times].sort((a, b) => a - b)[2] as number
     t.diagnostic(
-      `median ${median.toFixed(0)} ms of ${times.map((ms) => ms.toFixed(0)).join(", ")}`,
+      `median ${median.toFixed(0)} ms of ${times.map((ms) => ms.toFixed(0)).join(", ")}, budget ${budget(100).toFixed(0)}`,
     )
-    assert.ok(median < 100, `${median} ms (${times.join(", ")})`)
+    assert.ok(median < budget(100), `${median} ms (${times.join(", ")})`)
   } finally {
     await browser.close()
   }
@@ -371,7 +389,7 @@ const editCell = (
 
 // The median of five edits, as for selections.
 test("an edited value shows within 100 ms", { skip }, async (t) => {
-  const { browser, panel } = await benchPanel()
+  const { browser, panel, budget } = await benchPanel()
   try {
     await selectCell(panel)
     const times: number[] = []
@@ -379,9 +397,9 @@ test("an edited value shows within 100 ms", { skip }, async (t) => {
       times.push(await editCell(panel, to - 1, to))
     const median = [...times].sort((a, b) => a - b)[2] as number
     t.diagnostic(
-      `median ${median.toFixed(0)} ms of ${times.map((ms) => ms.toFixed(0)).join(", ")}`,
+      `median ${median.toFixed(0)} ms of ${times.map((ms) => ms.toFixed(0)).join(", ")}, budget ${budget(100).toFixed(0)}`,
     )
-    assert.ok(median < 100, `${median} ms (${times.join(", ")})`)
+    assert.ok(median < budget(100), `${median} ms (${times.join(", ")})`)
   } finally {
     await browser.close()
   }
@@ -426,7 +444,6 @@ test("an unrelated commit sends no inspected message", { skip }, async () => {
   }
 })
 
-type Bench = Window & { __bench: (mode: string, n: number) => number[] }
 type Hooked = Window & { __hookMs: number[] }
 
 // Recording (M6) runs inside React's commit hook while the panel watches:
@@ -444,10 +461,7 @@ test("watching keeps a one-cell commit under 2x, all cells under +25%", {
     const [page] = await browser.pages()
     if (!page) throw new Error("no page")
     await page.goto(BENCH)
-    await page.waitForFunction(
-      () => document.querySelectorAll("[data-testid=cell]").length === 10000,
-      { timeout: 10_000 },
-    )
+    await cellsLoaded(page)
     // Our hook's time in each commit: React reads onCommitFiberRoot on every
     // commit, and the agent's listeners run inside it.
     await page.evaluate(() => {
