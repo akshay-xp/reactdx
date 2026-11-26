@@ -460,16 +460,61 @@ test("watching keeps a one-cell commit under 2x, all cells under +25%", {
         }
       })
     }
-    const median = async (mode: "one" | "all") => {
+    // DIAG #85: per-process CPU and time inside the commit hook, per median.
+    const cdp = await browser.target().createCDPSession()
+    const cpu = async () => {
+      const { processInfo } = (await cdp.send(
+        "SystemInfo.getProcessInfo" as never,
+      )) as { processInfo: { type: string; id: number; cpuTime: number }[] }
+      return new Map(processInfo.map((p) => [`${p.type}:${p.id}`, p.cpuTime]))
+    }
+    await page.evaluate(() => {
+      const w = window as unknown as Record<string, any>
+      const hook = w.__REACT_DEVTOOLS_GLOBAL_HOOK__
+      const orig = hook.onCommitFiberRoot
+      w.__hookMs = 0
+      hook.onCommitFiberRoot = function (...args: unknown[]) {
+        const s = performance.now()
+        try {
+          return orig.apply(this, args)
+        } finally {
+          w.__hookMs += performance.now() - s
+        }
+      }
+    })
+    const median = async (mode: "one" | "all", label = "") => {
       await page.evaluate((mode) => (window as Bench).__bench(mode, 1), mode)
       await settle()
+      await page.evaluate(() => {
+        ;(window as unknown as Record<string, number>).__hookMs = 0
+      })
+      const c0 = await cpu()
+      const w0 = Date.now()
       const times = await page.evaluate(
         (mode) => (window as Bench).__bench(mode, 5),
         mode,
       )
+      const wall = Date.now() - w0
+      const c1 = await cpu()
+      const hookMs = await page.evaluate(
+        () => (window as unknown as Record<string, number>).__hookMs,
+      )
+      const used = [...c1]
+        .map(
+          ([k, v]) => [k, Math.round((v - (c0.get(k) ?? 0)) * 1000)] as const,
+        )
+        .filter(([, ms]) => ms > 5)
+        .map(([k, ms]) => `${k}=${ms}`)
+        .join(" ")
+      t.diagnostic(
+        `DIAG ${label} ${mode} times=${times.map((x) => x.toFixed(1)).join(",")} hook=${hookMs.toFixed(1)} wall=${wall} cpu(ms): ${used}`,
+      )
       return [...times].sort((a, b) => a - b)[2] as number
     }
-    const before = { one: await median("one"), all: await median("all") }
+    const before = {
+      one: await median("one", "b"),
+      all: await median("all", "b"),
+    }
     panel = await openPanel(browser)
     await panel.waitForFunction(
       () =>
@@ -479,11 +524,18 @@ test("watching keeps a one-cell commit under 2x, all cells under +25%", {
       { timeout: 10_000 },
     )
     await settle()
-    const watched = { one: await median("one"), all: await median("all") }
+    const watched = {
+      one: await median("one", "w"),
+      all: await median("all", "w"),
+    }
+    for (let i = 0; i < 4; i++) await median("all", `w${i}`)
     // Outlines on: each commit schedules a frame.
     await panel.click("[data-testid=outlines]")
     await settle()
-    const outlined = { one: await median("one"), all: await median("all") }
+    const outlined = {
+      one: await median("one", "o"),
+      all: await median("all", "o"),
+    }
     t.diagnostic(
       `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} → ${outlined.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} → ${outlined.all.toFixed(1)} ms`,
     )
