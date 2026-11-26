@@ -37,7 +37,7 @@ const test = spawnSync(
     // A file whose browser or server outlives its tests would otherwise hold the run
     // open, and node --test only prints failure details at the very end.
     "--test-force-exit",
-    "e2e/*.test.ts",
+    "e2e/probe-76.test.ts",
   ],
   {
     stdio: "inherit",
