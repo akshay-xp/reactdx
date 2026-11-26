@@ -427,6 +427,7 @@ test("an unrelated commit sends no inspected message", { skip }, async () => {
 })
 
 type Bench = Window & { __bench: (mode: string, n: number) => number[] }
+type Hooked = Window & { __hookMs: number[] }
 
 // Recording (M6) runs inside React's commit hook while the panel watches:
 // flushSync's time includes it. Medians of five after a warm-up commit. Each
@@ -446,6 +447,26 @@ test("watching keeps a one-cell commit under 2x, all cells under +25%", {
       () => document.querySelectorAll("[data-testid=cell]").length === 10000,
       { timeout: 10_000 },
     )
+    // Our hook's time in each commit: React reads onCommitFiberRoot on every
+    // commit, and the agent's listeners run inside it.
+    await page.evaluate(() => {
+      const w = window as unknown as Hooked & {
+        __REACT_DEVTOOLS_GLOBAL_HOOK__: {
+          onCommitFiberRoot: (...args: unknown[]) => unknown
+        }
+      }
+      const hook = w.__REACT_DEVTOOLS_GLOBAL_HOOK__
+      const commit = hook.onCommitFiberRoot
+      w.__hookMs = []
+      hook.onCommitFiberRoot = function (...args) {
+        const start = performance.now()
+        try {
+          return commit.apply(this, args)
+        } finally {
+          w.__hookMs.push(performance.now() - start)
+        }
+      }
+    })
     let panel: Awaited<ReturnType<typeof openPanel>> | undefined
     // The flush (100 ms) has reached the panel, and the panel has handled it:
     // three 50 ms timers in a row fire on time. A fixed wait wasn't enough on
@@ -463,12 +484,16 @@ test("watching keeps a one-cell commit under 2x, all cells under +25%", {
     const median = async (mode: "one" | "all") => {
       await page.evaluate((mode) => (window as Bench).__bench(mode, 1), mode)
       await settle()
-      const times = await page.evaluate(
-        (mode) => (window as Bench).__bench(mode, 5),
-        mode,
-      )
+      const { times, hook } = await page.evaluate((mode) => {
+        const w = window as unknown as Bench & Hooked
+        w.__hookMs = []
+        return { times: w.__bench(mode, 5), hook: Math.min(...w.__hookMs) }
+      }, mode)
+      hooks[mode] = hook
       return [...times].sort((a, b) => a - b)[2] as number
     }
+    // The fastest hook call of the last all-cells measurement.
+    const hooks: Record<string, number> = {}
     const before = { one: await median("one"), all: await median("all") }
     panel = await openPanel(browser)
     await panel.waitForFunction(
@@ -480,13 +505,18 @@ test("watching keeps a one-cell commit under 2x, all cells under +25%", {
     )
     await settle()
     const watched = { one: await median("one"), all: await median("all") }
+    const watchedShare = (hooks.all as number) / before.all
     // Outlines on: each commit schedules a frame.
     await panel.click("[data-testid=outlines]")
     await settle()
     const outlined = { one: await median("one"), all: await median("all") }
+    const outlinedShare = (hooks.all as number) / before.all
+    const shares = `hook share ${watchedShare.toFixed(3)} → ${outlinedShare.toFixed(3)}`
     t.diagnostic(
-      `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} → ${outlined.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} → ${outlined.all.toFixed(1)} ms`,
+      `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} → ${outlined.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} → ${outlined.all.toFixed(1)} ms, ${shares}`,
     )
+    for (const share of [watchedShare, outlinedShare])
+      assert.ok(share < 0.12, `${shares}: ${share.toFixed(3)} >= 0.12`)
     for (const after of [watched, outlined]) {
       const times = JSON.stringify({ before, watched, outlined })
       assert.ok(after.one / before.one < 2, times)
