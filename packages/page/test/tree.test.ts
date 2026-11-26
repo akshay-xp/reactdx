@@ -588,7 +588,7 @@ function VisitAdded() {
   return h(VisitAddedChild)
 }
 
-test("commit visits the fibers it reconciles, not inside bailed-out subtrees", async () => {
+test("commit visits the fibers that did work, not ones cloned untouched or inside bailed-out subtrees", async () => {
   const container = document.createElement("div")
   const root = createRoot(container)
   roots.push(root)
@@ -606,8 +606,10 @@ test("commit visits the fibers it reconciles, not inside bailed-out subtrees", a
     expect(tree.known(fiber)?.id).toBe(at)
     visited.push(at)
   })
-  for (const name of ["VisitParent", "VisitMemo", "VisitPlain", "div"])
+  for (const name of ["VisitParent", "VisitPlain", "div"])
     expect(visited).toContain(id(name))
+  // The memo bailed out: React cloned it untouched (#76).
+  expect(visited).not.toContain(id("VisitMemo"))
   expect(visited).not.toContain(id("VisitInner"))
   expect(new Set(visited).size).toBe(visited.length)
 })

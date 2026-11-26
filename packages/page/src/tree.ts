@@ -14,6 +14,7 @@ export type Fiber = {
   return: Fiber | null
   memoizedProps: unknown
   memoizedState: unknown
+  flags: number
   // Development builds: who rendered it (a Fiber, or React 19 server component info).
   _debugOwner?: unknown
   stateNode: unknown
@@ -28,6 +29,8 @@ type Server = { info: ServerInfo; id: number; kids: Child[] }
 type Child = Fiber | Server
 
 const isServer = (child: Child): child is Server => "info" in child
+
+const PERFORMED_WORK = 1
 
 const NONE: ServerInfo[] = []
 // Await and time entries share the array; only component infos have a name.
@@ -381,6 +384,27 @@ export function createTree({
     onForget?.(id)
   }
 
+  // This commit's updaters (development builds): React clears the set once the
+  // hook returns.
+  let updaters: Set<unknown> | undefined
+  // React clones every sibling of an updated fiber, and the walk paid for each
+  // (#76). A clone with nothing changed keeps its alternate's props, state,
+  // child and type, and has no PerformedWork flag. An updater re-run with
+  // nothing changed bails out with no flag too, but the recorder counts it.
+  const untouched = (fiber: Fiber) => {
+    const alternate = fiber.alternate
+    return (
+      alternate !== null &&
+      (fiber.flags & PERFORMED_WORK) === 0 &&
+      fiber.memoizedProps === alternate.memoizedProps &&
+      fiber.memoizedState === alternate.memoizedState &&
+      fiber.child === alternate.child &&
+      fiber.type === alternate.type &&
+      !updaters?.has(fiber) &&
+      !updaters?.has(alternate)
+    )
+  }
+
   // Brings a known node's stored children in line with this commit.
   const update = (
     fiber: Fiber,
@@ -428,6 +452,7 @@ export function createTree({
           return
         }
         fibers.set(id, kid)
+        if (untouched(kid)) return
         const name = label(kid)
         if (name !== names.get(id)) {
           names.set(id, name)
@@ -629,9 +654,11 @@ export function createTree({
       onVisit: (fiber: Fiber, id: number) => void = noop,
     ) {
       const host = root.current as unknown as Fiber
+      updaters = (root as { memoizedUpdaters?: Set<unknown> }).memoizedUpdaters
       visit = onVisit
       update(host, idOf(host), 0, rootId, ops)
       visit = noop
+      updaters = undefined
     },
   }
 }

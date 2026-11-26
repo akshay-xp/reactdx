@@ -451,8 +451,9 @@ type Hooked = Window & { __hookMs: number[] }
 // CI's 2-core runner single commits take about 1x or 2x, before the panel opens
 // too, and a median of five flipped on 2 vs 3 doubled ones (#85). Each waits
 // for the panel to settle (its first load, the warm-up's flush): on that runner
-// the panel's work competed with the page for the CPU. One cell's budget is loose: the
-// tree mirror walks all 10,000 cloned siblings (+3 to 5 ms on CI, #76).
+// the panel's work competed with the page for the CPU. One cell's budget is loose:
+// CI's one-cell commits swing 7 to 15 ms within a run, too much to budget the
+// walk's share (#76).
 test("watching keeps a one-cell commit under 2x, all cells under +25%", {
   skip,
 }, async (t) => {
