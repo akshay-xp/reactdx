@@ -454,8 +454,8 @@ type Hooked = Window & { __hookMs: number[] }
 // the panel's work competed with the page for the CPU. Our hook's own share is
 // budgeted too: a 2x slower hook stayed under the totals' budgets. The one-cell
 // share guards #76: React clones all 10,000 siblings, and the walk skips the
-// untouched ones (locally 0.22 to 0.24 before, 0.15 to 0.18 after: hook times
-// are 0.1 ms steps, 0.9 to 1.0 vs 0.6 to 0.7 ms).
+// untouched ones (locally 0.23 to 0.27 before, 0.14 to 0.17 after). The bench
+// is cross-origin isolated for 5 us timers: 100 us steps flipped it (0.219).
 test("watching keeps a one-cell commit under 2x, all cells under +25%", {
   skip,
 }, async (t) => {
