@@ -180,3 +180,28 @@ test("the flash renders toggle switches the tree's outlines, taking turns with t
   fireEvent.click(flash)
   expect(tree.outlines()).toBeUndefined()
 })
+
+test("/ focuses the search, unless typing in a field; Esc clears it", () => {
+  const { search, count, type } = setup()
+  const slash = (target: Element) =>
+    fireEvent.keyDown(target, { key: "/", bubbles: true, cancelable: true })
+  // fireEvent returns false when the default was prevented.
+  expect(slash(document.body)).toBe(false)
+  expect(document.activeElement).toBe(search)
+
+  const other = document.createElement("input")
+  document.body.append(other)
+  try {
+    other.focus()
+    expect(slash(other)).toBe(true)
+    expect(document.activeElement).toBe(other)
+  } finally {
+    other.remove()
+  }
+
+  type("item")
+  expect(count()).toBe("1 of 3")
+  fireEvent.keyDown(search, { key: "Escape" })
+  expect(search.value).toBe("")
+  expect(count()).toBeUndefined()
+})

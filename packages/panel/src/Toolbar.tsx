@@ -1,5 +1,5 @@
 import type { OutlineMode } from "@reactdx/messages"
-import { type JSX, Show } from "solid-js"
+import { type JSX, onCleanup, onMount, Show } from "solid-js"
 import type { TreeStore } from "./tree"
 
 // The element picker, search (Enter: next match, Shift+Enter: previous), the
@@ -7,6 +7,27 @@ import type { TreeStore } from "./tree"
 export function Toolbar(props: { tree: TreeStore }) {
   const outline = (mode: OutlineMode) =>
     props.tree.setOutlines(props.tree.outlines() === mode ? undefined : mode)
+  // `/` focuses the search (as on GitHub), unless
+  // the key is typing into a field or the Updates tab is in front.
+  let search: HTMLInputElement | undefined
+  const slash = (event: KeyboardEvent) => {
+    const target = event.target as HTMLElement
+    if (
+      event.key !== "/" ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      target.closest("input, textarea") ||
+      target.isContentEditable ||
+      !search ||
+      search.closest("[hidden]")
+    )
+      return
+    event.preventDefault()
+    search.focus()
+  }
+  onMount(() => document.addEventListener("keydown", slash))
+  onCleanup(() => document.removeEventListener("keydown", slash))
   return (
     <search class="flex h-10 shrink-0 items-center gap-2 border-border border-b px-2 py-1.5">
       <IconButton
@@ -23,7 +44,11 @@ export function Toolbar(props: { tree: TreeStore }) {
         clearLabel="Clear search"
         value={props.tree.query()}
         onInput={(text) => props.tree.setQuery(text)}
+        ref={(el) => {
+          search = el
+        }}
         onKeyDown={(event) => {
+          if (event.key === "Escape") return props.tree.setQuery("")
           if (event.key !== "Enter") return
           event.preventDefault()
           props.tree.step(event.shiftKey ? -1 : 1)
@@ -139,6 +164,7 @@ export function SearchField(props: {
   value: string
   onInput: (text: string) => void
   onKeyDown?: (event: KeyboardEvent) => void
+  ref?: (el: HTMLInputElement) => void
   children?: JSX.Element
 }) {
   return (
@@ -162,6 +188,7 @@ export function SearchField(props: {
         aria-label={props.label}
         placeholder={props.label}
         class="min-w-0 flex-1 bg-transparent text-fg outline-none [&::-webkit-search-cancel-button]:hidden"
+        ref={(el) => props.ref?.(el)}
         value={props.value}
         onInput={(event) => props.onInput(event.currentTarget.value)}
         onKeyDown={(event) => props.onKeyDown?.(event)}
