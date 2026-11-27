@@ -39,6 +39,10 @@ export type PanelText = (() => Promise<string>) & {
   // and presses Enter.
   edit(row: string, text: string): Promise<void>
   selected(): Promise<string | undefined>
+  // Brings the ReactDX panel to the front, e.g. after inspect() opened Elements:
+  // Firefox's accessibility tree has only the shown tool, Chrome's frame stays
+  // readable. The tool in front before, Firefox only (#92).
+  show(): Promise<string | undefined>
 }
 
 type Key =
@@ -200,8 +204,10 @@ export async function openPanelText(
             "[data-testid=node][aria-selected=true] [data-testid=name]",
           )?.textContent ?? undefined,
       )
+    const show = async () => undefined
     return Object.assign(read, {
       frame,
+      show,
       inspector,
       select,
       end,
@@ -556,7 +562,20 @@ export async function openPanelText(
       return leaf(node)?.name ?? null`,
       false,
     )) ?? undefined
+  const show = async () =>
+    (await chromeEval(
+      browser,
+      `(async () => {
+        const { require } = ChromeUtils.importESModule("resource://devtools/shared/loader/Loader.sys.mjs")
+        const { gDevTools } = require("devtools/client/framework/devtools")
+        const toolbox = gDevTools.getToolboxForTab(gBrowser.selectedTab)
+        const before = toolbox.currentToolId
+        await toolbox.selectTool(${JSON.stringify(toolId)})
+        return before
+      })()`,
+    )) ?? undefined
   return Object.assign(read, {
+    show,
     inspector,
     select,
     end,
