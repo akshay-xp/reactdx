@@ -112,7 +112,7 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
 // Flash renders (#91): a render outlines the component for 1 s.
 const FLASH = "Flash renders on the page"
 for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
-  test(`${fixture}: flash renders outlines a rendered component, takes no click, and fades`, async () => {
+  test(`${fixture}: flash renders outlines a rendered component, takes no click, fades, and heats up`, async () => {
     const { browser, page, panel } = await overlayPage(
       name,
       `http://localhost:${port}/`,
@@ -131,6 +131,13 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
       )
       assert.equal(hit, "counter")
       await untilOutlines(page, (d) => d.length === 0, 2000)
+
+      // Hotter with more renders in a second.
+      for (let i = 0; i < 3; i++) await page.click("[data-testid=counter]")
+      const [hot] = await untilOutlines(page, (d) =>
+        d.some((o) => o.label === "Counter ×3"),
+      )
+      assert.equal(hot?.heat, "1")
     } finally {
       await browser.close()
     }
