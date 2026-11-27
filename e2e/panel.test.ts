@@ -126,8 +126,10 @@ for (const [script, port, expected, tree, clicked] of [
 test("a page without React says so", async () => {
   const { browser, panel } = await panelFor(name, plainUrl(), "after")
   try {
-    const text = await until(panel, (t) => t === "No React on this page")
-    assert.equal(text, "No React on this page")
+    const says = (t: string) =>
+      t.startsWith("No React on this page.") && t.includes("Reload page")
+    const text = await until(panel, says)
+    assert.ok(says(text), text)
   } finally {
     await browser.close()
   }

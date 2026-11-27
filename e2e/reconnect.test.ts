@@ -165,8 +165,9 @@ test("a navigation resets the panel to the new document", {
     await expectLive(page, panel)
 
     await page.goto(plainUrl())
-    const none = "No React on this page"
-    assert.equal(await until(panel, (t) => t === none), none)
+    const none = (t: string) => t.startsWith("No React on this page.")
+    const text = await until(panel, none)
+    assert.ok(none(text), text)
     await expectTitle(page, "ReactDX: no React")
 
     await page.goto(URL_18)

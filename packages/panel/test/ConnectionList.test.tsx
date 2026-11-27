@@ -39,7 +39,8 @@ const copy = (
   roots,
 })
 
-test("no React", () => {
+test("no React says to reload, with a button", () => {
+  let reloads = 0
   const { container } = render(() => (
     <ConnectionList
       tree={createTreeStore()}
@@ -47,9 +48,15 @@ test("no React", () => {
       sources={sources}
       settings={settings}
       renderers={[]}
+      onReload={() => reloads++}
     />
   ))
-  expect(container.textContent).toBe("No React on this page")
+  expect(container.textContent).toBe(
+    "No React on this page.ReactDX finds React as the page loads. If this page uses React, reload it.Reload page",
+  )
+  expect(container.querySelector("[data-testid=empty] svg")).not.toBeNull()
+  fireEvent.click(container.querySelector("button") as Element)
+  expect(reloads).toBe(1)
 })
 
 test("a page open since before the install asks for a reload", () => {

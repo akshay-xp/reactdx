@@ -93,6 +93,17 @@ export function PickGlyph() {
   )
 }
 
+// React's atom, inside a 24-unit svg (Glyph): the no-React and production screens.
+export function ReactGlyph() {
+  return (
+    <>
+      <ellipse cx="12" cy="12" rx="10" ry="4" />
+      <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)" />
+      <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)" />
+    </>
+  )
+}
+
 // A circular arrow, inside a 24-unit svg (Glyph).
 export function ReloadGlyph() {
   return (

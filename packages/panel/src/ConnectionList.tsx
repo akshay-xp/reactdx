@@ -14,7 +14,7 @@ import { Empty, EmptyAction } from "./Empty"
 import { Inspector, type Settings } from "./Inspector"
 import type { InspectorStore } from "./inspection"
 import type { Sources } from "./source"
-import { ReloadGlyph, Toolbar } from "./Toolbar"
+import { ReactGlyph, ReloadGlyph, Toolbar } from "./Toolbar"
 import { TreeView } from "./TreeView"
 import type { TimelineStore } from "./timeline"
 import type { TreeStore } from "./tree"
@@ -132,6 +132,11 @@ export function ConnectionList(props: {
       </aside>
     </div>
   )
+  const reload = () => (
+    <EmptyAction icon={<ReloadGlyph />} onClick={() => props.onReload?.()}>
+      Reload page
+    </EmptyAction>
+  )
   return (
     <Switch>
       <Match when={props.renderers.length === 0 && props.stale}>
@@ -140,16 +145,17 @@ export function ConnectionList(props: {
           title="Reload this page to inspect React."
           hint="It was open before ReactDX was installed or updated."
         >
-          <EmptyAction
-            icon={<ReloadGlyph />}
-            onClick={() => props.onReload?.()}
-          >
-            Reload page
-          </EmptyAction>
+          {reload()}
         </Empty>
       </Match>
       <Match when={props.renderers.length === 0}>
-        <p class="p-2 text-muted">No React on this page</p>
+        <Empty
+          icon={<ReactGlyph />}
+          title="No React on this page."
+          hint="ReactDX finds React as the page loads. If this page uses React, reload it."
+        >
+          {reload()}
+        </Empty>
       </Match>
       <Match when={!development()}>
         <p class="p-2 text-muted">
