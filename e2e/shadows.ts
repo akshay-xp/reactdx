@@ -98,6 +98,7 @@ export type DrawnOutline = {
   height: number
   label: string
   style: string
+  heat?: string
 }
 
 // Every outline drawn in a connected overlay host, with its rect and label.
@@ -117,6 +118,7 @@ export const outlines = (page: Page): Promise<DrawnOutline[]> =>
           height,
           label: el.textContent ?? "",
           style: el.dataset.style ?? "",
+          ...(el.dataset.heat && { heat: el.dataset.heat }),
         }
       }),
   )

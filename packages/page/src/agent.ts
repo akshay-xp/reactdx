@@ -65,6 +65,7 @@ import { copyText, createInspector } from "./inspect.ts"
 import {
   createIslandOutlines,
   createOutlineLayer,
+  createRenderOutlines,
   createSuspenseOutlines,
 } from "./outlines.ts"
 import { createOverlay } from "./overlay.ts"
@@ -229,6 +230,7 @@ export function startAgent(
   let layer: ReturnType<typeof createOutlineLayer> | undefined
   let outlines: ReturnType<typeof createSuspenseOutlines> | undefined
   let islands: ReturnType<typeof createIslandOutlines> | undefined
+  let renders: ReturnType<typeof createRenderOutlines> | undefined
   // Props sizes by props object: a frame re-reads every island.
   const sizes = new WeakMap<object, Size>()
   const sizeOfProps = (props: unknown) => {
@@ -240,8 +242,19 @@ export function startAgent(
   const outline = (mode: OutlineMode | null) => {
     if (mode !== "suspense") outlines?.off()
     if (mode !== "islands") islands?.off()
+    if (mode !== "renders") renders?.off()
     if (!mode) return
     layer ??= createOutlineLayer(document)
+    if (mode === "renders") {
+      renders ??= createRenderOutlines({
+        layer,
+        target,
+        find: (id) => tree.find(id),
+        now: () => performance.now(),
+        frame: (callback) => requestAnimationFrame(callback),
+      })
+      return renders.on()
+    }
     if (mode === "islands") {
       islands ??= createIslandOutlines({
         layer,
@@ -732,10 +745,10 @@ export function startAgent(
   record.listeners.add((rendererId, root) => {
     const entry = info(root)
     entry.commits++
-    if (watching && inspectable(rendererId))
+    if (watching && inspectable(rendererId)) {
       // React clears memoizedUpdaters once this returns (dev builds keep them
       // while a devtools hook was present at load).
-      recorder.commit(
+      const rendered = recorder.commit(
         entry.id,
         new Set(
           (root as { memoizedUpdaters?: Set<unknown> }).memoizedUpdaters ?? [],
@@ -743,9 +756,12 @@ export function startAgent(
         (visit) => tree.commit(root, entry.id, buffer, visit),
         () => arrivals.splice(0).map(arrivalOf),
       )
+      renders?.rendered(rendered)
+    }
     // Only schedules a frame: layout isn't read inside React's commit.
     outlines?.changed()
     islands?.changed()
+    renders?.changed()
     if (pending) return
     pending = true
     setTimeout(() => {

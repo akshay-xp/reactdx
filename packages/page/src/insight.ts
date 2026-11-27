@@ -413,6 +413,8 @@ export function createRecorder({
         held -= commits.shift()?.records.size ?? 0
         dropped = true
       }
+      // The components that rendered (render outlines, #91).
+      return [...records.keys()]
     },
     clearCommits,
     clear() {

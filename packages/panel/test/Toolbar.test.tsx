@@ -157,3 +157,26 @@ test("the islands toggle needs a Server Component and takes turns with the Suspe
   fireEvent.click(suspense)
   expect(tree.outlines()).toBeUndefined()
 })
+
+test("the flash renders toggle switches the tree's outlines, taking turns with the Suspense one", () => {
+  const { tree, container } = setup()
+  const flash = container.querySelector(
+    "[data-testid=flash]",
+  ) as HTMLButtonElement
+  const suspense = container.querySelector(
+    "[data-testid=outlines]",
+  ) as HTMLButtonElement
+  expect(flash).not.toBeNull()
+  expect(flash.getAttribute("aria-label")).toBe("Flash renders on the page")
+  expect(flash.getAttribute("aria-pressed")).toBe("false")
+  fireEvent.click(flash)
+  expect(tree.outlines()).toBe("renders")
+  expect(flash.getAttribute("aria-pressed")).toBe("true")
+  fireEvent.click(suspense)
+  expect(tree.outlines()).toBe("suspense")
+  expect(flash.getAttribute("aria-pressed")).toBe("false")
+  fireEvent.click(flash)
+  expect(tree.outlines()).toBe("renders")
+  fireEvent.click(flash)
+  expect(tree.outlines()).toBeUndefined()
+})

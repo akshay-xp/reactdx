@@ -40,12 +40,13 @@ const TOGGLE = "Outline Suspense on the page"
 async function untilPressed(
   panel: { pressed(name: string): Promise<boolean> },
   want: boolean,
+  toggle = TOGGLE,
 ) {
-  const read = () => panel.pressed(TOGGLE).catch(() => undefined)
+  const read = () => panel.pressed(toggle).catch(() => undefined)
   const deadline = Date.now() + 5000
   while ((await read()) !== want && Date.now() < deadline)
     await new Promise((resolve) => setTimeout(resolve, 100))
-  assert.equal(await panel.pressed(TOGGLE), want)
+  assert.equal(await panel.pressed(toggle), want)
 }
 
 // Polls until an outline sits on the element `selector` matches (read while
@@ -103,6 +104,40 @@ for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
       await page.reload()
       await outlinedAt(page, "[data-testid=comments-fallback]")
       await untilPressed(panel, true)
+    } finally {
+      await browser.close()
+    }
+  })
+
+// Flash renders (#91): a render outlines the component for 1 s.
+const FLASH = "Flash renders on the page"
+for (const { fixture, port } of fixtures.filter((f) => f.fixture !== "next"))
+  test(`${fixture}: flash renders outlines a rendered component, takes no click, fades, and heats up`, async () => {
+    const { browser, page, panel } = await overlayPage(
+      name,
+      `http://localhost:${port}/`,
+    )
+    try {
+      await panel.press(FLASH)
+      await untilPressed(panel, true, FLASH)
+      await page.click("[data-testid=counter]")
+      const outline = await outlinedAt(page, "[data-testid=counter]", 1000)
+      assert.equal(outline.style, "render")
+      assert.equal(outline.label, "Counter")
+      const hit = await page.evaluate(
+        (x, y) => document.elementFromPoint(x, y)?.getAttribute("data-testid"),
+        outline.left + outline.width / 2,
+        outline.top + outline.height / 2,
+      )
+      assert.equal(hit, "counter")
+      await untilOutlines(page, (d) => d.length === 0, 2000)
+
+      // Hotter with more renders in a second.
+      for (let i = 0; i < 3; i++) await page.click("[data-testid=counter]")
+      const [hot] = await untilOutlines(page, (d) =>
+        d.some((o) => o.label === "Counter ×3"),
+      )
+      assert.equal(hot?.heat, "1")
     } finally {
       await browser.close()
     }

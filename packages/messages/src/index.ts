@@ -277,7 +277,7 @@ export type ClearHighlightMessage = { type: "clear-highlight"; tabId: number }
 // Panel to background: start or stop the element picker on the page.
 export type PickMessage = { type: "pick-start" | "pick-stop"; tabId: number }
 // What the page outlines (docs/page.md, Outlines).
-export type OutlineMode = "suspense" | "islands"
+export type OutlineMode = "suspense" | "islands" | "renders"
 // Panel to background: draw that mode's outlines on the page, or (null) stop.
 export type OutlinesMessage = {
   type: "outlines"
@@ -495,7 +495,10 @@ export function parseTreeCommand(data: unknown): TreeCommand | undefined {
   if (type === "rerender" && isId(id)) return { type, id }
   if (
     type === "outlines" &&
-    (mode === null || mode === "suspense" || mode === "islands")
+    (mode === null ||
+      mode === "suspense" ||
+      mode === "islands" ||
+      mode === "renders")
   )
     return { type, mode }
   if (type === "reason" && isId(id) && isId(seq)) return { type, id, seq }

@@ -1,9 +1,12 @@
+import type { OutlineMode } from "@reactdx/messages"
 import { type JSX, Show } from "solid-js"
 import type { TreeStore } from "./tree"
 
 // The element picker, search (Enter: next match, Shift+Enter: previous), the
 // DOM elements filter and the page outline modes (one at a time). Laid out like SnapQL's search bar.
 export function Toolbar(props: { tree: TreeStore }) {
+  const outline = (mode: OutlineMode) =>
+    props.tree.setOutlines(props.tree.outlines() === mode ? undefined : mode)
   return (
     <search class="flex h-10 shrink-0 items-center gap-2 border-border border-b px-2 py-1.5">
       <IconButton
@@ -42,11 +45,7 @@ export function Toolbar(props: { tree: TreeStore }) {
         label="Outline Suspense on the page"
         testid="outlines"
         pressed={props.tree.outlines() === "suspense"}
-        onClick={() =>
-          props.tree.setOutlines(
-            props.tree.outlines() === "suspense" ? undefined : "suspense",
-          )
-        }
+        onClick={() => outline("suspense")}
       >
         <rect
           x="4"
@@ -66,14 +65,19 @@ export function Toolbar(props: { tree: TreeStore }) {
             : "No Server Components on this page"
         }
         pressed={props.tree.outlines() === "islands"}
-        onClick={() =>
-          props.tree.setOutlines(
-            props.tree.outlines() === "islands" ? undefined : "islands",
-          )
-        }
+        onClick={() => outline("islands")}
       >
         <rect x="4" y="4" width="16" height="16" rx="1" />
         <path d="M4 20 20 4v16z" fill="currentColor" />
+      </IconButton>
+      <IconButton
+        label="Flash renders on the page"
+        testid="flash"
+        pressed={props.tree.outlines() === "renders"}
+        onClick={() => outline("renders")}
+      >
+        <rect x="7" y="7" width="10" height="10" rx="1" />
+        <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19" />
       </IconButton>
     </search>
   )

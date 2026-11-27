@@ -54,6 +54,8 @@ async function mount(
   const tree = createTree({ onForget: recorder.forget })
   const ops: TreeOp[] = []
   tree.full(fiberRoot, 1, ops)
+  // What each recorded commit returned: the ids that rendered.
+  const returned: unknown[] = []
   const ids = new Map<string, number>()
   const learn = (list: TreeOp[]) => {
     for (const op of list) if (op.op === "add") ids.set(op.name, op.id)
@@ -65,7 +67,7 @@ async function mount(
   hookRecord().listeners.add((_, root) => {
     if (root !== fiberRoot) return
     const added: TreeOp[] = []
-    recorder.commit(
+    const rendered = recorder.commit(
       1,
       new Set(
         (root as unknown as { memoizedUpdaters?: Set<unknown> })
@@ -73,6 +75,7 @@ async function mount(
       ),
       (visit) => tree.commit(fiberRoot, 1, added, visit),
     )
+    returned.push(rendered)
     learn(added)
   })
   const record = async (update: () => void) => {
@@ -86,7 +89,7 @@ async function mount(
     return found
   }
   const kinds = (name: string) => recorder.latest(id(name))?.kinds
-  return { recorder, record, id, kinds, tree, root }
+  return { recorder, record, id, kinds, tree, root, returned }
 }
 
 let setParent: (n: number) => void = () => {}
@@ -107,8 +110,10 @@ function Parent() {
 }
 
 test("a commit records mounts and renders caused by the parent", async () => {
-  const { record, kinds, recorder, id } = await mount(h(Parent))
+  const { record, kinds, recorder, id, returned } = await mount(h(Parent))
   await record(() => setParent(1))
+  expect(returned).toEqual([recorder.rendered(1)?.map((r) => r.id)])
+  expect(returned[0]).toEqual([id("Parent"), id("Child"), id("Late")])
   expect(kinds("Late")).toEqual(["mount"])
   expect(kinds("Child")).toEqual(["parent"])
   expect(recorder.latest(id("Still"))).toBeUndefined()

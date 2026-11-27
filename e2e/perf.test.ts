@@ -527,14 +527,19 @@ test("watching keeps a one-cell commit under 2x, all cells under +25%", {
     await settle()
     const outlined = { one: await fastest("one"), all: await fastest("all") }
     const outlinedShare = (hooks.all as number) / before.all
-    const shares = `hook share ${watchedShare.toFixed(3)} → ${outlinedShare.toFixed(3)}`
+    // Flash renders on (#91): each commit also notes what rendered.
+    await panel.click("[data-testid=flash]")
+    await settle()
+    const flashed = { one: await fastest("one"), all: await fastest("all") }
+    const flashedShare = (hooks.all as number) / before.all
+    const shares = `hook share ${watchedShare.toFixed(3)} → ${outlinedShare.toFixed(3)} → ${flashedShare.toFixed(3)}`
     t.diagnostic(
-      `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} → ${outlined.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} → ${outlined.all.toFixed(1)} ms, ${shares}`,
+      `one ${before.one.toFixed(2)} → ${watched.one.toFixed(2)} → ${outlined.one.toFixed(2)} → ${flashed.one.toFixed(2)} ms, all ${before.all.toFixed(1)} → ${watched.all.toFixed(1)} → ${outlined.all.toFixed(1)} → ${flashed.all.toFixed(1)} ms, ${shares}`,
     )
-    for (const share of [watchedShare, outlinedShare])
+    for (const share of [watchedShare, outlinedShare, flashedShare])
       assert.ok(share < 0.12, `${shares}: ${share.toFixed(3)} >= 0.12`)
-    for (const after of [watched, outlined]) {
-      const times = JSON.stringify({ before, watched, outlined })
+    for (const after of [watched, outlined, flashed]) {
+      const times = JSON.stringify({ before, watched, outlined, flashed })
       assert.ok(after.one / before.one < 2, times)
       assert.ok(after.all / before.all < 1.25, times)
     }

@@ -26,6 +26,7 @@ test.each([
   { type: "expand", objectId: 2, offset: 0 },
   { type: "outlines", mode: "suspense" },
   { type: "outlines", mode: "islands" },
+  { type: "outlines", mode: "renders" },
   { type: "outlines", mode: null },
 ])("keeps %o", (command) => {
   expect(parseTreeCommand(command)).toEqual(command)
