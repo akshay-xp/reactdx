@@ -20,6 +20,7 @@ import type {
 } from "@reactdx/messages"
 import { Panel } from "@reactdx/panel"
 import { openInEditor } from "@reactdx/panel/editor"
+import { followElements } from "@reactdx/panel/elements"
 import { createInspectorStore } from "@reactdx/panel/inspection"
 import { createHookNamer } from "@reactdx/panel/names"
 import { createSettings } from "@reactdx/panel/settings"
@@ -50,24 +51,26 @@ const timeline = createTimelineStore(
   (command) => port.postMessage({ ...command, tabId }),
   inspector,
 )
+// Code run in the inspected page. Firefox resolves to [result, exception];
+// Chrome before 151 only calls back.
+const evaluate = async <T,>(code: string): Promise<T> => {
+  const page = browser.devtools.inspectedWindow
+  if (import.meta.env.FIREFOX) {
+    const [result] = (await page.eval(code)) as unknown as [T]
+    return result
+  }
+  return new Promise<T>((resolve) =>
+    page.eval<T>(code, (...[result]) => resolve(result as T)),
+  )
+}
+const elements = followElements({
+  onSelectionChanged: browser.devtools.panels.elements.onSelectionChanged,
+  evaluate,
+})
 // Requests go only to the inspected page's own server (docs/panel.md, Sources).
 const editor = {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
-  // Firefox resolves to [result, exception]; Chrome before 151 only calls back.
-  origin: async () => {
-    const page = browser.devtools.inspectedWindow
-    if (import.meta.env.FIREFOX) {
-      const [origin] = (await page.eval("location.origin")) as unknown as [
-        string,
-      ]
-      return origin
-    }
-    return new Promise<string>((resolve) =>
-      page.eval<string>("location.origin", (...[origin]) =>
-        resolve(String(origin)),
-      ),
-    )
-  },
+  origin: async () => String(await evaluate<string>("location.origin")),
   // The Clipboard API needs a focused document, which a DevTools panel often isn't.
   copy: (text: string) => {
     const area = document.createElement("textarea")
@@ -229,6 +232,7 @@ render(() => {
       settings={settings}
       stale={stale()}
       onReload={() => browser.devtools.inspectedWindow.reload({})}
+      onShowElement={elements.show}
     />
   )
 }, document.getElementById("app") as HTMLElement)

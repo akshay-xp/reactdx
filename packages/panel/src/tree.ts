@@ -444,10 +444,15 @@ export function createTreeStore() {
     setPicking: (on: boolean) => setPicking(on),
     outlines,
     setOutlines: (mode: OutlineMode | undefined) => setOutlines(mode),
-    // The page's pick ends picking; an id the mirror has is selected and revealed.
+    // The page's pick ends picking; an id the mirror has is selected and
+    // revealed. A DOM element (from the Elements panel) while they're hidden:
+    // its component.
     picked(id: number | null) {
       setPicking(false)
-      if (id !== null && nodes.has(id)) reveal(id)
+      let at = id ?? 0
+      while (!showHosts() && nodes.get(at)?.kind === "host")
+        at = nodes.get(at)?.parentId ?? 0
+      if (nodes.has(at)) reveal(at)
     },
     hover: (id: number | undefined) => hover(id),
     // Selects a node from outside the tree (the inspector's owners) and makes

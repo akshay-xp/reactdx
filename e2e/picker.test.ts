@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { after, before, test } from "node:test"
 import { startFixture } from "../fixtures/start.ts"
+import { SELECT_CODE } from "../packages/panel/src/elements.ts"
 import type { BrowserName } from "./launch.ts"
 import { type PanelText, panelFor, parseCopies, until } from "./panel-text.ts"
 import { overlayPage, waitForOverlays } from "./shadows.ts"
@@ -83,6 +84,155 @@ test("Escape cancels the picker and its highlight", { skip }, async () => {
       false,
     )
     assert.equal(await panel.selected(), undefined)
+  } finally {
+    await browser.close()
+  }
+})
+
+// The Elements panel (#92). Puppeteer can't select a node there, so the select
+// code runs in the page as inspectedWindow.eval would, with its $0.
+const selectInElements = (page: import("puppeteer").Page, selector: string) =>
+  page.evaluate(
+    (code, selector) =>
+      new Function("$0", `return ${code}`)(document.querySelector(selector)),
+    SELECT_CODE,
+    selector,
+  )
+
+test("a node selected in the Elements panel selects its component", {
+  skip,
+}, async () => {
+  const { browser, page, panel } = await panelFor(name, URL_18, "after")
+  try {
+    await until(panel, (t) =>
+      (parseCopies(t)[0]?.names ?? []).includes("Counter"),
+    )
+    await selectInElements(page, "[data-testid=counter]")
+    assert.equal(await poll(panel.selected, (s) => s === "Counter"), "Counter")
+  } finally {
+    await browser.close()
+  }
+})
+
+test("Show in Elements panel reveals the element, and its selection there keeps the component", {
+  skip,
+}, async () => {
+  const { browser, page, panel } = await panelFor(name, URL_18, "after")
+  try {
+    await until(panel, (t) =>
+      (parseCopies(t)[0]?.names ?? []).includes("Counter"),
+    )
+    await selectInElements(page, "[data-testid=counter]")
+    await poll(panel.selected, (s) => s === "Counter")
+    // What the panel's evals asked, as the agent answered them.
+    await page.evaluate(() => {
+      const w = window as unknown as { __elements: string[] }
+      w.__elements = []
+      window.addEventListener("reactdx-elements", (event) => {
+        const { selected, element } = (event as CustomEvent).detail
+        w.__elements.push(
+          selected
+            ? `selected ${selected.dataset?.testid}`
+            : `revealed ${element?.dataset?.testid}`,
+        )
+      })
+    })
+    // Enabled once the inspection says Counter has DOM.
+    const SHOW = "Show in Elements panel"
+    await poll(
+      () => panel.described(SHOW),
+      (d) => !d.disabled,
+    )
+    await panel.press(SHOW)
+    const read = () =>
+      page.evaluate(
+        () => (window as unknown as { __elements: string[] }).__elements,
+      )
+    assert.deepEqual(await poll(read, (e) => e.length >= 2), [
+      "revealed counter",
+      "selected counter",
+    ])
+    // Firefox: inspect() brought its Inspector to the front.
+    const before = await panel.show()
+    if (name === "firefox") assert.equal(before, "inspector")
+    assert.equal(await poll(panel.selected, (s) => s === "Counter"), "Counter")
+  } finally {
+    await browser.close()
+  }
+})
+
+// What the panel's evals asked, as the agent answered them.
+const logElements = (page: import("puppeteer").Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { __elements: string[] }
+    w.__elements = []
+    window.addEventListener("reactdx-elements", (event) => {
+      const { selected, element } = (event as CustomEvent).detail
+      w.__elements.push(
+        selected
+          ? `selected ${selected.dataset?.testid}`
+          : `revealed ${element?.dataset?.testid}`,
+      )
+    })
+  })
+const logged = (page: import("puppeteer").Page) =>
+  page.evaluate(
+    () => (window as unknown as { __elements: string[] }).__elements,
+  )
+
+test("with DOM elements shown, an Elements selection selects the element's own row", {
+  skip,
+}, async () => {
+  const { browser, page, panel } = await panelFor(name, URL_18, "after")
+  try {
+    await until(panel, (t) =>
+      (parseCopies(t)[0]?.names ?? []).includes("Counter"),
+    )
+    await panel.press("Show DOM elements")
+    await selectInElements(page, "[data-testid=counter]")
+    assert.equal(await poll(panel.selected, (s) => s === "button"), "button")
+  } finally {
+    await browser.close()
+  }
+})
+
+test("a component selected from the Elements panel is scrolled to when ReactDX shows again", {
+  skip,
+}, async () => {
+  const { browser, page, panel } = await panelFor(
+    name,
+    `${URL_18}/bench.html`,
+    "after",
+  )
+  try {
+    await until(panel, (t) => t.includes("Cell"))
+    await selectInElements(page, "[data-testid=cell]")
+    await poll(panel.selected, (s) => s === "Cell")
+    // The real inspect() brings the Elements panel to the front, and its own
+    // selection change comes back before the next one.
+    await logElements(page)
+    const SHOW = "Show in Elements panel"
+    await poll(
+      () => panel.described(SHOW),
+      (d) => !d.disabled,
+    )
+    await panel.press(SHOW)
+    await poll(
+      () => logged(page),
+      (e) => e.includes("selected cell"),
+    )
+    await page.evaluate(
+      (code) =>
+        new Function("$0", `return ${code}`)(
+          document.querySelectorAll("[data-testid=cell]")[5000],
+        ),
+      SELECT_CODE,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    await panel.show()
+    // Only a row in view is rendered: the selected one reads its name once
+    // the tree scrolled to it.
+    assert.equal(await poll(panel.selected, (s) => s === "Cell"), "Cell")
   } finally {
     await browser.close()
   }

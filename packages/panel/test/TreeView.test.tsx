@@ -191,6 +191,50 @@ test("a tree renders the rows in its pane's view: 400 px is 20 rows plus oversca
   }
 })
 
+test("a reveal while the pane is hidden scrolls once it shows again", () => {
+  // DevTools hides the panel (0 px) while another panel, as Elements, is in
+  // front; Chrome sends it no resize when it comes back.
+  vi.useFakeTimers()
+  let paneHeight = 0
+  const clientHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientHeight",
+  )
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get: () => paneHeight,
+  })
+  try {
+    const tree = createTreeStore()
+    const { container } = render(() => (
+      <div data-testid="trees">
+        <TreeView tree={tree} rootId={1} />
+      </div>
+    ))
+    tree.apply(
+      treeBatch(1, [
+        { op: "reset" },
+        ...Array.from({ length: 100 }, (_, i) => add(i + 1, 0, `Row${i}`, i)),
+      ]),
+    )
+    const pane = container.querySelector("[data-testid=trees]") as HTMLElement
+    tree.reveal(80)
+    vi.advanceTimersByTime(200)
+    expect(pane.scrollTop).toBe(0)
+    paneHeight = 400
+    vi.advanceTimersByTime(50)
+    expect(pane.scrollTop).toBeGreaterThan(0)
+    // Once: the developer's own scroll afterwards stays.
+    pane.scrollTop = 0
+    vi.advanceTimersByTime(200)
+    expect(pane.scrollTop).toBe(0)
+  } finally {
+    vi.useRealTimers()
+    if (clientHeight)
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", clientHeight)
+  }
+})
+
 test("a row shows its render count past one, and a mark while just rendered", () => {
   vi.useFakeTimers()
   try {

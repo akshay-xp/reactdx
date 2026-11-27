@@ -221,6 +221,12 @@ test("inspect posts a class component's state", () => {
   expect(replies()[0]?.data?.state).toMatchObject({ props: { ticks: 2 } })
 })
 
+test("inspect says whether the node has DOM", () => {
+  inspect(idOf("Greeting"))
+  inspect(idOf("Clock"))
+  expect(replies().map((reply) => reply.data?.dom)).toEqual([true, undefined])
+})
+
 test("an unknown id gets null; a malformed inspect gets nothing", () => {
   inspect(9999)
   expect(replies()).toEqual([

@@ -548,6 +548,10 @@ export const CLEAR_HIGHLIGHT = {
 export const PICK_START = { source: "reactdx-relay", type: "pick-start" }
 export const PICK_STOP = { source: "reactdx-relay", type: "pick-stop" }
 
+// The window event the panel's inspectedWindow.eval dispatches to reach the
+// agent, which answers through its detail (docs/page.md, Elements panel).
+export const ELEMENTS_EVENT = "reactdx-elements"
+
 // Agent to panel (relay, tree port, background): the picked component's id, or
 // null when picking ended without one (Escape, or a click on nothing React owns).
 export type PickedMessage = {

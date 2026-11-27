@@ -74,6 +74,8 @@ function setup(
   )
   // The links into the Commits tab, as called.
   const nav: unknown[][] = []
+  // The ids asked to show in the Elements panel.
+  const shown: number[] = []
   const view = render(() => (
     <Inspector
       tree={tree}
@@ -83,6 +85,7 @@ function setup(
       onRenders={() => nav.push(["renders"])}
       onLatest={() => nav.push(["latest"])}
       onCommit={(seq) => nav.push(["commit", seq])}
+      onShowElement={(id) => shown.push(id)}
       folded={folded ?? undefined}
     />
   ))
@@ -90,7 +93,7 @@ function setup(
     tree.select(3)
     inspector.inspect(3)
   }
-  return { tree, inspector, sent, copied, select, nav, ...view }
+  return { tree, inspector, sent, copied, select, nav, shown, ...view }
 }
 
 const sections = (container: Element) =>
@@ -1551,6 +1554,23 @@ test("Force re-render in the header, for components but not DOM elements", () =>
   expect(
     host.container.querySelector("[aria-label='Force re-render']"),
   ).toBeNull()
+})
+
+test("Show in Elements panel in the header, disabled without DOM", () => {
+  const { container, inspector, shown, select } = setup("host")
+  select()
+  inspector.receive(inspected(3, { props: object({}), dom: true }))
+  const button = () =>
+    container.querySelector(
+      "[data-testid=inspector-header] [aria-label='Show in Elements panel']",
+    ) as HTMLButtonElement | null
+  expect(button()).not.toBeNull()
+  expect(button()?.disabled).toBe(false)
+  fireEvent.click(button() as Element)
+  expect(shown).toEqual([3])
+  inspector.receive(inspected(3, { props: object({}) }))
+  expect(button()?.disabled).toBe(true)
+  expect(button()?.title).toBe("No DOM element to show")
 })
 
 test("Show fallback and Show error: only with a boundary, pressed while forced; turning one on selects the boundary", () => {

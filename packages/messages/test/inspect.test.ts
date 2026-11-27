@@ -142,6 +142,14 @@ test("inspected replies carry props and state, or null", () => {
   ).toBeUndefined()
 })
 
+test("inspected replies say whether the node has DOM", () => {
+  const data = { props: object({}), dom: true as const }
+  expect(parseInspected(inspected(3, data))?.data?.dom).toBe(true)
+  expect(
+    parseInspected({ ...inspected(3, data), data: { ...data, dom: 1 } }),
+  ).toBeUndefined()
+})
+
 test("expanded replies carry the object's page", () => {
   const value = object({ a: 1 })
   expect(parseExpanded(expanded(2, 100, value))).toEqual(

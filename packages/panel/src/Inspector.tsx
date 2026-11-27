@@ -138,6 +138,8 @@ export function Inspector(props: {
   onRenders?: () => void
   onLatest?: () => void
   onCommit?: (seq: number) => void
+  // Reveals the node's first element in the browser's Elements panel (#92).
+  onShowElement?: (id: number) => void
   sources: Sources
   settings: Settings
   // The clock "2s ago" is shown against (Date.now, ticking).
@@ -456,6 +458,21 @@ export function Inspector(props: {
                     </IconButton>
                   )}
                 </For>
+                <IconButton
+                  label="Show in Elements panel"
+                  reason={
+                    props.inspector.data()?.dom
+                      ? undefined
+                      : "No DOM element to show"
+                  }
+                  onClick={() => {
+                    const id = props.inspector.id()
+                    if (id !== undefined) props.onShowElement?.(id)
+                  }}
+                >
+                  <rect x="3" y="4" width="18" height="16" rx="1" />
+                  <path d="m9 10-3 2 3 2M15 10l3 2-3 2" />
+                </IconButton>
                 <Show when={node().kind !== "host" && !server()}>
                   <IconButton
                     label="Force re-render"

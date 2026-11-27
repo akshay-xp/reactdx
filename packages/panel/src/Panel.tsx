@@ -15,6 +15,7 @@ export function Panel(props: {
   settings: Settings
   stale?: boolean
   onReload?: () => void
+  onShowElement?: (id: number) => void
 }) {
   return (
     <main
@@ -30,6 +31,7 @@ export function Panel(props: {
         settings={props.settings}
         stale={props.stale}
         onReload={props.onReload}
+        onShowElement={props.onShowElement}
       />
     </main>
   )

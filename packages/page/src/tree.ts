@@ -490,7 +490,8 @@ export function createTree({
     },
     // The nearest mounted component (never a host) owning a DOM element, found
     // through the fiber React keeps on each of its elements.
-    owner(element: Element) {
+    // `hosts`: the element's own node may be the answer (the Elements panel).
+    owner(element: Element, hosts = false) {
       for (let el: Element | null = element; el; el = el.parentElement) {
         const key = Object.keys(el).find((k) => k.startsWith("__reactFiber$"))
         if (!key) continue
@@ -502,7 +503,8 @@ export function createTree({
         ) {
           const id = ids.get(fiber)
           const kind = kindOf(fiber)
-          if (id && kind && kind !== "host" && fibers.has(id)) return id
+          if (id && kind && (hosts || kind !== "host") && fibers.has(id))
+            return id
         }
         return
       }

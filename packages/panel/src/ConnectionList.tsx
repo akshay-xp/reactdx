@@ -36,6 +36,7 @@ export function ConnectionList(props: {
   // Recent updates: with them, Components and Updates are tabs.
   timeline?: TimelineStore
   sources: Sources
+  onShowElement?: (id: number) => void
   settings: Settings
   stale?: boolean
   onReload?: () => void
@@ -125,6 +126,7 @@ export function ConnectionList(props: {
             setTab(UPDATES)
           }}
           onLatest={() => props.timeline?.live()}
+          onShowElement={props.onShowElement}
           now={now}
         />
       </aside>
