@@ -9,7 +9,8 @@ import {
 
 export type Outline = Box & {
   label: string
-  style: "waiting" | "arrived" | "island" | "wrapper"
+  style: "waiting" | "arrived" | "island" | "wrapper" | "render"
+  opacity?: number
 }
 
 type Box = { left: number; top: number; width: number; height: number }
@@ -33,13 +34,14 @@ export function boxOf(elements: Element[]): Box | undefined {
   return { left, top, width: right - left, height: bottom - top }
 }
 
-// The panel theme's light values (waiting, success, client): the page doesn't
-// know the panel's theme.
+// The panel theme's light values (waiting, success, client, accent): the page
+// doesn't know the panel's theme.
 const COLORS = {
   waiting: "#8a5a00",
   arrived: "#188038",
   island: "#a04f00",
   wrapper: "#a04f00",
+  render: "#0b57d0",
 }
 const SVG = "http://www.w3.org/2000/svg"
 
@@ -110,6 +112,8 @@ export function createOutlineLayer(doc: Document) {
           // An outline, not a border: the box's rectangle stays the element's.
           const line = rest.style === "wrapper" ? "dashed" : "solid"
           box.style.cssText = `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; outline: 2px ${line} ${color}`
+          if (rest.opacity !== undefined)
+            box.style.opacity = String(rest.opacity)
           box.append(label(rest.label, color))
           return box
         },
@@ -411,5 +415,100 @@ export function createIslandOutlines({
       layer.draw([], 0)
     },
     changed: scheduler.changed,
+  }
+}
+
+const RENDER_MS = 1000
+
+// Each component that rendered, outlined for 1 s after its last render and
+// fading; its label counts the renders while it shows.
+export function createRenderOutlines({
+  layer,
+  target,
+  find,
+  now,
+  frame,
+}: {
+  layer: Layer
+  target: EventTarget
+  find: (id: number) => { elements: Element[]; name: string } | undefined
+  now: () => number
+  frame: (callback: () => void) => void
+}) {
+  // Oldest render first: a render moves its id to the end.
+  const recent = new Map<number, { count: number; at: number }>()
+  let measured: (Box & { label: string; at: number })[] = []
+  let more = 0
+  let tick: ReturnType<typeof setInterval> | undefined
+  const stopTick = () => {
+    clearInterval(tick)
+    tick = undefined
+  }
+  const prune = (at: number) => {
+    for (const [id, entry] of recent) {
+      if (at - entry.at < RENDER_MS) break
+      recent.delete(id)
+    }
+  }
+
+  const render = () => {
+    const at = now()
+    prune(at)
+    measured = measured.filter((box) => at - box.at < RENDER_MS)
+    more = Math.max(0, recent.size - MAX_OUTLINES)
+    layer.draw(
+      measured.map(({ at: last, ...box }) => ({
+        ...box,
+        style: "render" as const,
+        opacity: 1 - (at - last) / RENDER_MS,
+      })),
+      more,
+    )
+    if (!recent.size) stopTick()
+  }
+  const measure = () => {
+    prune(now())
+    measured = []
+    for (const [id, { count, at }] of [...recent].slice(-MAX_OUTLINES)) {
+      const found = find(id)
+      const box = boxOf(found?.elements ?? [])
+      if (!box) continue
+      const name = found?.name ?? ""
+      measured.push({
+        ...box,
+        label: count > 1 ? `${name} ×${count}` : name,
+        at,
+      })
+    }
+    render()
+    if (recent.size) tick ??= setInterval(render, TICK_MS)
+  }
+  const scheduler = createScheduler({ target, frame, measure })
+
+  return {
+    on() {
+      scheduler.start()
+      scheduler.changed()
+    },
+    off() {
+      scheduler.stop()
+      stopTick()
+      recent.clear()
+      measured = []
+      more = 0
+      layer.draw([], 0)
+    },
+    changed: scheduler.changed,
+    rendered(ids: number[]) {
+      if (!scheduler.active()) return
+      const at = now()
+      for (const id of ids) {
+        const last = recent.get(id)
+        recent.delete(id)
+        const count = last && at - last.at < RENDER_MS ? last.count + 1 : 1
+        recent.set(id, { count, at })
+      }
+      scheduler.changed()
+    },
   }
 }

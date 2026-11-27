@@ -4,6 +4,7 @@ import {
   boxOf,
   createIslandOutlines,
   createOutlineLayer,
+  createRenderOutlines,
   createScheduler,
   createSuspenseOutlines,
   type Island,
@@ -512,4 +513,149 @@ test("hovering an island names its Server Component; a click on one picks it, ot
   c.outlines.off()
   expect(at("click", 25, 5).defaultPrevented).toBe(false)
   expect(c.picks).toEqual([20])
+})
+
+test("the layer draws a render outline in the accent color at its opacity", () => {
+  const layer = createOutlineLayer(document)
+  layer.draw([{ ...outline("render"), label: "Counter", opacity: 0.5 }], 0)
+  const box = roots[0]?.querySelector<HTMLElement>("[data-outline]")
+  expect(box?.dataset.style).toBe("render")
+  expect(box?.style.opacity).toBe("0.5")
+  expect(box?.style.outline).toBe("2px solid rgb(11, 87, 208)")
+  layer.draw([], 0)
+})
+
+// Render outlines over a fake layer: frames run when `run` says, the clock is
+// the fake timers' Date.now, and each id finds one 10x10 element named Cn.
+const renders = () => {
+  const draws: { outlines: Outline[]; more: number }[] = []
+  const frames: (() => void)[] = []
+  const missing = new Set<number>()
+  const target = new EventTarget()
+  const outlines = createRenderOutlines({
+    layer: { draw: (outlines, more) => draws.push({ outlines, more }) },
+    target,
+    find: (id) =>
+      missing.has(id)
+        ? { elements: [], name: `C${id}` }
+        : { elements: [element(id, 0, 10, 10)], name: `C${id}` },
+    now: () => Date.now(),
+    frame: (callback) => frames.push(callback),
+  })
+  const run = () => {
+    for (const callback of frames.splice(0)) callback()
+  }
+  return {
+    outlines,
+    draws,
+    frames,
+    missing,
+    target,
+    run,
+    last: () => draws.at(-1),
+  }
+}
+
+test("a rendered component is outlined on the next frame, fades, and is gone after 1 s", () => {
+  vi.useFakeTimers()
+  try {
+    const r = renders()
+    r.outlines.rendered([1])
+    r.run()
+    expect(r.draws).toEqual([])
+
+    r.outlines.on()
+    r.outlines.rendered([1])
+    expect(r.draws).toEqual([])
+    r.run()
+    expect(r.last()).toEqual({
+      outlines: [
+        {
+          left: 1,
+          top: 0,
+          width: 10,
+          height: 10,
+          style: "render",
+          label: "C1",
+          opacity: 1,
+        },
+      ],
+      more: 0,
+    })
+    vi.advanceTimersByTime(500)
+    expect(r.last()?.outlines[0]?.opacity).toBeCloseTo(0.5)
+    vi.advanceTimersByTime(500)
+    expect(r.last()).toEqual({ outlines: [], more: 0 })
+    const draws = r.draws.length
+    vi.advanceTimersByTime(500)
+    expect(r.draws).toHaveLength(draws)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test("a render while outlined restarts its 1 s and counts; no box, no outline", () => {
+  vi.useFakeTimers()
+  try {
+    const r = renders()
+    r.missing.add(2)
+    r.outlines.on()
+    r.outlines.rendered([1, 2])
+    r.run()
+    vi.advanceTimersByTime(600)
+    r.outlines.rendered([1])
+    r.run()
+    expect(r.last()?.outlines).toEqual([
+      {
+        left: 1,
+        top: 0,
+        width: 10,
+        height: 10,
+        style: "render",
+        label: "C1 ×2",
+        opacity: 1,
+      },
+    ])
+    vi.advanceTimersByTime(800)
+    expect(r.last()?.outlines).toHaveLength(1)
+    vi.advanceTimersByTime(200)
+    expect(r.last()?.outlines).toEqual([])
+
+    // Gone means counted afresh.
+    r.outlines.rendered([1])
+    r.run()
+    expect(r.last()?.outlines[0]?.label).toBe("C1")
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test("the newest 100 renders are outlined with a count of the rest; scrolls measure again; off clears", () => {
+  vi.useFakeTimers()
+  try {
+    const r = renders()
+    r.outlines.on()
+    r.outlines.rendered(Array.from({ length: 101 }, (_, i) => i + 1))
+    r.run()
+    expect(r.last()?.outlines).toHaveLength(100)
+    expect(r.last()?.outlines[0]?.label).toBe("C2")
+    expect(r.last()?.more).toBe(1)
+
+    r.target.dispatchEvent(new Event("scroll"))
+    expect(r.frames).toHaveLength(1)
+    r.run()
+
+    r.outlines.off()
+    expect(r.last()).toEqual({ outlines: [], more: 0 })
+    const draws = r.draws.length
+    vi.advanceTimersByTime(500)
+    r.outlines.rendered([1])
+    expect(r.frames).toHaveLength(0)
+    r.outlines.on()
+    r.run()
+    expect(r.last()?.outlines).toEqual([])
+    expect(r.draws.length).toBeGreaterThan(draws)
+  } finally {
+    vi.useRealTimers()
+  }
 })
