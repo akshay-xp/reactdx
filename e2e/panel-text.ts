@@ -39,9 +39,8 @@ export type PanelText = (() => Promise<string>) & {
   // and presses Enter.
   edit(row: string, text: string): Promise<void>
   selected(): Promise<string | undefined>
-  // Brings the ReactDX panel to the front, e.g. after inspect() opened Elements:
-  // Firefox's accessibility tree has only the shown tool, Chrome's frame stays
-  // readable. The tool in front before, Firefox only (#92).
+  // Brings the ReactDX panel to the front, e.g. after inspect() opened Elements
+  // (#92). The tool in front before, Firefox only.
   show(): Promise<string | undefined>
 }
 
@@ -204,7 +203,10 @@ export async function openPanelText(
             "[data-testid=node][aria-selected=true] [data-testid=name]",
           )?.textContent ?? undefined,
       )
-    const show = async () => undefined
+    const show = async () => {
+      await openPanel(browser)
+      return undefined
+    }
     return Object.assign(read, {
       frame,
       show,

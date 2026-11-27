@@ -78,45 +78,66 @@ export function TreeView(props: { tree: TreeStore; rootId: number }) {
   // Times the first rows after a subscribe (e2e/perf.test.ts).
   const shown = createMemo(() => rows().length > 0)
   createEffect(() => shown() && performance.mark("reactdx:rows"))
+  // A selection made while DevTools shows another panel (the Elements
+  // panel's, #92) finds the pane 0 px tall, and a scroll then is lost. It
+  // waits by frames for the pane to show: Chrome sends a hidden panel no
+  // resize, so coming back is no change to a ResizeObserver.
+  let waiting = false
+  let disposed = false
+  onCleanup(() => {
+    disposed = true
+  })
+  const whenShown = () => {
+    if (disposed) return
+    if (!pane?.clientHeight) return requestAnimationFrame(whenShown)
+    waiting = false
+    scrollTo(props.tree.selected())
+  }
+  const scrollTo = (id: number | undefined) => {
+    const index = rows().findIndex((row) => row.id === id)
+    // Before mount there's no layout to scroll.
+    if (index === -1 || !pane) return
+    if (pane.clientHeight === 0) {
+      if (!waiting) requestAnimationFrame(whenShown)
+      waiting = true
+      return
+    }
+    // A row's clearance from the pane's edges: macOS draws the horizontal
+    // scrollbar over the content, so a row right at the bottom hides under it.
+    const margin = Math.min(ROW_HEIGHT, (pane.clientHeight - ROW_HEIGHT) / 2)
+    const top = offset(pane) + index * ROW_HEIGHT
+    if (top < margin) pane.scrollTop += top - margin
+    else if (top + ROW_HEIGHT + margin > pane.clientHeight)
+      pane.scrollTop += top + ROW_HEIGHT + margin - pane.clientHeight
+    measure()
+    // Next frame, after the scroll has applied and the window has rendered:
+    // bring the row's toggle and name into view sideways (deep rows start off
+    // to the right).
+    requestAnimationFrame(() => {
+      const row = box.querySelector(`[data-id="${id}"]`)
+      const start = row?.querySelector("[data-toggle]")
+      // The count sits at the tree's right edge: not the row's content.
+      const end = [...(row?.children ?? [])]
+        .filter((child) => !child.matches("[data-testid=renders]"))
+        .at(-1)
+      if (!pane || !start || !end) return
+      const left = pane.getBoundingClientRect().left
+      const from = start.getBoundingClientRect().left - left
+      // The content's end (name, badge or key), a row's height from the right
+      // edge: macOS draws the vertical scrollbar over the content.
+      const to = end.getBoundingClientRect().right - left + ROW_HEIGHT
+      // Whole pixels, rounded outward: the scroll snaps to device pixels.
+      // Content that fits is shown whole; wider content shows its start.
+      if (from < 0 || to - from > pane.clientWidth)
+        pane.scrollLeft += Math.floor(from)
+      else if (to > pane.clientWidth)
+        pane.scrollLeft += Math.ceil(to - pane.clientWidth)
+    })
+  }
   // Only on selection changes and reveals: a commit mustn't scroll back to the
   // selection.
   createEffect(
-    on([props.tree.selected, props.tree.reveals], ([id]) => {
-      const index = rows().findIndex((row) => row.id === id)
-      // Before mount there's no layout to scroll.
-      if (index === -1 || !pane) return
-      // A row's clearance from the pane's edges: macOS draws the horizontal
-      // scrollbar over the content, so a row right at the bottom hides under it.
-      const margin = Math.min(ROW_HEIGHT, (pane.clientHeight - ROW_HEIGHT) / 2)
-      const top = offset(pane) + index * ROW_HEIGHT
-      if (top < margin) pane.scrollTop += top - margin
-      else if (top + ROW_HEIGHT + margin > pane.clientHeight)
-        pane.scrollTop += top + ROW_HEIGHT + margin - pane.clientHeight
-      measure()
-      // Next frame, after the scroll has applied and the window has rendered:
-      // bring the row's toggle and name into view sideways (deep rows start off
-      // to the right).
-      requestAnimationFrame(() => {
-        const row = box.querySelector(`[data-id="${id}"]`)
-        const start = row?.querySelector("[data-toggle]")
-        // The count sits at the tree's right edge: not the row's content.
-        const end = [...(row?.children ?? [])]
-          .filter((child) => !child.matches("[data-testid=renders]"))
-          .at(-1)
-        if (!pane || !start || !end) return
-        const left = pane.getBoundingClientRect().left
-        const from = start.getBoundingClientRect().left - left
-        // The content's end (name, badge or key), a row's height from the right
-        // edge: macOS draws the vertical scrollbar over the content.
-        const to = end.getBoundingClientRect().right - left + ROW_HEIGHT
-        // Whole pixels, rounded outward: the scroll snaps to device pixels.
-        // Content that fits is shown whole; wider content shows its start.
-        if (from < 0 || to - from > pane.clientWidth)
-          pane.scrollLeft += Math.floor(from)
-        else if (to > pane.clientWidth)
-          pane.scrollLeft += Math.ceil(to - pane.clientWidth)
-      })
-    }),
+    on([props.tree.selected, props.tree.reveals], ([id]) => scrollTo(id)),
   )
   const range = () => windowOf(top(), height(), rows().length)
 

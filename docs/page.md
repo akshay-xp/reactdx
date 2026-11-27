@@ -90,7 +90,7 @@ Outlines on the page, off until the panel's `outlines { mode }` command: `"suspe
 
 The panel reaches the agent through `inspectedWindow.eval`, which runs in the page's main world with the console's `$0` and `inspect()` (`docs/panel.md`, Elements panel). The eval dispatches `CustomEvent(ELEMENTS_EVENT)` (`"reactdx-elements"`, from messages) on `window`; the agent's listener answers through `detail`, only while watched:
 
-- `{ selected: Element }` (the Elements panel's selection): posts `picked(tree.owner(el))` when an owner exists (the panel selects and reveals it, as a pick), else nothing.
+- `{ selected: Element }` (the Elements panel's selection): posts `picked(tree.owner(el, true))`, the element's own node when the tree has it (`owner`'s `hosts`: a DOM element counts), else its nearest component; nothing for an element React doesn't own. The panel selects it while DOM elements show, else climbs to its component (`docs/panel.md`, Tree store `picked`).
 - `{ id }`: sets `detail.element` to `tree.find(id).elements[0]` (an unknown id: nothing), before the dispatch returns, and remembers it as `revealed`. The eval's `inspect()` then fires the Elements panel's selection change, whose `{ selected }` is that element; its owner can be nearer than the revealed node (App's first div may be Layout's), so a selection equal to `revealed` posts nothing. Any selection clears `revealed`.
 - The page can dispatch the event too; that only picks a component, as a forged `picked` could already.
 - `describe` sets `dom: true` when `tree.find(id).elements` isn't empty (not for server nodes), so the Inspector knows before a click.

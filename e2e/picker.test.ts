@@ -160,3 +160,80 @@ test("Show in Elements panel reveals the element, and its selection there keeps 
     await browser.close()
   }
 })
+
+// What the panel's evals asked, as the agent answered them.
+const logElements = (page: import("puppeteer").Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { __elements: string[] }
+    w.__elements = []
+    window.addEventListener("reactdx-elements", (event) => {
+      const { selected, element } = (event as CustomEvent).detail
+      w.__elements.push(
+        selected
+          ? `selected ${selected.dataset?.testid}`
+          : `revealed ${element?.dataset?.testid}`,
+      )
+    })
+  })
+const logged = (page: import("puppeteer").Page) =>
+  page.evaluate(
+    () => (window as unknown as { __elements: string[] }).__elements,
+  )
+
+test("with DOM elements shown, an Elements selection selects the element's own row", {
+  skip,
+}, async () => {
+  const { browser, page, panel } = await panelFor(name, URL_18, "after")
+  try {
+    await until(panel, (t) =>
+      (parseCopies(t)[0]?.names ?? []).includes("Counter"),
+    )
+    await panel.press("Show DOM elements")
+    await selectInElements(page, "[data-testid=counter]")
+    assert.equal(await poll(panel.selected, (s) => s === "button"), "button")
+  } finally {
+    await browser.close()
+  }
+})
+
+test("a component selected from the Elements panel is scrolled to when ReactDX shows again", {
+  skip,
+}, async () => {
+  const { browser, page, panel } = await panelFor(
+    name,
+    `${URL_18}/bench.html`,
+    "after",
+  )
+  try {
+    await until(panel, (t) => t.includes("Cell"))
+    await selectInElements(page, "[data-testid=cell]")
+    await poll(panel.selected, (s) => s === "Cell")
+    // The real inspect() brings the Elements panel to the front, and its own
+    // selection change comes back before the next one.
+    await logElements(page)
+    const SHOW = "Show in Elements panel"
+    await poll(
+      () => panel.described(SHOW),
+      (d) => !d.disabled,
+    )
+    await panel.press(SHOW)
+    await poll(
+      () => logged(page),
+      (e) => e.includes("selected cell"),
+    )
+    await page.evaluate(
+      (code) =>
+        new Function("$0", `return ${code}`)(
+          document.querySelectorAll("[data-testid=cell]")[5000],
+        ),
+      SELECT_CODE,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    await panel.show()
+    // Only a row in view is rendered: the selected one reads its name once
+    // the tree scrolled to it.
+    assert.equal(await poll(panel.selected, (s) => s === "Cell"), "Cell")
+  } finally {
+    await browser.close()
+  }
+})
