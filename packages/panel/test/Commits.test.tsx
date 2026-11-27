@@ -258,7 +258,10 @@ test("the toolbar filters to updates with wasted renders, and clears", () => {
   expect(seqs()).toEqual(["3", "2", "1"])
   fireEvent.click(button("Clear"))
   expect(sent.at(-1)).toEqual({ type: "clear-updates" })
-  expect(container.textContent).toContain("No updates since DevTools opened.")
+  expect(container.textContent).toContain(
+    "No updates yet.Use the app: each commit React makes shows here.",
+  )
+  expect(container.querySelector("[data-testid=empty] svg")).not.toBeNull()
 })
 
 test("what rendered nests under what rendered above it; repeated siblings fold", () => {

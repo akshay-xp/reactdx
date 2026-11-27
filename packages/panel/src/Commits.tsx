@@ -6,6 +6,7 @@ import {
 } from "@reactdx/messages"
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js"
 import { ago } from "./ago"
+import { Empty } from "./Empty"
 import { KIND_TEXT, NodeLink } from "./Inspector"
 import type { InspectorStore } from "./inspection"
 import type { CommitDetail, TimelineStore, UpdateRow } from "./timeline"
@@ -132,7 +133,11 @@ export function Commits(props: {
         <Show
           when={props.timeline.commits().length}
           fallback={
-            <p class="p-2 text-muted">No updates since DevTools opened.</p>
+            <Empty
+              icon={<path d="M4 6h16M4 12h16M4 18h10" />}
+              title="No updates yet."
+              hint="Use the app: each commit React makes shows here."
+            />
           }
         >
           <div
