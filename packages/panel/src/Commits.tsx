@@ -239,7 +239,7 @@ export function Commits(props: {
       <section
         data-testid="commit-detail"
         aria-label="Update"
-        class="min-h-0 min-w-0 flex-1 overflow-auto border-border border-t p-2 sm:border-t-0 sm:border-l"
+        class="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto border-border border-t p-2 sm:border-t-0 sm:border-l"
       >
         <Switch>
           {/* No updates: the list's screen says it; one is enough. */}
