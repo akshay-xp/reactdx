@@ -393,3 +393,20 @@ test("a waterfall reads as one row; open, its waits on one time axis and a hint"
   fireEvent.click(row())
   expect(container.querySelector("[data-testid=waterfall]")).toBeNull()
 })
+
+test("the detail pane's empty states say what to do; blank with no updates", () => {
+  const { timeline, container } = setup()
+  const detail = () =>
+    container.querySelector("[data-testid=commit-detail]") as HTMLElement
+  expect(detail().textContent).toBe("")
+  timeline.receiveCommits(commitsMessage([summary(1, 0, 1)], 1, false))
+  expect(detail().textContent).toBe(
+    "Pick an update to see what rendered and why.Click one in the list.",
+  )
+  expect(detail().querySelector("[data-testid=empty] svg")).not.toBeNull()
+  timeline.pick(1)
+  timeline.receiveCommitted(committed(1, null))
+  expect(detail().textContent).toBe(
+    "This update is no longer recorded.ReactDX keeps the latest updates; older ones drop past its limit.",
+  )
+})

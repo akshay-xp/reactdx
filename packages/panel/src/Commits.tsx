@@ -15,6 +15,11 @@ import { previewText } from "./value"
 import { Triangle } from "./values"
 import type { Waterfall } from "./waterfall"
 
+// A list, inside a 24-unit svg (Glyph): the Updates tab's empty screens.
+function ListGlyph() {
+  return <path d="M4 6h16M4 12h16M4 18h10" />
+}
+
 // The recorded commits, newest first (docs/panel.md, Commits). One tab stop:
 // the list holds focus and names the picked row through aria-activedescendant;
 // its keys go to the store.
@@ -134,7 +139,7 @@ export function Commits(props: {
           when={props.timeline.commits().length}
           fallback={
             <Empty
-              icon={<path d="M4 6h16M4 12h16M4 18h10" />}
+              icon={<ListGlyph />}
               title="No updates yet."
               hint="Use the app: each commit React makes shows here."
             />
@@ -237,13 +242,25 @@ export function Commits(props: {
         class="min-h-0 min-w-0 flex-1 overflow-auto border-border border-t p-2 sm:border-t-0 sm:border-l"
       >
         <Switch>
-          <Match when={props.timeline.picked() === undefined}>
-            <p class="text-muted">
-              Pick an update to see what rendered and why.
-            </p>
+          {/* No updates: the list's screen says it; one is enough. */}
+          <Match
+            when={
+              props.timeline.picked() === undefined &&
+              props.timeline.commits().length
+            }
+          >
+            <Empty
+              icon={<ListGlyph />}
+              title="Pick an update to see what rendered and why."
+              hint="Click one in the list."
+            />
           </Match>
           <Match when={props.timeline.detail() === null}>
-            <p class="text-muted">This update is no longer recorded.</p>
+            <Empty
+              icon={<ListGlyph />}
+              title="This update is no longer recorded."
+              hint="ReactDX keeps the latest updates; older ones drop past its limit."
+            />
           </Match>
           <Match when={props.timeline.detail()}>
             {(detail) => (
