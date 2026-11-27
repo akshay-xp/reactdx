@@ -258,7 +258,10 @@ test("the toolbar filters to updates with wasted renders, and clears", () => {
   expect(seqs()).toEqual(["3", "2", "1"])
   fireEvent.click(button("Clear"))
   expect(sent.at(-1)).toEqual({ type: "clear-updates" })
-  expect(container.textContent).toContain("No updates since DevTools opened.")
+  expect(container.textContent).toContain(
+    "No updates yet.Use the app: each commit React makes shows here.",
+  )
+  expect(container.querySelector("[data-testid=empty] svg")).not.toBeNull()
 })
 
 test("what rendered nests under what rendered above it; repeated siblings fold", () => {
@@ -389,4 +392,21 @@ test("a waterfall reads as one row; open, its waits on one time axis and a hint"
   )
   fireEvent.click(row())
   expect(container.querySelector("[data-testid=waterfall]")).toBeNull()
+})
+
+test("the detail pane's empty states say what to do; blank with no updates", () => {
+  const { timeline, container } = setup()
+  const detail = () =>
+    container.querySelector("[data-testid=commit-detail]") as HTMLElement
+  expect(detail().textContent).toBe("")
+  timeline.receiveCommits(commitsMessage([summary(1, 0, 1)], 1, false))
+  expect(detail().textContent).toBe(
+    "Pick an update to see what rendered and why.Click one in the list.",
+  )
+  expect(detail().querySelector("[data-testid=empty] svg")).not.toBeNull()
+  timeline.pick(1)
+  timeline.receiveCommitted(committed(1, null))
+  expect(detail().textContent).toBe(
+    "This update is no longer recorded.ReactDX keeps the latest updates; older ones drop past its limit.",
+  )
 })

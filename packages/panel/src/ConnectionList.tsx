@@ -14,7 +14,7 @@ import { Empty, EmptyAction } from "./Empty"
 import { Inspector, type Settings } from "./Inspector"
 import type { InspectorStore } from "./inspection"
 import type { Sources } from "./source"
-import { ReloadGlyph, Toolbar } from "./Toolbar"
+import { ReactGlyph, ReloadGlyph, Toolbar } from "./Toolbar"
 import { TreeView } from "./TreeView"
 import type { TimelineStore } from "./timeline"
 import type { TreeStore } from "./tree"
@@ -56,6 +56,23 @@ export function ConnectionList(props: {
             renders the rows in this pane's view. The content is as wide as
             its widest row, so rows and the selection span it. */}
         <div data-testid="trees" class="min-h-0 flex-1 overflow-auto">
+          {/* Search marks matches without filtering rows: a search that
+              matches nothing would otherwise only read 0 of 0. */}
+          <Show when={props.tree.query() && !props.tree.matches().length}>
+            <p
+              data-testid="no-match"
+              class="sticky left-0 flex items-center gap-2 border-border border-b px-2 py-1 text-muted"
+            >
+              {`No components match “${props.tree.query()}”.`}
+              <button
+                type="button"
+                class="rounded px-1 text-accent hover:bg-selected"
+                onClick={() => props.tree.setQuery("")}
+              >
+                Clear search
+              </button>
+            </p>
+          </Show>
           <ul class="w-max min-w-full">
             <For each={props.renderers}>
               {(renderer) => (
@@ -132,6 +149,11 @@ export function ConnectionList(props: {
       </aside>
     </div>
   )
+  const reload = () => (
+    <EmptyAction icon={<ReloadGlyph />} onClick={() => props.onReload?.()}>
+      Reload page
+    </EmptyAction>
+  )
   return (
     <Switch>
       <Match when={props.renderers.length === 0 && props.stale}>
@@ -140,23 +162,24 @@ export function ConnectionList(props: {
           title="Reload this page to inspect React."
           hint="It was open before ReactDX was installed or updated."
         >
-          <EmptyAction
-            icon={<ReloadGlyph />}
-            onClick={() => props.onReload?.()}
-          >
-            Reload page
-          </EmptyAction>
+          {reload()}
         </Empty>
       </Match>
       <Match when={props.renderers.length === 0}>
-        <p class="p-2 text-muted">No React on this page</p>
+        <Empty
+          icon={<ReactGlyph />}
+          title="No React on this page."
+          hint="ReactDX finds React as the page loads. If this page uses React, reload it."
+        >
+          {reload()}
+        </Empty>
       </Match>
       <Match when={!development()}>
-        <p class="p-2 text-muted">
-          Production build of React{" "}
-          {[...new Set(props.renderers.map((r) => r.version))].join(", ")}.
-          ReactDX inspects development builds.
-        </p>
+        <Empty
+          icon={<ReactGlyph />}
+          title={`Production build of React ${[...new Set(props.renderers.map((r) => r.version))].join(", ")}.`}
+          hint="ReactDX inspects development builds. Open the app from its dev server to inspect it."
+        />
       </Match>
       <Match when={development()}>
         <Show when={props.timeline} fallback={split()}>

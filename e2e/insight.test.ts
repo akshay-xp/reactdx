@@ -207,7 +207,7 @@ for (const { fixture, port } of fixtures)
 
       // Clear starts the list over.
       await panel.press("Clear")
-      await panelShows("No updates since DevTools opened.")
+      await panelShows("No updates yet.")
       await page.click("[data-testid=count]")
       await rows((list) => list.length === 1)
     } finally {

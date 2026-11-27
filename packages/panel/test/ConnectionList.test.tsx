@@ -39,7 +39,8 @@ const copy = (
   roots,
 })
 
-test("no React", () => {
+test("no React says to reload, with a button", () => {
+  let reloads = 0
   const { container } = render(() => (
     <ConnectionList
       tree={createTreeStore()}
@@ -47,9 +48,15 @@ test("no React", () => {
       sources={sources}
       settings={settings}
       renderers={[]}
+      onReload={() => reloads++}
     />
   ))
-  expect(container.textContent).toBe("No React on this page")
+  expect(container.textContent).toBe(
+    "No React on this page.ReactDX finds React as the page loads. If this page uses React, reload it.Reload page",
+  )
+  expect(container.querySelector("[data-testid=empty] svg")).not.toBeNull()
+  fireEvent.click(container.querySelector("button") as Element)
+  expect(reloads).toBe(1)
 })
 
 test("a page open since before the install asks for a reload", () => {
@@ -85,8 +92,9 @@ test("only production React", () => {
     />
   ))
   expect(container.textContent).toBe(
-    "Production build of React 19.3.1. ReactDX inspects development builds.",
+    "Production build of React 19.3.1.ReactDX inspects development builds. Open the app from its dev server to inspect it.",
   )
+  expect(container.querySelector("[data-testid=empty] svg")).not.toBeNull()
 })
 
 test("each React copy with its roots and commit counts", () => {
@@ -531,4 +539,41 @@ test("a Next root's hidden internals are counted under the trees, with a toggle"
 
   const plain = listed(["App", "Router"])
   expect(plain.container.textContent).not.toContain("Next.js")
+})
+
+test("a tree search with no matches says so, with a way to clear it", () => {
+  const tree = createTreeStore()
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      {
+        op: "add",
+        id: 1,
+        parentId: 0,
+        rootId: 1,
+        kind: "function",
+        name: "App",
+        key: null,
+        index: 0,
+      },
+    ]),
+  )
+  const { container } = render(() => (
+    <ConnectionList
+      tree={tree}
+      inspector={inspection()}
+      sources={sources}
+      settings={settings}
+      renderers={[copy(1, "19.3.1", 1, [{ id: 1, commits: 1 }])]}
+    />
+  ))
+  const banner = () => container.querySelector("[data-testid=no-match]")
+  tree.setQuery("app")
+  expect(banner()).toBeNull()
+  tree.setQuery("zzz")
+  expect(banner()).not.toBeNull()
+  expect(banner()?.textContent).toBe("No components match “zzz”.Clear search")
+  fireEvent.click(within(banner() as HTMLElement).getByRole("button"))
+  expect(tree.query()).toBe("")
+  expect(banner()).toBeNull()
 })

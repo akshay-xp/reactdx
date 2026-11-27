@@ -86,7 +86,10 @@ if (fixtures.some((f) => f.fixture === "next"))
         12_000,
       )
       assert.ok(done.includes("getReviews · Reviews · 6."), done)
-      assert.match(await panel(), /Suspense arrived in 6\.\ds/)
+      // The server's 6 s is checked above; the client sees the fallback a
+      // moment after the server starts fetching, so its wait can read 5.9 s
+      // on a slow runner (CI, #96).
+      assert.match(await panel(), /Suspense arrived in (5\.[5-9]|6\.\d)s/)
     } finally {
       await browser.close()
     }
