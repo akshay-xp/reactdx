@@ -172,19 +172,23 @@ const elements = (detail: {
 const picks = () =>
   posted.filter((m) => (m as { type?: string }).type === "picked")
 
-test("an Elements selection picks its owner; a reveal hands over the first element once", () => {
+test("an Elements selection picks the element's own node; a reveal hands over the first element once", () => {
   send(WATCH)
-  const id = [...posted]
-    .reverse()
-    .flatMap((m) =>
-      (m as { type?: string }).type === "tree"
-        ? (m as TreeBatchMessage).ops
-        : [],
-    )
-    .find((op) => op.op === "add" && op.name === "Counter") as { id: number }
+  const added = (name: string) =>
+    [...posted]
+      .reverse()
+      .flatMap((m) =>
+        (m as { type?: string }).type === "tree"
+          ? (m as TreeBatchMessage).ops
+          : [],
+      )
+      .find((op) => op.op === "add" && op.name === name) as { id: number }
+  const id = added("Counter")
+  // The panel shows it, or its component while DOM elements are hidden.
+  const host = added("button")
   posted.length = 0
   elements({ selected: button() })
-  expect(picks()).toEqual([picked(id.id)])
+  expect(picks()).toEqual([picked(host.id)])
   elements({ selected: document.body })
   elements({ selected: "x" })
   expect(picks()).toHaveLength(1)

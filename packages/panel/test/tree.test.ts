@@ -287,6 +287,24 @@ test("a pick turns picking off and selects a known node", () => {
   expect(tree.picking()).toBe(false)
 })
 
+test("a picked DOM element selects its own row while DOM elements show, else its component", () => {
+  const tree = createTreeStore()
+  // App > div > span
+  tree.apply(
+    treeBatch(1, [
+      { op: "reset" },
+      add(1, 0, "App"),
+      add(2, 1, "div", 0, "host"),
+      add(3, 2, "span", 0, "host"),
+    ]),
+  )
+  tree.picked(3)
+  expect(tree.selected()).toBe(1)
+  tree.setShowHosts(true)
+  tree.picked(3)
+  expect(tree.selected()).toBe(3)
+})
+
 test("when a reveal's selection lands, its row is already there", () => {
   // TreeView scrolls on the selection change, by the row's index.
   const tree = createTreeStore()

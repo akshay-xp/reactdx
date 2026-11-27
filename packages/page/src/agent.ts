@@ -351,7 +351,7 @@ export function startAgent(
     if (!watching || typeof detail !== "object" || detail === null) return
     const { selected, id } = detail as { selected?: unknown; id?: unknown }
     if (selected instanceof Element) {
-      const owner = selected !== revealed && tree.owner(selected)
+      const owner = selected !== revealed && tree.owner(selected, true)
       if (owner) post(picked(owner))
       revealed = undefined
     } else if (typeof id === "number") {
