@@ -1,5 +1,6 @@
 import {
   CLEAR_HIGHLIGHT,
+  ELEMENTS_EVENT,
   highlight,
   PICK_START,
   PICK_STOP,
@@ -157,4 +158,47 @@ test.each([
       .slice(count)
       .filter((m) => (m as { type?: string }).type === "picked"),
   ).toEqual([])
+})
+
+// The panel's eval asks through an event's detail (#92).
+const elements = (detail: {
+  selected?: unknown
+  id?: number
+  element?: Element
+}) => {
+  globalThis.dispatchEvent(new CustomEvent(ELEMENTS_EVENT, { detail }))
+  return detail
+}
+const picks = () =>
+  posted.filter((m) => (m as { type?: string }).type === "picked")
+
+test("an Elements selection picks its owner; a reveal hands over the first element once", () => {
+  send(WATCH)
+  const id = [...posted]
+    .reverse()
+    .flatMap((m) =>
+      (m as { type?: string }).type === "tree"
+        ? (m as TreeBatchMessage).ops
+        : [],
+    )
+    .find((op) => op.op === "add" && op.name === "Counter") as { id: number }
+  posted.length = 0
+  elements({ selected: button() })
+  expect(picks()).toEqual([picked(id.id)])
+  elements({ selected: document.body })
+  elements({ selected: "x" })
+  expect(picks()).toHaveLength(1)
+
+  expect(elements({ id: id.id }).element).toBe(button())
+  expect(elements({ id: 9999 }).element).toBeUndefined()
+  // The reveal's own selection change keeps the selection; the next picks.
+  elements({ selected: button() })
+  expect(picks()).toHaveLength(1)
+  elements({ selected: button() })
+  expect(picks()).toHaveLength(2)
+
+  send(UNWATCH)
+  elements({ selected: button() })
+  expect(picks()).toHaveLength(2)
+  expect(elements({ id: id.id }).element).toBeUndefined()
 })

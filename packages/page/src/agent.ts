@@ -5,6 +5,7 @@ import {
   commitsMessage,
   committed,
   countsMessage,
+  ELEMENTS_EVENT,
   type ExpandedMessage,
   expanded,
   type HookValue,
@@ -339,6 +340,25 @@ export function startAgent(
       target.removeEventListener(type, listener, true)
     overlay?.hide()
   }
+
+  // The Elements panel, through the panel's inspectedWindow.eval (#92): a
+  // selection there picks its owner; a reveal gets the node's first element.
+  // The reveal's own selection change would pick that element's nearer owner
+  // (App's first div may be Layout's), so it's skipped once.
+  let revealed: Element | undefined
+  target.addEventListener(ELEMENTS_EVENT, (event) => {
+    const detail = (event as CustomEvent).detail
+    if (!watching || typeof detail !== "object" || detail === null) return
+    const { selected, id } = detail as { selected?: unknown; id?: unknown }
+    if (selected instanceof Element) {
+      const owner = selected !== revealed && tree.owner(selected)
+      if (owner) post(picked(owner))
+      revealed = undefined
+    } else if (typeof id === "number") {
+      const element = tree.find(id)?.elements[0]
+      if (element) detail.element = revealed = element
+    }
+  })
 
   // The node the panel inspects, the inspector holding what was sent for it, and
   // the fiber values sent: React gives a rendered fiber new props and state objects.
