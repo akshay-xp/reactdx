@@ -158,11 +158,11 @@ export function ConnectionList(props: {
         </Empty>
       </Match>
       <Match when={!development()}>
-        <p class="p-2 text-muted">
-          Production build of React{" "}
-          {[...new Set(props.renderers.map((r) => r.version))].join(", ")}.
-          ReactDX inspects development builds.
-        </p>
+        <Empty
+          icon={<ReactGlyph />}
+          title={`Production build of React ${[...new Set(props.renderers.map((r) => r.version))].join(", ")}.`}
+          hint="ReactDX inspects development builds. Open the app from its dev server to inspect it."
+        />
       </Match>
       <Match when={development()}>
         <Show when={props.timeline} fallback={split()}>

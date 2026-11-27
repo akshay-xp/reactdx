@@ -92,8 +92,9 @@ test("only production React", () => {
     />
   ))
   expect(container.textContent).toBe(
-    "Production build of React 19.3.1. ReactDX inspects development builds.",
+    "Production build of React 19.3.1.ReactDX inspects development builds. Open the app from its dev server to inspect it.",
   )
+  expect(container.querySelector("[data-testid=empty] svg")).not.toBeNull()
 })
 
 test("each React copy with its roots and commit counts", () => {

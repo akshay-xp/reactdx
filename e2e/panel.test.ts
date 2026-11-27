@@ -151,7 +151,7 @@ describe("fixture:prod panel", {
     )
     try {
       const notice =
-        "Production build of React 19.3.1. ReactDX inspects development builds."
+        "Production build of React 19.3.1. ReactDX inspects development builds. Open the app from its dev server to inspect it."
       assert.equal(await until(panel, (t) => t === notice), notice)
     } finally {
       await browser.close()
