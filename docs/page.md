@@ -86,6 +86,15 @@ Outlines on the page, off until the panel's `outlines { mode }` command: `"suspe
   - `keydown` Escape: ends picking, posts `picked(null)`.
 - Ending picking removes the listeners and hides the overlay. `pick-stop` and `unwatch` end it without posting. Only `click` is swallowed: `pointerdown` and `mousedown` still reach the page.
 
+## Elements panel (`src/agent.ts`; #92)
+
+The panel reaches the agent through `inspectedWindow.eval`, which runs in the page's main world with the console's `$0` and `inspect()` (`docs/panel.md`, Elements panel). The eval dispatches `CustomEvent(ELEMENTS_EVENT)` (`"reactdx-elements"`, from messages) on `window`; the agent's listener answers through `detail`, only while watched:
+
+- `{ selected: Element }` (the Elements panel's selection): posts `picked(tree.owner(el))` when an owner exists (the panel selects and reveals it, as a pick), else nothing.
+- `{ id }`: sets `detail.element` to `tree.find(id).elements[0]` (an unknown id: nothing), before the dispatch returns, and remembers it as `revealed`. The eval's `inspect()` then fires the Elements panel's selection change, whose `{ selected }` is that element; its owner can be nearer than the revealed node (App's first div may be Layout's), so a selection equal to `revealed` posts nothing. Any selection clears `revealed`.
+- The page can dispatch the event too; that only picks a component, as a forged `picked` could already.
+- `describe` sets `dom: true` when `tree.find(id).elements` isn't empty (not for server nodes), so the Inspector knows before a click.
+
 ## Values (`createInspector()`, `src/inspect.ts`; M4 #33)
 
 Describes page values for the inspector. Carried from the M0 #7 spike (`docs/m0-findings.md`, "Value format for the panel"), with its gaps fixed. Every result is JSON-safe and passes `parseValue` (`docs/messages.md`, "Inspected values").
