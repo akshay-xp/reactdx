@@ -115,6 +115,8 @@ export type InspectedData = {
   fromServer?: FromServer
   // A Suspense boundary (M7 #80).
   suspense?: SuspenseDetails
+  // It has elements to show in the Elements panel (#92).
+  dom?: true
 }
 // Commits per `commits` message, and seqs per node's history.
 export const MAX_HISTORY = 100
@@ -743,6 +745,7 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     server,
     fromServer,
     suspense,
+    dom,
   } = message.data as Record<string, unknown>
   const budget = { left: MAX_VALUES }
   const parsed: InspectedData = { props: null }
@@ -820,6 +823,10 @@ export function parseInspected(data: unknown): InspectedMessage | undefined {
     const details = parseSuspense(suspense)
     if (!details) return
     parsed.suspense = details
+  }
+  if (dom !== undefined) {
+    if (dom !== true) return
+    parsed.dom = dom
   }
   return inspected(message.id, parsed)
 }

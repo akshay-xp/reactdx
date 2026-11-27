@@ -504,6 +504,7 @@ export function startAgent(
     const data: InspectedData = {
       props: serialize(fiber.memoizedProps) as Value,
     }
+    if (tree.find(id)?.elements.length) data.dom = true
     const state = (fiber.stateNode as { state?: unknown } | null)?.state
     // Class components (tag 1) keep their state on the instance.
     if (fiber.tag === 1 && state != null) data.state = serialize(state) as Value
