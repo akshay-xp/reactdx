@@ -578,6 +578,7 @@ test("a rendered component is outlined on the next frame, fades, and is gone aft
           style: "render",
           label: "C1",
           opacity: 1,
+          heat: 0,
         },
       ],
       more: 0,
@@ -614,6 +615,7 @@ test("a render while outlined restarts its 1 s and counts; no box, no outline", 
         style: "render",
         label: "C1 ×2",
         opacity: 1,
+        heat: 0,
       },
     ])
     vi.advanceTimersByTime(800)
@@ -658,4 +660,61 @@ test("the newest 100 renders are outlined with a count of the rest; scrolls meas
   } finally {
     vi.useRealTimers()
   }
+})
+
+test("heat steps with the renders in the last 1 s, capped at 30, and cools as they age", () => {
+  vi.useFakeTimers()
+  try {
+    const r = renders()
+    r.outlines.on()
+    const burst = (count: number) => {
+      for (let i = 0; i < count; i++) r.outlines.rendered([1])
+      r.run()
+      return r.last()?.outlines[0]
+    }
+    expect(burst(1)).toMatchObject({ heat: 0, label: "C1" })
+    expect(burst(2)).toMatchObject({ heat: 1, label: "C1 ×3" })
+    expect(burst(7)).toMatchObject({ heat: 2, label: "C1 ×10" })
+    expect(burst(20)).toMatchObject({ heat: 3, label: "C1 ×30+" })
+    expect(burst(5)).toMatchObject({ heat: 3, label: "C1 ×30+" })
+
+    // 30 renders at 0 ms; 3 more at 600 ms: at 1100 ms only those 3 count.
+    r.outlines.off()
+    r.outlines.on()
+    burst(30)
+    vi.advanceTimersByTime(600)
+    expect(burst(3)).toMatchObject({ heat: 3, label: "C1 ×30+" })
+    vi.advanceTimersByTime(500)
+    expect(r.last()?.outlines[0]).toMatchObject({ heat: 1, label: "C1 ×3" })
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test("the layer draws each heat step in its color and width, the hottest filled", () => {
+  const layer = createOutlineLayer(document)
+  layer.draw(
+    ([0, 1, 2, 3] as const).map((heat) => ({
+      ...outline("render"),
+      label: "C",
+      heat,
+    })),
+    0,
+  )
+  const boxes = [
+    ...(roots[0]?.querySelectorAll<HTMLElement>("[data-outline]") ?? []),
+  ]
+  expect(
+    boxes.map((box) => [
+      box.dataset.heat,
+      box.style.outline,
+      box.style.background,
+    ]),
+  ).toEqual([
+    ["0", "2px solid rgb(11, 87, 208)", ""],
+    ["1", "3px solid rgb(138, 90, 0)", ""],
+    ["2", "3px solid rgb(160, 79, 0)", ""],
+    ["3", "4px solid rgb(179, 38, 30)", "rgba(179, 38, 30, 0.15)"],
+  ])
+  layer.draw([], 0)
 })

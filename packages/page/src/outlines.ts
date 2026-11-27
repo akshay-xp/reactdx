@@ -11,7 +11,11 @@ export type Outline = Box & {
   label: string
   style: "waiting" | "arrived" | "island" | "wrapper" | "render"
   opacity?: number
+  // Render outlines: 0 to 3, by the renders in the last second.
+  heat?: Heat
 }
+
+type Heat = 0 | 1 | 2 | 3
 
 type Box = { left: number; top: number; width: number; height: number }
 
@@ -43,6 +47,13 @@ const COLORS = {
   wrapper: "#a04f00",
   render: "#0b57d0",
 }
+// accent, waiting, client, error: the hottest also filled.
+const HEAT = [
+  { color: COLORS.render, width: 2 },
+  { color: "#8a5a00", width: 3 },
+  { color: "#a04f00", width: 3 },
+  { color: "#b3261e", width: 4, fill: "rgba(179, 38, 30, 0.15)" },
+]
 const SVG = "http://www.w3.org/2000/svg"
 
 type Layer = Pick<ReturnType<typeof createOutlineLayer>, "draw">
@@ -105,13 +116,16 @@ export function createOutlineLayer(doc: Document) {
       }
       const boxes: Element[] = outlines.map(
         ({ left, top, width, height, ...rest }) => {
-          const color = COLORS[rest.style]
+          const heat = rest.heat === undefined ? undefined : HEAT[rest.heat]
+          const color = heat?.color ?? COLORS[rest.style]
           const box = doc.createElement("div")
           box.dataset.outline = ""
           box.dataset.style = rest.style
+          if (rest.heat !== undefined) box.dataset.heat = String(rest.heat)
           // An outline, not a border: the box's rectangle stays the element's.
           const line = rest.style === "wrapper" ? "dashed" : "solid"
-          box.style.cssText = `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; outline: 2px ${line} ${color}`
+          box.style.cssText = `position: absolute; left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px; outline: ${heat?.width ?? 2}px ${line} ${color}`
+          if (heat?.fill) box.style.background = heat.fill
           if (rest.opacity !== undefined)
             box.style.opacity = String(rest.opacity)
           box.append(label(rest.label, color))
@@ -419,9 +433,13 @@ export function createIslandOutlines({
 }
 
 const RENDER_MS = 1000
+// Past this many renders in a second a component is as hot as it gets.
+const MAX_HEAT_RENDERS = 30
+const heatOf = (count: number): Heat =>
+  count >= MAX_HEAT_RENDERS ? 3 : count >= 10 ? 2 : count >= 3 ? 1 : 0
 
 // Each component that rendered, outlined for 1 s after its last render and
-// fading; its label counts the renders while it shows.
+// fading, colored and labeled by its renders in the last second.
 export function createRenderOutlines({
   layer,
   target,
@@ -435,9 +453,10 @@ export function createRenderOutlines({
   now: () => number
   frame: (callback: () => void) => void
 }) {
-  // Oldest render first: a render moves its id to the end.
-  const recent = new Map<number, { count: number; at: number }>()
-  let measured: (Box & { label: string; at: number })[] = []
+  // Each id's render times in the last second, oldest first, at most
+  // MAX_HEAT_RENDERS; ids by last render, oldest first.
+  const recent = new Map<number, number[]>()
+  let measured: (Box & { name: string; times: number[] })[] = []
   let more = 0
   let tick: ReturnType<typeof setInterval> | undefined
   const stopTick = () => {
@@ -445,40 +464,44 @@ export function createRenderOutlines({
     tick = undefined
   }
   const prune = (at: number) => {
-    for (const [id, entry] of recent) {
-      if (at - entry.at < RENDER_MS) break
+    for (const [id, times] of recent) {
+      if (at - (times.at(-1) as number) < RENDER_MS) break
       recent.delete(id)
     }
+  }
+  const inWindow = (times: number[], at: number) => {
+    while (times.length && at - (times[0] as number) >= RENDER_MS) times.shift()
+    return times.length
   }
 
   const render = () => {
     const at = now()
     prune(at)
-    measured = measured.filter((box) => at - box.at < RENDER_MS)
-    more = Math.max(0, recent.size - MAX_OUTLINES)
-    layer.draw(
-      measured.map(({ at: last, ...box }) => ({
+    const drawn: Outline[] = []
+    measured = measured.filter(({ name, times, ...box }) => {
+      const count = inWindow(times, at)
+      if (!count) return false
+      const shown = count >= MAX_HEAT_RENDERS ? `${count}+` : `${count}`
+      drawn.push({
         ...box,
-        style: "render" as const,
-        opacity: 1 - (at - last) / RENDER_MS,
-      })),
-      more,
-    )
+        style: "render",
+        label: count > 1 ? `${name} ×${shown}` : name,
+        opacity: 1 - (at - (times.at(-1) as number)) / RENDER_MS,
+        heat: heatOf(count),
+      })
+      return true
+    })
+    more = Math.max(0, recent.size - MAX_OUTLINES)
+    layer.draw(drawn, more)
     if (!recent.size) stopTick()
   }
   const measure = () => {
     prune(now())
     measured = []
-    for (const [id, { count, at }] of [...recent].slice(-MAX_OUTLINES)) {
+    for (const [id, times] of [...recent].slice(-MAX_OUTLINES)) {
       const found = find(id)
       const box = boxOf(found?.elements ?? [])
-      if (!box) continue
-      const name = found?.name ?? ""
-      measured.push({
-        ...box,
-        label: count > 1 ? `${name} ×${count}` : name,
-        at,
-      })
+      if (box) measured.push({ ...box, name: found?.name ?? "", times })
     }
     render()
     if (recent.size) tick ??= setInterval(render, TICK_MS)
@@ -503,10 +526,12 @@ export function createRenderOutlines({
       if (!scheduler.active()) return
       const at = now()
       for (const id of ids) {
-        const last = recent.get(id)
+        const times = recent.get(id) ?? []
         recent.delete(id)
-        const count = last && at - last.at < RENDER_MS ? last.count + 1 : 1
-        recent.set(id, { count, at })
+        inWindow(times, at)
+        times.push(at)
+        if (times.length > MAX_HEAT_RENDERS) times.shift()
+        recent.set(id, times)
       }
       scheduler.changed()
     },
