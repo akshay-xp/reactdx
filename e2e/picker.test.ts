@@ -237,3 +237,29 @@ test("a component selected from the Elements panel is scrolled to when ReactDX s
     await browser.close()
   }
 })
+
+test("/ focuses the tree search; a search with no matches says so and clears", {
+  skip,
+}, async () => {
+  const { browser, panel } = await panelFor(name, URL_18, "after")
+  try {
+    await until(panel, (t) =>
+      (parseCopies(t)[0]?.names ?? []).includes("Counter"),
+    )
+    const SEARCH = "Search components"
+    assert.equal(await panel.focused(SEARCH), false)
+    // The key goes to a focused tree row, as a developer's would.
+    await panel.key("Counter", "/")
+    assert.equal(await poll(() => panel.focused(SEARCH), Boolean), true)
+    await panel.type(SEARCH, "zzz")
+    await until(panel, (t) => t.includes("No components match “zzz”."))
+    await panel.press("Clear search")
+    const cleared = await until(
+      panel,
+      (t) => !t.includes("No components match"),
+    )
+    assert.ok(!cleared.includes("No components match"), cleared)
+  } finally {
+    await browser.close()
+  }
+})

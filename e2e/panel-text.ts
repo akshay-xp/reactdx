@@ -42,6 +42,8 @@ export type PanelText = (() => Promise<string>) & {
   // Brings the ReactDX panel to the front, e.g. after inspect() opened Elements
   // (#92). The tool in front before, Firefox only.
   show(): Promise<string | undefined>
+  // Whether the text field with this label has focus (#95).
+  focused(name: string): Promise<boolean>
 }
 
 type Key =
@@ -52,6 +54,7 @@ type Key =
   | "Home"
   | "End"
   | "Escape"
+  | "/"
 const KEY_CODES: Record<Key, string> = {
   ArrowLeft: "LEFT",
   ArrowRight: "RIGHT",
@@ -60,6 +63,7 @@ const KEY_CODES: Record<Key, string> = {
   Home: "HOME",
   End: "END",
   Escape: "ESCAPE",
+  "/": "SLASH",
 }
 
 // Text pieces are joined with spaces (the accessibility tree splits text differently
@@ -207,9 +211,15 @@ export async function openPanelText(
       await openPanel(browser)
       return undefined
     }
+    const focused = (name: string) =>
+      frame.evaluate(
+        (name) => document.activeElement?.getAttribute("aria-label") === name,
+        name,
+      )
     return Object.assign(read, {
       frame,
       show,
+      focused,
       inspector,
       select,
       end,
@@ -415,10 +425,13 @@ export async function openPanelText(
     await onAccessible(button(name), `return "ok"`)
   }
   // The entry's editable text, which edits as typing does (input events fire).
+  // A text field by its label: type="search" is a SEARCHBOX where Firefox has
+  // that role, else an ENTRY (its label, also named so, is neither).
+  const entry = (label: string) =>
+    `[${role("ENTRY")}, ${role("SEARCHBOX")}].includes(node.role) && node.name === ${json(label)}`
   const type = async (label: string, text: string) => {
     await onAccessible(
-      // type="search" is a SEARCHBOX where Firefox has that role, else an ENTRY.
-      `[${role("ENTRY")}, ${role("SEARCHBOX")}].includes(node.role) && node.name === ${json(label)}`,
+      entry(label),
       `node.QueryInterface(Ci.nsIAccessibleEditableText).setTextContents(${json(text)})
       return "ok"`,
     )
@@ -485,7 +498,7 @@ export async function openPanelText(
       `node.takeFocus()
       const tip = Cc["@mozilla.org/text-input-processor;1"].createInstance(Ci.nsITextInputProcessor)
       tip.beginInputTransactionForTests(window)
-      const event = new KeyboardEvent("", { key: ${json(key)}, code: ${json(key)}, keyCode: KeyboardEvent.DOM_VK_${KEY_CODES[key]} })
+      const event = new KeyboardEvent("", { key: ${json(key)}, code: ${json(key === "/" ? "Slash" : key)}, keyCode: KeyboardEvent.DOM_VK_${KEY_CODES[key]} })
       return new Promise((r) => setTimeout(() => {
         tip.keydown(event)
         tip.keyup(event)
@@ -576,8 +589,23 @@ export async function openPanelText(
         return before
       })()`,
     )) ?? undefined
+  // The control can be missing from the mirror for a moment, as it re-renders.
+  const focused = async (name: string) => {
+    for (const deadline = Date.now() + 5000; ; ) {
+      const state = await onAccessible(
+        entry(name),
+        `const state = {}, extra = {}
+        node.getState(state, extra)
+        return (state.value & Ci.nsIAccessibleStates.STATE_FOCUSED) !== 0 ? "yes" : "no"`,
+        false,
+      )
+      if (state || Date.now() > deadline) return state === "yes"
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+  }
   return Object.assign(read, {
     show,
+    focused,
     inspector,
     select,
     end,
